@@ -1,8 +1,7 @@
 //! Progress reporting: a sliding-window speed meter and the [`Progress`]
-//! snapshot handed to frontends.
-//!
-//! The speed meter is written around an explicit elapsed [`Duration`] rather
-//! than reading the clock itself, so it can be unit-tested deterministically.
+//! snapshot handed to frontends. The meter takes an explicit elapsed
+//! [`Duration`] (rather than reading the clock) so it is deterministically
+//! testable.
 
 use std::collections::VecDeque;
 use std::time::Duration;

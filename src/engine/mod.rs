@@ -1,10 +1,8 @@
 //! The download engine: the crate's core, frontend-agnostic logic.
 //!
-//! [`download`] performs a single streaming HTTP(S) GET to disk. The chunk loop
-//! is written to *assume control*: it consults a [`Control`] before every chunk
-//! and runs a throttle hook after every write, so pause/cancel (M1) and rate
-//! limiting (M4) slot in without reshaping it. In M0, cancellation is live; the
-//! other hooks are structural.
+//! [`download`] streams a single HTTP(S) GET to disk. The chunk loop consults a
+//! [`Control`] before each chunk and runs a throttle hook after each write, so
+//! pause/cancel (M1) and rate limiting (M4) slot in without reshaping it.
 
 pub mod control;
 pub mod filename;

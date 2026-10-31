@@ -30,6 +30,13 @@ instruction sheet for any agent (and human) working in this repo.
 - Every feature ships with a test. Acceptance criteria must be runnable, not
   "looked fine".
 
+## Comments & docs
+- Doc-comment (`///`) the public engine API: it's the contract and renders in
+  `cargo doc`. One or two lines — say *what* and *why*, not *how*.
+- Inline comments earn their place only for non-obvious *why* (e.g. the chunk
+  loop's pause/throttle hook points). Don't narrate what the code already says.
+- Prefer clear names over comments.
+
 ## Definition of Done (every change & milestone)
 Standing gates — established in M0, apply to all work, and deliberately NOT
 repeated in each milestone's acceptance criteria:
