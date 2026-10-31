@@ -1,0 +1,33 @@
+[package]
+name = "rdm"
+version = "0.1.0"
+edition = "2021"
+description = "A download manager in Rust (IDM-inspired)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/SimonPerryman/rust-download-manager"
+
+# Engine/CLI split: the engine lives in the library crate; `rdm` is a thin
+# frontend binary that only calls it. Integration tests drive the library.
+[lib]
+name = "rdm"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rdm"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+url = "2"
+clap = { version = "4", features = ["derive"] }
+indicatif = "0.17"
+thiserror = "2"
+anyhow = "1"
+
+[dev-dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "net", "process"] }
+tempfile = "3"
+sha2 = "0.10"
