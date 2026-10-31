@@ -1,0 +1,46 @@
+---
+id: M4
+title: Queue & throughput management
+status: todo
+depends-on: [M1]
+tags: [engine, perf]
+---
+
+## Goal
+Day-to-day "set it and forget it" usage: a download queue with a concurrency
+cap, plus per-download and global speed limiting.
+
+## Context / rationale
+These are common day-to-day download-manager conveniences, but they're not
+MVP. Queueing is a scheduler layer *above* the engine (cleanly separable);
+speed limiting is a *property of the engine loop* and reuses the throttle hook
+left in at M0. See [[roadmap]]. Depends on M1; benefits from M3 if present.
+
+## Scope
+**In:**
+- Download queue with a configurable concurrency cap (scheduler above engine).
+- Per-download speed limiting (throttle inside the engine chunk loop).
+- Global speed limiting across all active downloads.
+- Dynamic connection scaling based on measured speed (ties into M3 if present).
+
+**Out (deferred):**
+- Scheduling by time-of-day, bandwidth schedules (backlog).
+- Post-download actions (backlog).
+
+## Tasks
+- [ ] Scheduler: active vs. waiting sets, honour the concurrency cap.
+- [ ] Per-download throttle wired into the engine chunk loop.
+- [ ] Global rate limiter shared across active downloads (token-bucket style).
+- [ ] Surface queue state + limits to the frontend(s).
+- [ ] Fixture/tests measuring effective rate against configured limits.
+
+## Acceptance criteria
+_Standing gates (fmt/clippy/test/CI) live in AGENTS.md's Definition of Done and
+apply here without being restated._
+- [ ] Queue 10 downloads with a cap of 3: at most 3 run concurrently; the rest
+      start as slots free.
+- [ ] A per-download speed limit is honoured within tolerance (measured rate ≤
+      limit).
+- [ ] A global speed limit caps aggregate throughput across active downloads
+      within tolerance.
+- [ ] Removing/pausing a queued item reschedules correctly.
