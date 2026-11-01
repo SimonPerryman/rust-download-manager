@@ -1,0 +1,10 @@
+# The webview E2E suite is its own pnpm root (own lockfile), so the GUI's
+# install and CI jobs don't pull in WebdriverIO.
+#
+# esbuild (used by tsx to load the TypeScript config/specs) fetches its native
+# binary in postinstall. The browser-driver downloaders WebdriverIO pulls in
+# are not needed: tauri-driver fronts the platform's native webview driver.
+allowBuilds:
+  esbuild: true
+  edgedriver: false
+  geckodriver: false

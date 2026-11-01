@@ -38,16 +38,23 @@ export function DownloadRow({ d }: { d: DownloadSnapshot }) {
 // ---- shared pieces -------------------------------------------------------
 
 function Shell({
+  d,
   dim,
   children,
   actions,
 }: {
+  d: DownloadSnapshot;
   dim?: boolean;
   children: React.ReactNode;
   actions: React.ReactNode;
 }) {
   return (
-    <li className="flex items-start gap-row-gap px-row-px py-row-py">
+    <li
+      data-testid="download-row"
+      data-filename={d.filename}
+      data-status={d.status}
+      className="flex items-start gap-row-gap px-row-px py-row-py"
+    >
       <div
         className={`mt-0.5 flex h-row-icon w-row-icon shrink-0 items-center justify-center rounded-md bg-muted ${
           dim ? "text-muted-foreground/60" : "text-muted-foreground"
@@ -73,6 +80,7 @@ function IconButton({
   return (
     <button
       title={title}
+      aria-label={title}
       onClick={onClick}
       className="inline-flex h-row-action w-row-action items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
     >
@@ -127,6 +135,7 @@ function DownloadingRow({ d }: { d: DownloadSnapshot }) {
   const pct = percent(d);
   return (
     <Shell
+      d={d}
       actions={
         <>
           <IconButton title="Pause" onClick={() => api.pause(d.id)}>
@@ -167,6 +176,7 @@ function PausedRow({ d }: { d: DownloadSnapshot }) {
   const pct = percent(d);
   return (
     <Shell
+      d={d}
       actions={
         <>
           <IconButton title="Resume" onClick={() => api.resume(d.id)}>
@@ -200,6 +210,7 @@ function PausedRow({ d }: { d: DownloadSnapshot }) {
 function QueuedRow({ d }: { d: DownloadSnapshot }) {
   return (
     <Shell
+      d={d}
       dim
       actions={
         <>
@@ -230,6 +241,7 @@ function FailedRow({ d }: { d: DownloadSnapshot }) {
   // resume. Show the error and a Retry action (mockup's "Retrying"/"Failed").
   return (
     <Shell
+      d={d}
       actions={
         <>
           <IconButton title="Retry" onClick={() => api.resume(d.id)}>
@@ -261,6 +273,7 @@ function CompletedRow({ d }: { d: DownloadSnapshot }) {
   const path = d.final_path ?? d.target;
   return (
     <Shell
+      d={d}
       actions={
         <>
           <IconButton title="Open file" onClick={() => api.openPath(path)}>
@@ -293,6 +306,7 @@ function CompletedRow({ d }: { d: DownloadSnapshot }) {
 function CancelledRow({ d }: { d: DownloadSnapshot }) {
   return (
     <Shell
+      d={d}
       dim
       actions={
         <>

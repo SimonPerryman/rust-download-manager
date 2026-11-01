@@ -122,6 +122,63 @@ jobs:
       - name: Build GUI crate
         run: cargo build -p rdm-gui
 
+  e2e:
+    name: gui e2e (webview, ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      # Also caches ~/.cargo/bin, so the tauri-driver install below is a no-op
+      # on a warm cache.
+      - name: Cache cargo registry, build and tools
+        uses: Swatinem/rust-cache@v2
+
+      # Tauri's webview build deps (as in the gui job), plus WebKitWebDriver
+      # (the native driver tauri-driver fronts on Linux) and a virtual display.
+      - name: Install Linux webview, driver and display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y             libwebkit2gtk-4.1-dev             libayatana-appindicator3-dev             librsvg2-dev             libxdo-dev             libssl-dev             patchelf             webkit2gtk-driver             xvfb
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: gui/package.json
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: |
+            gui/pnpm-lock.yaml
+            gui/e2e/pnpm-lock.yaml
+
+      - name: Install frontend and e2e dependencies
+        run: |
+          pnpm --dir gui install --frozen-lockfile
+          pnpm --dir gui/e2e install --frozen-lockfile
+
+      - name: Typecheck e2e suite
+        working-directory: gui/e2e
+        run: pnpm typecheck
+
+      # The debug app with the frontend embedded (tauri build), plus the
+      # loopback fixture server the specs download from.
+      - name: Build app and fixture server
+        working-directory: gui/e2e
+        run: pnpm run build
+
+      - name: Run webview E2E (xvfb)
+        working-directory: gui/e2e
+        run: xvfb-run -a pnpm test
+
   live-smoke:
     name: live smoke (network, on demand)
     runs-on: ubuntu-latest
