@@ -13,3 +13,6 @@
 .vscode/
 *.swp
 .DS_Store
+
+# AI working artifacts — mockups, scratch, notes. Local only, never pushed.
+.ai-cache/
