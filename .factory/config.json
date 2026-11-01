@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "projectType": "cli",
-  "conventions": ["CLAUDE.md"],
+  "projectType": "mixed",
+  "conventions": ["CLAUDE.md", "AGENTS.md"],
   "defaultBranch": "main",
   "gate": {
-    "format": "cargo fmt --check",
-    "lint": "cargo clippy -- -D warnings",
-    "typecheck": null,
-    "test": "cargo test"
+    "format": "cargo fmt --all --check && pnpm --dir gui format:check",
+    "lint": "cargo clippy --all-targets -- -D warnings && pnpm --dir gui lint",
+    "typecheck": "pnpm --dir gui build",
+    "test": "cargo test && pnpm --dir gui test"
   },
   "vcs": {
     "host": "github"
@@ -27,9 +27,9 @@
     "startTimeoutSec": 90
   },
   "e2e": {
-    "enabled": false,
-    "provider": "none",
-    "specDir": null,
+    "enabled": true,
+    "provider": "project-skill:rdm-e2e",
+    "specDir": "gui/e2e/specs",
     "auth": "none"
   }
 }
