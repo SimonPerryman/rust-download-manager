@@ -1,11 +1,12 @@
 # rdm
 
-A download manager in Rust. `rdm` downloads a file from a URL on the command
-line, streaming it to disk with a live progress readout.
+A download manager in Rust. `rdm` downloads files from a URL — on the command
+line or through a desktop GUI — streaming to disk with a live progress readout.
 
-> **Status: early.** This is the M0 + M1 MVP — a robust single-connection CLI
-> download: pause/resume, resume-after-restart, retry, and integrity checking.
-> Parallel segments and a GUI are on the [roadmap](roadmap.md), not built yet.
+> **Status: early.** M0 + M1 are a robust single-connection CLI download
+> (pause/resume, resume-after-restart, retry, integrity checking); M2 adds a
+> desktop GUI over the same engine. Parallel segments and a download queue are
+> on the [roadmap](roadmap.md), not built yet.
 
 ## Features
 
@@ -21,6 +22,10 @@ line, streaming it to disk with a live progress readout.
   exponential backoff.
 - Verifies the finished file's size, and an optional `--checksum sha256:<hex>`,
   before moving it into place; never clobbers an existing file (`name (1).ext`).
+- Optional **desktop GUI** (Tauri + React): manage many downloads at once —
+  add/pause/resume/cancel, live progress/speed/ETA, and an Active/History list
+  that persists across restarts. The GUI is an *additive* frontend; the CLI and
+  engine stay fully functional headless (no webview/Node needed).
 
 ## Installation
 
@@ -59,24 +64,54 @@ rdm https://example.com/big-file.zip --checksum sha256:<hex>
 Run `rdm --help` for the full, generated help, and `rdm --version` for the
 version.
 
+## Desktop GUI
+
+The GUI lives in [`gui/`](gui/) as a separate Tauri app (the `rdm-gui`
+workspace crate) that drives the same engine — so the CLI and engine never
+depend on Tauri, Node, or a webview, and a headless server build stays fully
+functional. Your download list and history are stored in `~/.rdm/state.json`.
+
+Prerequisites: [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/), and the
+[Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) for your
+OS (on Windows, the WebView2 runtime, which ships with Windows 11).
+
+```sh
+cd gui
+pnpm install
+pnpm tauri dev          # run the app in development
+pnpm tauri build        # produce a release bundle/installer
+
+pnpm lint               # lint the frontend (oxlint)
+pnpm format             # format the frontend (oxfmt); pnpm format:check to verify
+```
+
+Troubleshooting: the GUI logs to stderr and to `~/.rdm/rdm.log` (download
+starts, each retry with its reason, and failures); set `RUST_LOG=debug` for
+more detail.
+
 ## Development
 
 The architecture is an **engine/frontend split**: all download logic lives in
-the `rdm` library crate (the `engine` module) with a clean API; the `rdm`
-binary is a thin CLI frontend over it. See [`AGENTS.md`](AGENTS.md) for the
+the `rdm` library crate (the `engine` module) with a clean API; both the `rdm`
+CLI binary and the GUI are thin frontends over it. The repo is a Cargo
+workspace — `rdm` at the root, `rdm-gui` under `gui/src-tauri` — with
+`default-members = ["."]` so the commands below build and test only the
+engine/CLI (fast, no webview deps). See [`AGENTS.md`](AGENTS.md) for the
 conventions and the [roadmap](roadmap.md) for what's planned.
 
 ```sh
-cargo build                 # build
+cargo build                 # build the engine + CLI
 cargo test                  # fast, offline test suite (the default gate)
 cargo test -- --ignored     # add the live network smoke test
 cargo clippy -- -D warnings # lint (warnings are errors)
-cargo fmt --check           # formatting check
+cargo fmt --all --check     # formatting check (all workspace crates)
+cargo build -p rdm-gui      # build the GUI's Rust crate (needs gui/ deps built)
 ```
 
 Tests are deterministic and offline by default — they drive the engine against
-an in-process HTTP server. A single `#[ignore]`d live smoke test exercises a
-real network download against a pinned public asset.
+an in-process HTTP server (including the `Manager` the GUI uses, in
+`tests/manager.rs`). A single `#[ignore]`d live smoke test exercises a real
+network download against a pinned public asset.
 
 ## License
 

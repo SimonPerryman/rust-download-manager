@@ -1,0 +1,12 @@
+# Paths the Tauri dev watcher must ignore. The watcher covers the whole repo
+# (rdm-gui depends on the engine crate at the root via a path dependency), so
+# without this it rebuilds the Rust app whenever Vite touches node_modules/.vite
+# or dist — turning one launch into several needless recompiles.
+node_modules
+dist
+target
+.ai-cache
+*.log
+# Per-download sidecars the engine may write under the project during testing.
+*.part
+*.rdm

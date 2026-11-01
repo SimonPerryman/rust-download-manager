@@ -1,0 +1,9 @@
+# pnpm settings for the GUI package. (In pnpm 10+ these live here, not in the
+# package.json "pnpm" field.)
+#
+# pnpm blocks dependency build scripts by default and fails the install if any
+# are left undecided. esbuild's postinstall fetches its native binary (used by
+# Vite), so we allow it to run; this keeps `pnpm install` clean on every
+# platform. Maintained via `pnpm approve-builds` / `pnpm install --allow-build`.
+allowBuilds:
+  esbuild: true
