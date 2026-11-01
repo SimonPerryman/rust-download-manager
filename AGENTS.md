@@ -36,6 +36,8 @@ instruction sheet for any agent (and human) working in this repo.
 - Inline comments earn their place only for non-obvious *why* (e.g. the chunk
   loop's pause/throttle hook points). Don't narrate what the code already says.
 - Prefer clear names over comments.
+- Keep `README.md` current with user-facing behaviour (install + CLI usage)
+  when it changes.
 
 ## Definition of Done (every change & milestone)
 Standing gates — established in M0, apply to all work, and deliberately NOT

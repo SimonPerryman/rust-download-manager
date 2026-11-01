@@ -2,7 +2,7 @@
 name = "rdm"
 version = "0.1.0"
 edition = "2021"
-description = "A download manager in Rust (IDM-inspired)"
+description = "A download manager in Rust"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/SimonPerryman/rust-download-manager"
 
@@ -28,6 +28,8 @@ anyhow = "1"
 
 [dev-dependencies]
 axum = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "net", "process"] }
+# Only the test-only extras; Cargo unifies these with the `[dependencies]`
+# tokio features (rt-multi-thread, macros, fs, io-util) for test builds.
+tokio = { version = "1", features = ["net", "process"] }
 tempfile = "3"
 sha2 = "0.10"
