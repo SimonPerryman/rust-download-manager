@@ -17,7 +17,7 @@
     "maxIterations": 5
   },
   "plan": {
-    "maxRounds": 5
+    "maxRounds": 3
   },
   "devStack": {
     "enabled": false,
