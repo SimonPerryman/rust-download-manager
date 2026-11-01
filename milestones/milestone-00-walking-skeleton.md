@@ -1,7 +1,7 @@
 ---
 id: M0
 title: Walking skeleton
-status: todo
+status: done
 depends-on: []
 tags: [engine, cli, network, testing, ci]
 ---
@@ -26,8 +26,8 @@ split that every later milestone depends on.
 - CLI (`clap`): `rdm <url>`.
 - Deterministic test fixture: in-process HTTP server (`wiremock`/`httptest`/
   small `axum`) used by integration tests — never the real network.
-- Live smoke test against a self-hosted asset (GitHub Releases on this repo),
-  marked `#[ignore]` so it runs only on demand.
+- Live smoke test against a public asset pinned to an immutable commit SHA
+  (a file on microsoft/TypeScript), marked `#[ignore]` so it runs only on demand.
 - CI: GitHub Actions running fmt + clippy + test (ubuntu + windows matrix).
 - `.gitattributes` enforcing LF.
 
@@ -37,28 +37,28 @@ split that every later milestone depends on.
 - Retry/backoff (→ M1).
 
 ## Tasks
-- [ ] `cargo init` binary crate; add deps (`tokio`, `reqwest`, `clap`,
+- [x] `cargo init` binary crate; add deps (`tokio`, `reqwest`, `clap`,
       `indicatif`, `anyhow`/`thiserror`).
-- [ ] `engine::download(url, dest) -> Result<Summary>` streaming to disk.
-- [ ] Chunk loop structured so rate can be throttled and the download
+- [x] `engine::download(url, dest) -> Result<Summary>` streaming to disk.
+- [x] Chunk loop structured so rate can be throttled and the download
       paused/cancelled later (hooks only, not implemented).
-- [ ] Filename resolution (URL + `Content-Disposition`), redirects, status.
-- [ ] Progress reporting surfaced to the CLI via `indicatif`.
-- [ ] CLI wiring: `rdm <url>`.
-- [ ] Test fixture: local HTTP server helper for integration tests.
-- [ ] Integration test: download from local server, assert byte-identical.
-- [ ] CLI smoke test: spawn the binary, assert exit 0 + file exists + size.
-- [ ] `#[ignore]` live smoke test against the self-hosted asset + checksum.
-- [ ] `.github/workflows/ci.yml` (fmt, clippy -D warnings, test; ubuntu+windows).
-- [ ] `.gitattributes` with `* text=auto eol=lf`.
+- [x] Filename resolution (URL + `Content-Disposition`), redirects, status.
+- [x] Progress reporting surfaced to the CLI via `indicatif`.
+- [x] CLI wiring: `rdm <url>`.
+- [x] Test fixture: local HTTP server helper for integration tests.
+- [x] Integration test: download from local server, assert byte-identical.
+- [x] CLI smoke test: spawn the binary, assert exit 0 + file exists + size.
+- [x] `#[ignore]` live smoke test against the pinned public asset + checksum.
+- [x] `.github/workflows/ci.yml` (fmt, clippy -D warnings, test; ubuntu+windows).
+- [x] `.gitattributes` with `* text=auto eol=lf`.
 
 ## Acceptance criteria
-- [ ] `cargo build` succeeds.
-- [ ] `cargo fmt --check` passes.
-- [ ] `cargo clippy -- -D warnings` passes.
-- [ ] `cargo test` passes offline, including the local-server integration test
+- [x] `cargo build` succeeds.
+- [x] `cargo fmt --check` passes.
+- [x] `cargo clippy -- -D warnings` passes.
+- [x] `cargo test` passes offline, including the local-server integration test
       (bytes on disk match the served file) and the CLI smoke test.
-- [ ] `cargo test -- --ignored` downloads the self-hosted asset and its
+- [x] `cargo test -- --ignored` downloads the pinned public asset and its
       checksum matches.
-- [ ] CI is green on a pushed branch (fmt + clippy + test on ubuntu & windows).
-- [ ] No download logic lives in the CLI layer (engine/CLI split holds).
+- [x] CI is green on a pushed branch (fmt + clippy + test on ubuntu & windows).
+- [x] No download logic lives in the CLI layer (engine/CLI split holds).

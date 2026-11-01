@@ -24,11 +24,20 @@ instruction sheet for any agent (and human) working in this repo.
 ## Testing philosophy
 - **Default tests are deterministic and offline:** drive the engine against a
   local in-process HTTP server (fixtures), never the real network.
-- **A real end-to-end smoke test exists** against a self-hosted asset (GitHub
-  Releases on this repo), marked `#[ignore]` so it only runs on demand / in a
+- **A real end-to-end smoke test exists** against a public asset pinned to an
+  immutable commit SHA, marked `#[ignore]` so it only runs on demand / in a
   dedicated CI job — keeps the default gate fast and reliable.
 - Every feature ships with a test. Acceptance criteria must be runnable, not
   "looked fine".
+
+## Comments & docs
+- Doc-comment (`///`) the public engine API: it's the contract and renders in
+  `cargo doc`. One or two lines — say *what* and *why*, not *how*.
+- Inline comments earn their place only for non-obvious *why* (e.g. the chunk
+  loop's pause/throttle hook points). Don't narrate what the code already says.
+- Prefer clear names over comments.
+- Keep `README.md` current with user-facing behaviour (install + CLI usage)
+  when it changes.
 
 ## Definition of Done (every change & milestone)
 Standing gates — established in M0, apply to all work, and deliberately NOT
