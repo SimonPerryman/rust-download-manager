@@ -71,15 +71,15 @@ workspace crate) that drives the same engine — so the CLI and engine never
 depend on Tauri, Node, or a webview, and a headless server build stays fully
 functional. Your download list and history are stored in `~/.rdm/state.json`.
 
-Prerequisites: [Node.js](https://nodejs.org/) + npm, and the
+Prerequisites: [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/), and the
 [Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) for your
 OS (on Windows, the WebView2 runtime, which ships with Windows 11).
 
 ```sh
 cd gui
-npm install
-npm run tauri dev       # run the app in development
-npm run tauri build     # produce a release bundle/installer
+pnpm install
+pnpm tauri dev          # run the app in development
+pnpm tauri build        # produce a release bundle/installer
 ```
 
 ## Development
