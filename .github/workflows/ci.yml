@@ -81,6 +81,10 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          # The pinned pnpm version lives in gui/package.json's "packageManager"
+          # (there is no root package.json).
+          package_json_file: gui/package.json
 
       - name: Setup Node
         uses: actions/setup-node@v4
