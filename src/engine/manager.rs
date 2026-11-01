@@ -103,17 +103,6 @@ impl Entry {
             finished_at: self.record.finished_at,
         }
     }
-
-    /// Rebuild a [`DownloadRequest`] from the persisted record so the engine
-    /// can (re)start or resume it.
-    fn request(&self) -> DownloadRequest {
-        let mut req = DownloadRequest::to_path(&self.record.url, &self.record.target);
-        if let Some(cs) = self.record.checksum.as_deref().and_then(|s| s.parse().ok()) {
-            let cs: Checksum = cs;
-            req = req.with_checksum(cs);
-        }
-        req
-    }
 }
 
 /// Mutable registry state, guarded by a single lock.
@@ -194,6 +183,33 @@ impl Inner {
         }
     }
 
+    /// Engine claim hook for a provisional target: dedup the derived `proposed`
+    /// path, adopt it as the record's target, and hand it back to the engine.
+    /// Called from the download task (never with the state lock held).
+    fn claim_target(&self, id: u64, proposed: &Path, control: &Control) -> PathBuf {
+        let st = &mut *self.state.lock().unwrap();
+        if let Some(e) = st.entries.get(&id) {
+            if !e.record.target_provisional {
+                return e.record.target.clone();
+            }
+        }
+        let target = unique_target(st, proposed.to_path_buf());
+        let closed = self.closed.load(Ordering::SeqCst);
+        match st.entries.get_mut(&id) {
+            Some(e) if !closed => {
+                e.record.target = target.clone();
+                e.record.target_provisional = false;
+                self.persist(st);
+                self.publish(st);
+            }
+            // Removed (or manager dropped) before the first response: steer the
+            // engine to a free path and cancel, so it never touches another
+            // download's `.part`.
+            _ => control.cancel(),
+        }
+        target
+    }
+
     /// A download task has ended; record its terminal status and persist.
     fn finish(&self, id: u64, result: crate::engine::Result<crate::engine::Summary>) {
         if self.closed.load(Ordering::SeqCst) {
@@ -268,8 +284,10 @@ impl Manager {
                 rec.status = Status::Paused;
             }
             // The `.part` on disk is authoritative for how far we got.
-            if let Ok(meta) = std::fs::metadata(state::part_path(&rec.target)) {
-                rec.downloaded = meta.len();
+            if !rec.target_provisional {
+                if let Ok(meta) = std::fs::metadata(state::part_path(&rec.target)) {
+                    rec.downloaded = meta.len();
+                }
             }
             order.push(rec.id);
             entries.insert(
@@ -308,10 +326,11 @@ impl Manager {
 
     /// Add a new download and start it immediately. `dir` is the destination
     /// folder; `out`, when given, is an explicit full target path that
-    /// overrides the URL-derived name. Returns the new download's id.
+    /// overrides the derived name. Returns the new download's id.
     ///
-    /// The target name is derived from the URL (not the server's
-    /// `Content-Disposition`), so the manager knows every path up front.
+    /// Without `out`, the target shows a URL-derived placeholder until the first
+    /// response, when the server's `Content-Disposition` (or URL) name is
+    /// claimed, deduplicated against other downloads and files on disk.
     pub fn add(
         &self,
         url: impl Into<String>,
@@ -325,12 +344,16 @@ impl Manager {
         let id = st.next_id;
         st.next_id += 1;
 
-        let target = resolve_target(st, &url, dir.into(), out);
+        let (target, target_provisional) = match out {
+            Some(out) => (unique_target(st, out), false),
+            None => (dir.into().join(filename::resolve(None, &url, None)), true),
+        };
         let control = Control::new();
         let record = DownloadRecord {
             id,
             url,
             target,
+            target_provisional,
             final_path: None,
             checksum: checksum.map(|c| c.to_string()),
             status: Status::Downloading,
@@ -340,13 +363,13 @@ impl Manager {
             added_at: now_secs(),
             finished_at: None,
         };
-        let mut entry = Entry {
+        let task = spawn_task(self.inner.clone(), &record, control.clone());
+        let entry = Entry {
             record,
-            control: control.clone(),
+            control,
             live: Live::default(),
-            task: None,
+            task: Some(task),
         };
-        entry.task = Some(spawn_task(self.inner.clone(), id, entry.request(), control));
 
         st.order.push(id);
         st.entries.insert(id, entry);
@@ -386,7 +409,7 @@ impl Manager {
         e.record.status = Status::Downloading;
         e.record.error = None;
         e.record.finished_at = None;
-        e.task = Some(spawn_task(self.inner.clone(), id, e.request(), control));
+        e.task = Some(spawn_task(self.inner.clone(), &e.record, control));
         self.inner.persist(st);
         self.inner.publish(st);
     }
@@ -404,7 +427,7 @@ impl Manager {
             Status::Downloading | Status::Queued => e.control.cancel(),
             // No task to observe it — discard the partial here and now.
             Status::Paused => {
-                remove_partial(&e.record.target);
+                remove_partial(&e.record);
                 e.record.status = Status::Cancelled;
                 e.record.downloaded = 0;
                 e.record.finished_at = now_secs();
@@ -428,7 +451,7 @@ impl Manager {
             task.abort();
         }
         if e.record.status != Status::Completed {
-            remove_partial(&e.record.target);
+            remove_partial(&e.record);
         }
         self.inner.persist(st);
         self.inner.publish(st);
@@ -463,14 +486,11 @@ impl Drop for Manager {
     }
 }
 
-/// Spawn the engine `download` for one entry on its own task, reporting
+/// Spawn the engine `download` for one record on its own task, reporting
 /// progress and completion back through `inner`.
-fn spawn_task(
-    inner: Arc<Inner>,
-    id: u64,
-    req: DownloadRequest,
-    control: Control,
-) -> JoinHandle<()> {
+fn spawn_task(inner: Arc<Inner>, record: &DownloadRecord, control: Control) -> JoinHandle<()> {
+    let id = record.id;
+    let req = request_for(&inner, record, &control);
     let handle = inner.handle.clone();
     handle.spawn(async move {
         let progress = inner.clone();
@@ -479,18 +499,38 @@ fn spawn_task(
     })
 }
 
+/// Build the engine request for `record`. A provisional target is left for
+/// the engine to derive from the response and claimed back via `inner`; a
+/// claimed one is passed explicitly so the engine resumes its `.part`.
+fn request_for(inner: &Arc<Inner>, record: &DownloadRecord, control: &Control) -> DownloadRequest {
+    let mut req = if record.target_provisional {
+        let dir = record
+            .target
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        let (inner, id, control) = (inner.clone(), record.id, control.clone());
+        DownloadRequest::new(&record.url, dir)
+            .with_claim_target(move |proposed| inner.claim_target(id, proposed, &control))
+    } else {
+        DownloadRequest::to_path(&record.url, &record.target)
+    };
+    if let Some(cs) = record.checksum.as_deref().and_then(|s| s.parse().ok()) {
+        let cs: Checksum = cs;
+        req = req.with_checksum(cs);
+    }
+    req
+}
+
 /// Choose a target path that no other *active* download and no file on disk is
 /// already using, so concurrent `.part` files never collide. Mirrors the
-/// `name (1).ext` scheme the engine uses at finalize.
-fn resolve_target(st: &ManagerState, url: &str, dir: PathBuf, out: Option<PathBuf>) -> PathBuf {
-    let base = match out {
-        Some(out) => out,
-        None => dir.join(filename::resolve(None, url, None)),
-    };
-
+/// `name (1).ext` scheme the engine uses at finalize. Provisional targets own
+/// nothing on disk, so they never block a name.
+fn unique_target(st: &ManagerState, base: PathBuf) -> PathBuf {
     let active: HashSet<&Path> = st
         .entries
         .values()
+        .filter(|e| !e.record.target_provisional)
         .filter(|e| e.record.status.is_running() || e.record.status == Status::Paused)
         .map(|e| e.record.target.as_path())
         .collect();
@@ -526,10 +566,14 @@ fn resolve_target(st: &ManagerState, url: &str, dir: PathBuf, out: Option<PathBu
     unreachable!("the range is effectively unbounded")
 }
 
-/// Best-effort removal of a target's `.part` and `.rdm` sidecar.
-fn remove_partial(target: &Path) {
-    let _ = std::fs::remove_file(state::part_path(target));
-    let _ = std::fs::remove_file(state::sidecar_path(target));
+/// Best-effort removal of a record's `.part` and `.rdm` sidecar. A provisional
+/// target has none (and may name another download's), so it is left alone.
+fn remove_partial(record: &DownloadRecord) {
+    if record.target_provisional {
+        return;
+    }
+    let _ = std::fs::remove_file(state::part_path(&record.target));
+    let _ = std::fs::remove_file(state::sidecar_path(&record.target));
 }
 
 /// Current Unix-epoch seconds, or `None` if the clock is before the epoch.

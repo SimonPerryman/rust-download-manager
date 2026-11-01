@@ -10,10 +10,12 @@
 //! # Fixture route contract
 //! - `GET /file`      — payload with `Content-Length`; no range support.
 //! - `GET /named`     — payload with a `Content-Disposition` filename.
+//! - `GET /named/report-final.bin` — `/named`, under a URL naming the same file.
 //! - `GET /redirect`  — 307 to `/file`.
 //! - `GET /missing`   — 404.
 //! - `GET /ranged`    — payload, full+correct `Range`/`If-Range` support.
 //! - `GET /slow`      — like `/ranged` but streamed slowly (a kill/pause window).
+//! - `GET /named-slow` — `/slow` plus `/named`'s `Content-Disposition`.
 //! - `GET /norange`   — always 200, full body, never honours `Range`.
 //! - `GET /liar`      — advertises `Accept-Ranges` but ignores `Range` (200).
 //! - `GET /flaky`     — supports ranges; drops the connection mid-body for the
@@ -78,14 +80,14 @@ async fn file_handler() -> impl IntoResponse {
     )
 }
 
+/// `Content-Disposition` served by the named routes.
+const NAMED_DISPOSITION: &str = "attachment; filename=\"report-final.bin\"";
+
 async fn named_handler() -> impl IntoResponse {
     (
         [
             (header::CONTENT_TYPE, "application/octet-stream"),
-            (
-                header::CONTENT_DISPOSITION,
-                "attachment; filename=\"report-final.bin\"",
-            ),
+            (header::CONTENT_DISPOSITION, NAMED_DISPOSITION),
         ],
         payload(),
     )
@@ -186,11 +188,20 @@ async fn ranged_handler(headers: HeaderMap) -> Response {
 /// chunks with a short delay — a window to kill or pause mid-stream. Range and
 /// If-Range are honoured so a resume finishes quickly.
 async fn slow_handler(headers: HeaderMap) -> Response {
+    slow_response(&headers, None)
+}
+
+/// `/named-slow`: `/slow` with a `Content-Disposition` filename.
+async fn named_slow_handler(headers: HeaderMap) -> Response {
+    slow_response(&headers, Some(NAMED_DISPOSITION))
+}
+
+fn slow_response(headers: &HeaderMap, disposition: Option<&str>) -> Response {
     let etag = "\"v1\"";
     let body = payload();
     let total = body.len();
-    let range_start = parse_range_start(&headers);
-    let validator_ok = if_range_matches(&headers, etag);
+    let range_start = parse_range_start(headers);
+    let validator_ok = if_range_matches(headers, etag);
 
     let (status, start, slice): (StatusCode, u64, Vec<u8>) = match range_start {
         Some(s) if validator_ok && (s as usize) < total => {
@@ -216,6 +227,9 @@ async fn slow_handler(headers: HeaderMap) -> Response {
         .header(header::LAST_MODIFIED, LAST_MODIFIED)
         .header(header::CONTENT_TYPE, "application/octet-stream")
         .header(header::CONTENT_LENGTH, slice_len);
+    if let Some(cd) = disposition {
+        builder = builder.header(header::CONTENT_DISPOSITION, cd);
+    }
     if status == StatusCode::PARTIAL_CONTENT {
         let last = total as u64 - 1;
         builder = builder.header(
@@ -381,6 +395,8 @@ pub async fn spawn() -> TestServer {
     let app = Router::new()
         .route("/file", get(file_handler))
         .route("/named", get(named_handler))
+        .route("/named/report-final.bin", get(named_handler))
+        .route("/named-slow", get(named_slow_handler))
         .route("/redirect", get(redirect_handler))
         .route("/missing", get(missing_handler))
         .route("/ranged", get(ranged_handler))

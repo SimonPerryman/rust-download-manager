@@ -24,7 +24,9 @@ pub use retry::RetryPolicy;
 pub use state::DownloadState;
 pub use store::{DownloadRecord, JsonStore, Status, Store, StoreData};
 
+use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 use futures_util::StreamExt;
@@ -49,6 +51,33 @@ pub struct DownloadRequest {
     pub retry: RetryPolicy,
     /// Optional checksum to verify the finished file against.
     pub checksum: Option<Checksum>,
+    /// Optional hook to claim the derived target before anything is written;
+    /// ignored when `out` is set.
+    pub claim_target: Option<ClaimTarget>,
+}
+
+/// A hook handed the target the engine derived from the first response
+/// (`dir` + server/URL filename); its returned path is used instead. Lets a
+/// caller that owns many downloads dedup paths while still honouring the
+/// server's `Content-Disposition` name. Called at most once per [`download`].
+#[derive(Clone)]
+pub struct ClaimTarget(Arc<dyn Fn(&Path) -> PathBuf + Send + Sync>);
+
+impl ClaimTarget {
+    /// Wrap a function mapping the proposed target to the path to use.
+    pub fn new(f: impl Fn(&Path) -> PathBuf + Send + Sync + 'static) -> Self {
+        Self(Arc::new(f))
+    }
+
+    fn claim(&self, proposed: &Path) -> PathBuf {
+        (self.0)(proposed)
+    }
+}
+
+impl fmt::Debug for ClaimTarget {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ClaimTarget(..)")
+    }
 }
 
 impl DownloadRequest {
@@ -61,6 +90,7 @@ impl DownloadRequest {
             out: None,
             retry: RetryPolicy::default(),
             checksum: None,
+            claim_target: None,
         }
     }
 
@@ -73,6 +103,7 @@ impl DownloadRequest {
             out: Some(out),
             retry: RetryPolicy::default(),
             checksum: None,
+            claim_target: None,
         }
     }
 
@@ -85,6 +116,16 @@ impl DownloadRequest {
     /// Require the finished file to match `checksum` (builder).
     pub fn with_checksum(mut self, checksum: Checksum) -> Self {
         self.checksum = Some(checksum);
+        self
+    }
+
+    /// Let `claim` choose the final target from the derived one (builder);
+    /// see [`ClaimTarget`].
+    pub fn with_claim_target(
+        mut self,
+        claim: impl Fn(&Path) -> PathBuf + Send + Sync + 'static,
+    ) -> Self {
+        self.claim_target = Some(ClaimTarget::new(claim));
         self
     }
 }
@@ -143,14 +184,15 @@ pub async fn download(
     let client = reqwest::Client::builder().user_agent(USER_AGENT).build()?;
 
     // The target may not be known until the first response (derived filename),
-    // but when it is known up front we can detect an existing resume.
-    let known_target = req.out.clone();
+    // but when it is known up front we can detect an existing resume. A claimed
+    // target is remembered here so retries reuse it instead of re-claiming.
+    let mut known_target = req.out.clone();
 
     tracing::info!(url = %req.url, "download started");
     let mut attempt: u32 = 0;
     loop {
         attempt += 1;
-        match attempt_download(&client, req, control, &known_target, &mut on_progress).await {
+        match attempt_download(&client, req, control, &mut known_target, &mut on_progress).await {
             Ok((status, final_path, bytes)) => {
                 return finalize(req, &final_path, bytes, status).await;
             }
@@ -181,11 +223,11 @@ async fn attempt_download(
     client: &reqwest::Client,
     req: &DownloadRequest,
     control: &Control,
-    known_target: &Option<PathBuf>,
+    known_target: &mut Option<PathBuf>,
     on_progress: &mut impl FnMut(Progress),
 ) -> Result<(u16, PathBuf, u64)> {
     // If we already know the target and a prior `.part`+sidecar exist, resume.
-    if let Some(target) = known_target {
+    if let Some(target) = known_target.as_deref() {
         let part = state::part_path(target);
         let sidecar = state::sidecar_path(target);
         if part.exists() && sidecar.exists() {
@@ -219,11 +261,19 @@ async fn attempt_download(
     let etag = header_str(resp.headers(), header::ETAG);
     let last_modified = header_str(resp.headers(), header::LAST_MODIFIED);
 
-    let target = match &req.out {
-        Some(out) => out.clone(),
+    let target = match known_target.as_ref() {
+        Some(known) => known.clone(),
         None => {
             let name = filename::resolve(None, final_url.as_str(), content_disposition.as_deref());
-            req.dir.join(name)
+            let derived = req.dir.join(name);
+            match &req.claim_target {
+                Some(claim) => {
+                    let claimed = claim.claim(&derived);
+                    *known_target = Some(claimed.clone());
+                    claimed
+                }
+                None => derived,
+            }
         }
     };
     ensure_parent(&target).await?;
