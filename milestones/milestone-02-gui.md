@@ -36,15 +36,51 @@ to test regardless.
 ## Tasks
 - [x] Toolkit decision recorded (with the agentic-testing trade-off noted) —
       Tauri + React/shadcn/Tailwind; design approved in `.ai-cache/mockups/slick.html`.
-- [ ] Engine API reviewed/extended for GUI needs (observe + control downloads).
-- [ ] Download list view with live progress/speed/ETA.
-- [ ] Add-download flow; pause/resume/cancel controls.
-- [ ] Persistence layer for downloads + history.
+- [x] Engine API reviewed/extended for GUI needs (observe + control downloads) —
+      engine-side `Manager` + swappable `Store`/`JsonStore` (`src/engine/manager.rs`,
+      `src/engine/store.rs`), observed via a `watch` channel of `DownloadSnapshot`s.
+- [x] Download list view with live progress/speed/ETA — Active/History tabs,
+      per-status rows rendered from the engine's snapshots.
+- [x] Add-download flow; pause/resume/cancel controls — Add dialog + per-row
+      controls wired to thin Tauri commands over the `Manager`.
+- [x] Persistence layer for downloads + history — JSON v1 at `~/.rdm/state.json`
+      behind the `Store` boundary; SQLite deferred (roadmap backlog).
 
 ## Acceptance criteria
 _Standing gates (fmt/clippy/test/CI) live in AGENTS.md's Definition of Done and
 apply here without being restated._
-- [ ] Start, pause, and resume a download entirely from the GUI.
-- [ ] Downloads + history survive an app restart.
-- [ ] The GUI contains no download logic — it only calls the engine
-      (verified by inspection; engine tests remain the source of truth).
+- [x] Start, pause, and resume a download entirely from the GUI — the GUI's
+      Pause/Resume controls call `Manager::pause`/`resume`; the behaviour is
+      asserted deterministically at the engine layer by
+      `tests/manager.rs::pause_then_resume_completes` (byte-identical result).
+- [x] Downloads + history survive an app restart — asserted by
+      `tests/manager.rs::list_and_history_survive_restart` (a new `Manager` over
+      the same store restores a completed and a paused download; the paused one
+      still resumes). The GUI persists to `~/.rdm/state.json`.
+- [x] The GUI contains no download logic — it only calls the engine (verified by
+      inspection: every Tauri command is a 1–3 line pass-through to `Manager`;
+      `rdm-gui` is a separate workspace crate and the engine/CLI never depend on
+      Tauri/Node/webview).
+
+## Implementation notes
+- **Observation:** `Manager` exposes `snapshot()` + `subscribe()` (a
+  `tokio::sync::watch` of `Vec<DownloadSnapshot>`), with coalesced publishing
+  (~10 Hz on progress, immediate on lifecycle changes) so UI update rate is
+  decoupled from chunk rate. The Tauri layer re-emits snapshots as a
+  `downloads-changed` event.
+- **Layout:** Cargo workspace; `rdm` stays at the repo root, the GUI is the
+  `rdm-gui` member at `gui/src-tauri`. `default-members = ["."]` keeps the
+  default `cargo build`/`cargo test` gate engine/CLI-only and Tauri-free; a new
+  CI `gui` job builds the frontend + `rdm-gui` with webview deps.
+- **Known limitations (deferred, not blocking):**
+  - GUI downloads use a URL-derived filename, not the server's
+    `Content-Disposition` name (the CLI keeps CD naming). The `Manager` resolves
+    an explicit target up front so it owns every path; liftable later by having
+    the engine report the resolved path through the progress callback.
+  - No live "Retrying" status: the engine retries transient failures inside a
+    single `download()` call, so a retry isn't an observable managed state. The
+    mockup's "Retrying" row renders as Failed (retryable via Retry → resume).
+  - End-to-end webview/Playwright automation of the GUI is not included; the
+    behavioural ACs are proven at the `Manager` layer (above) and the GUI is a
+    thin, inspected pass-through. A manual GUI smoke (`npm run tauri dev` in
+    `gui/`) is recommended.
