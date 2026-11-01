@@ -71,6 +71,10 @@ workspace crate) that drives the same engine — so the CLI and engine never
 depend on Tauri, Node, or a webview, and a headless server build stays fully
 functional. Your download list and history are stored in `~/.rdm/state.json`.
 
+To add a download, click **Add download**, drag a link (or the address bar's
+URL) from your browser onto the window, or press Ctrl/Cmd+V with an `http(s)`
+URL on the clipboard — the latter two open the Add dialog pre-filled.
+
 Prerequisites: [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/), and the
 [Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) for your
 OS (on Windows, the WebView2 runtime, which ships with Windows 11).
@@ -83,6 +87,7 @@ pnpm tauri build        # produce a release bundle/installer
 
 pnpm lint               # lint the frontend (oxlint)
 pnpm format             # format the frontend (oxfmt); pnpm format:check to verify
+pnpm test               # frontend unit tests (vitest)
 ```
 
 Troubleshooting: the GUI logs to stderr and to `~/.rdm/rdm.log` (download

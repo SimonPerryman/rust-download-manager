@@ -4,13 +4,14 @@ import { Folder } from "./icons";
 
 type Props = {
   open: boolean;
+  initialUrl?: string;
   onClose: () => void;
 };
 
 // The Add-download modal. Destination defaults to the OS download dir; Browse
 // opens a native folder picker; Add calls `add_download` then closes. The
 // backend owns everything after that — this dialog is just a form.
-export function AddDialog({ open, onClose }: Props) {
+export function AddDialog({ open, initialUrl = "", onClose }: Props) {
   const [url, setUrl] = useState("");
   const [dest, setDest] = useState("");
   const [checksum, setChecksum] = useState("");
@@ -18,17 +19,17 @@ export function AddDialog({ open, onClose }: Props) {
   const [busy, setBusy] = useState(false);
 
   // Prime the destination field with the OS download dir each time it opens,
-  // and reset transient state.
+  // and reset transient state (the URL may arrive pre-filled from drop/paste).
   useEffect(() => {
     if (!open) return;
     setError(null);
-    setUrl("");
+    setUrl(initialUrl);
     setChecksum("");
     api
       .defaultDownloadDir()
       .then(setDest)
       .catch(() => setDest(""));
-  }, [open]);
+  }, [open, initialUrl]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

@@ -105,6 +105,10 @@ jobs:
         working-directory: gui
         run: pnpm format:check
 
+      - name: Unit-test frontend (vitest)
+        working-directory: gui
+        run: pnpm test
+
       # Build the static frontend first: `cargo build -p rdm-gui` embeds
       # gui/dist via tauri::generate_context!, so it must exist beforehand.
       # `pnpm build` also typechecks the frontend (tsc).
