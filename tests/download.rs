@@ -80,6 +80,52 @@ async fn explicit_output_path_is_honoured() {
     assert_eq!(std::fs::read(&out).unwrap(), common::payload());
 }
 
+/// A claim hook receives the `Content-Disposition`-derived target and the
+/// engine writes to whatever path it returns instead.
+#[tokio::test]
+async fn claim_target_hook_chooses_derived_path() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let claimed = dir.path().join("claimed.bin");
+
+    let proposals = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (seen, chosen) = (proposals.clone(), claimed.clone());
+    let req = DownloadRequest::new(server.url("/named"), dir.path()).with_claim_target(
+        move |proposed: &std::path::Path| {
+            seen.lock().unwrap().push(proposed.to_path_buf());
+            chosen.clone()
+        },
+    );
+    let summary = download(&req, &Control::new(), |_| {}).await.unwrap();
+
+    assert_eq!(
+        *proposals.lock().unwrap(),
+        vec![dir.path().join("report-final.bin")]
+    );
+    assert_eq!(summary.path, claimed);
+    assert_eq!(std::fs::read(&claimed).unwrap(), common::payload());
+    assert!(!dir.path().join("report-final.bin").exists());
+}
+
+/// With an explicit output path there is nothing to claim: the hook never runs.
+#[tokio::test]
+async fn explicit_output_path_skips_claim_hook() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("chosen.dat");
+
+    let calls = Arc::new(AtomicU64::new(0));
+    let counter = calls.clone();
+    let req = DownloadRequest::to_path(server.url("/named"), &out).with_claim_target(move |p| {
+        counter.fetch_add(1, Ordering::SeqCst);
+        p.to_path_buf()
+    });
+    let summary = download(&req, &Control::new(), |_| {}).await.unwrap();
+
+    assert_eq!(summary.path, out);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
 /// Redirects are followed to completion.
 #[tokio::test]
 async fn follows_redirects() {

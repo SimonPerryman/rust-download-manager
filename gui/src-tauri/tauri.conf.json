@@ -12,11 +12,14 @@
   "app": {
     "windows": [
       {
+        "label": "main",
+        "create": false,
         "title": "rdm",
         "width": 900,
         "height": 700,
         "minWidth": 640,
-        "minHeight": 480
+        "minHeight": 480,
+        "dragDropEnabled": false
       }
     ],
     "security": {

@@ -66,6 +66,11 @@ pub struct DownloadRecord {
     pub url: String,
     /// Planned target path; the engine writes `<target>.part` then renames.
     pub target: PathBuf,
+    /// `target` is only a URL-derived placeholder: the real name (e.g. from
+    /// `Content-Disposition`) is claimed on the first response. Nothing is on
+    /// disk at a provisional target.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub target_provisional: bool,
     /// Final path once completed (may differ from `target` via a collision
     /// rename).
     #[serde(default)]
@@ -201,6 +206,7 @@ mod tests {
             id,
             url: format!("https://example.com/{id}"),
             target: PathBuf::from(format!("/tmp/file-{id}.bin")),
+            target_provisional: status == Status::Paused,
             final_path: None,
             checksum: None,
             status,
@@ -273,6 +279,7 @@ mod tests {
         assert_eq!(rec.downloaded, 0);
         assert_eq!(rec.total, None);
         assert_eq!(rec.checksum, None);
+        assert!(!rec.target_provisional);
     }
 
     #[test]

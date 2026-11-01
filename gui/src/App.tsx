@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import * as api from "./lib/api";
+import { useUrlIntake } from "./lib/useUrlIntake";
 import type { DownloadSnapshot } from "./lib/types";
 import { TopBar } from "./components/TopBar";
 import { Tabs, type Tab } from "./components/Tabs";
 import { DownloadList } from "./components/DownloadList";
 import { AddDialog } from "./components/AddDialog";
+import { DropOverlay } from "./components/DropOverlay";
 
 const ACTIVE = new Set(["queued", "downloading", "paused"]);
 
@@ -12,6 +14,13 @@ export default function App() {
   const [downloads, setDownloads] = useState<DownloadSnapshot[]>([]);
   const [tab, setTab] = useState<Tab>("active");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [prefillUrl, setPrefillUrl] = useState("");
+
+  const openAdd = useCallback((url = "") => {
+    setPrefillUrl(url);
+    setDialogOpen(true);
+  }, []);
+  const draggingUrl = useUrlIntake(openAdd, !dialogOpen);
 
   // Seed with a one-shot snapshot, then track the backend's live event stream.
   // All state flows from the engine; the UI never computes download state.
@@ -32,11 +41,7 @@ export default function App() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-5xl flex-col">
-      <TopBar
-        onAdd={() => setDialogOpen(true)}
-        onPauseAll={() => api.pauseAll()}
-        canPauseAll={canPauseAll}
-      />
+      <TopBar onAdd={() => openAdd()} onPauseAll={() => api.pauseAll()} canPauseAll={canPauseAll} />
 
       <main className="flex-1 px-5 py-6">
         <div className="mb-5 flex items-end justify-between">
@@ -72,7 +77,8 @@ export default function App() {
         )}
       </main>
 
-      <AddDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+      <AddDialog open={dialogOpen} initialUrl={prefillUrl} onClose={() => setDialogOpen(false)} />
+      {draggingUrl && <DropOverlay />}
     </div>
   );
 }

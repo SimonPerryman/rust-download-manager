@@ -73,14 +73,21 @@ apply here without being restated._
   default `cargo build`/`cargo test` gate engine/CLI-only and Tauri-free; a new
   CI `gui` job builds the frontend + `rdm-gui` with webview deps.
 - **Known limitations (deferred, not blocking):**
-  - GUI downloads use a URL-derived filename, not the server's
-    `Content-Disposition` name (the CLI keeps CD naming). The `Manager` resolves
-    an explicit target up front so it owns every path; liftable later by having
-    the engine report the resolved path through the progress callback.
+  - ~~GUI downloads use a URL-derived filename, not the server's
+    `Content-Disposition` name.~~ Resolved in the M2 polish round: the engine
+    takes an optional `ClaimTarget` hook on `DownloadRequest`, and the `Manager`
+    uses it to claim (and dedup) the server-derived name on the first response,
+    showing a URL-derived placeholder until then.
   - No live "Retrying" status: the engine retries transient failures inside a
     single `download()` call, so a retry isn't an observable managed state. The
     mockup's "Retrying" row renders as Failed (retryable via Retry → resume).
-  - End-to-end webview/Playwright automation of the GUI is not included; the
-    behavioural ACs are proven at the `Manager` layer (above) and the GUI is a
-    thin, inspected pass-through. A manual GUI smoke (`npm run tauri dev` in
-    `gui/`) is recommended.
+  - ~~End-to-end webview automation of the GUI is not included.~~ Resolved in
+    the M2 polish round: `gui/e2e/` is a WebdriverIO + tauri-driver suite that
+    drives the real app against the loopback fixture server (the
+    `fixture_server` example), with state isolated via `RDM_HOME` /
+    `RDM_DOWNLOAD_DIR`. It covers add via the Add dialog (with the
+    `Content-Disposition` name), pause/resume to a byte-checked completion, a
+    paused download restored after an app restart, display settings, and
+    paste/drop intake; CI runs it in an `e2e` job on Linux (xvfb). Display
+    settings are checked across a reload rather than a restart: msedgedriver
+    gives each session a throwaway webview profile.

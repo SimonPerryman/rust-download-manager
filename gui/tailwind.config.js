@@ -43,6 +43,22 @@ export default {
           foreground: "hsl(var(--brand-foreground))",
         },
       },
+      // Density-driven row metrics; values live in index.css per data-density.
+      spacing: {
+        "row-px": "var(--row-px)",
+        "row-py": "var(--row-py)",
+        "row-gap": "var(--row-gap)",
+        "row-icon": "var(--row-icon)",
+        "row-glyph": "var(--row-glyph)",
+        "row-action": "var(--row-action)",
+        "row-stack": "var(--row-stack)",
+        "row-stack-sm": "var(--row-stack-sm)",
+        "row-note": "var(--row-note)",
+      },
+      fontSize: {
+        "row-title": ["var(--row-title)", { lineHeight: "var(--row-title-lh)" }],
+        "row-meta": ["var(--row-meta)", { lineHeight: "var(--row-meta-lh)" }],
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",

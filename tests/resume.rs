@@ -224,6 +224,29 @@ async fn flaky_server_retries_to_completion() {
     assert_eq!(summary.bytes, full.len() as u64);
 }
 
+/// A claimed target is kept across retries: the hook runs once and the retried
+/// attempts resume the claimed `.part`.
+#[tokio::test]
+async fn claim_hook_runs_once_across_retries() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let claimed = dir.path().join("claimed.bin");
+
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let (counter, chosen) = (calls.clone(), claimed.clone());
+    let req = DownloadRequest::new(server.url("/flaky"), dir.path())
+        .with_retry(fast_retry())
+        .with_claim_target(move |_| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            chosen.clone()
+        });
+    let summary = download(&req, &Control::new(), |_| {}).await.unwrap();
+
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(summary.path, claimed);
+    assert_eq!(std::fs::read(&claimed).unwrap(), common::payload());
+}
+
 /// AC: Integrity — a correct checksum succeeds.
 #[tokio::test]
 async fn checksum_match_succeeds() {

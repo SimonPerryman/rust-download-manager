@@ -25,7 +25,7 @@ fn list(state: State<'_, AppState>) -> Vec<DownloadSnapshot> {
     state.manager.snapshot()
 }
 
-/// Add a download. `dir` defaults to the OS download directory; `checksum`, if
+/// Add a download. `dir` defaults to [`default_dir`]; `checksum`, if
 /// given, must parse as `"sha256:<hex>"`. Returns the new download's id.
 #[tauri::command]
 fn add_download(
@@ -82,7 +82,7 @@ fn pause_all(state: State<'_, AppState>) {
     }
 }
 
-/// The OS download directory, as a string (for the Add dialog's default).
+/// The default download directory, as a string (for the Add dialog's default).
 #[tauri::command]
 fn default_download_dir(app: tauri::AppHandle) -> Result<String, String> {
     Ok(default_dir(&app)?.to_string_lossy().into_owned())
@@ -115,8 +115,27 @@ fn reveal_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Resolve the OS download directory, falling back to home then the cwd.
+/// Overrides the state/log directory (default `~/.rdm`), and puts the webview
+/// profile (localStorage) under it too. Lets automated runs (the webview E2E
+/// suite) stay off the developer's real download list and display settings.
+const HOME_ENV: &str = "RDM_HOME";
+
+/// Overrides the Add dialog's default download directory (default: the OS one).
+const DOWNLOAD_DIR_ENV: &str = "RDM_DOWNLOAD_DIR";
+
+/// A non-empty path from environment variable `key`, if set.
+fn env_dir(key: &str) -> Option<PathBuf> {
+    std::env::var_os(key)
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Resolve the default download directory: `RDM_DOWNLOAD_DIR`, else the OS
+/// download directory, else home.
 fn default_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    if let Some(dir) = env_dir(DOWNLOAD_DIR_ENV) {
+        return Ok(dir);
+    }
     let paths = app.path();
     paths
         .download_dir()
@@ -151,10 +170,13 @@ fn init_logging(dir: &std::path::Path) {
         .try_init();
 }
 
-/// Build the `Manager` over `~/.rdm/state.json` and spawn the snapshot bridge.
+/// Build the `Manager` over `~/.rdm/state.json` (or `$RDM_HOME/state.json`) and
+/// spawn the snapshot bridge.
 fn init_manager(app: &tauri::AppHandle) -> Result<Arc<Manager>, Box<dyn std::error::Error>> {
-    let home = app.path().home_dir()?;
-    let dir = home.join(".rdm");
+    let dir = match env_dir(HOME_ENV) {
+        Some(dir) => dir,
+        None => app.path().home_dir()?.join(".rdm"),
+    };
     std::fs::create_dir_all(&dir)?;
     init_logging(&dir);
     let store = JsonStore::new(dir.join("state.json"));
@@ -188,6 +210,25 @@ fn init_manager(app: &tauri::AppHandle) -> Result<Arc<Manager>, Box<dyn std::err
     Ok(manager)
 }
 
+/// Create the main window from its `tauri.conf.json` entry (marked
+/// `create: false` so it's built here), with the webview profile under
+/// `$RDM_HOME/webview` when that override is set (ignored on macOS).
+fn create_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == "main")
+        .ok_or("tauri.conf.json defines no \"main\" window")?;
+    let mut builder = tauri::WebviewWindowBuilder::from_config(app, config)?;
+    if let Some(home) = env_dir(HOME_ENV) {
+        builder = builder.data_directory(home.join("webview"));
+    }
+    builder.build()?;
+    Ok(())
+}
+
 /// Build and run the Tauri application.
 ///
 /// # Panics
@@ -200,6 +241,7 @@ pub fn run() {
         .setup(|app| {
             let manager = init_manager(app.handle())?;
             app.manage(AppState { manager });
+            create_main_window(app.handle())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

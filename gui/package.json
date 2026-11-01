@@ -8,9 +8,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "lint": "oxlint src",
-    "format": "oxfmt src",
-    "format:check": "oxfmt --check src",
+    "lint": "oxlint src e2e",
+    "format": "oxfmt src e2e",
+    "format:check": "oxfmt --check src e2e",
+    "test": "vitest run",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -31,6 +32,7 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vitest": "^3.2.7"
   }
 }

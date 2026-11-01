@@ -327,3 +327,175 @@ fn add_from_sync_context_without_ambient_runtime() {
         "download added from a sync context should complete"
     );
 }
+
+/// The final snapshot of download `id`, panicking if it never completes.
+async fn completed(mgr: &Manager, id: u64) -> DownloadSnapshot {
+    wait_for(mgr, id, T, |s| s.status == Status::Completed)
+        .await
+        .unwrap_or_else(|| panic!("download {id} never completed"))
+}
+
+/// Without an explicit `out`, the manager honours the server's
+/// `Content-Disposition` filename (the URL itself names `named`).
+#[tokio::test]
+async fn add_uses_content_disposition_name() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+
+    let id = mgr.add(server.url("/named"), dir.path(), None, None);
+    let snap = completed(&mgr, id).await;
+
+    let expected = dir.path().join("report-final.bin");
+    assert_eq!(snap.filename, "report-final.bin");
+    assert_eq!(snap.target, expected);
+    assert_eq!(snap.final_path.as_deref(), Some(expected.as_path()));
+    assert_eq!(std::fs::read(&expected).unwrap(), common::payload());
+    assert!(!dir.path().join("named").exists());
+}
+
+/// A download's own URL-derived placeholder never counts as "taken" when it
+/// claims the same name from `Content-Disposition`.
+#[tokio::test]
+async fn claim_does_not_collide_with_own_placeholder() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+
+    let id = mgr.add(
+        server.url("/named/report-final.bin"),
+        dir.path(),
+        None,
+        None,
+    );
+    let snap = completed(&mgr, id).await;
+    assert_eq!(snap.filename, "report-final.bin");
+}
+
+/// Concurrent downloads claiming the same server name get distinct targets, so
+/// their `.part` files never collide, and both finish byte-identical.
+#[tokio::test]
+async fn concurrent_same_name_downloads_are_deduplicated() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+
+    let a = mgr.add(server.url("/named-slow"), dir.path(), None, None);
+    let b = mgr.add(server.url("/named-slow"), dir.path(), None, None);
+    let (a, b) = (completed(&mgr, a).await, completed(&mgr, b).await);
+
+    let mut names = vec![a.filename.clone(), b.filename.clone()];
+    names.sort();
+    assert_eq!(names, ["report-final (1).bin", "report-final.bin"]);
+    for snap in [a, b] {
+        let path = snap.final_path.unwrap();
+        assert_eq!(path, snap.target, "no finalize-time rename was needed");
+        assert_eq!(std::fs::read(path).unwrap(), common::payload());
+    }
+}
+
+/// An existing file on disk is not clobbered by a claimed name.
+#[tokio::test]
+async fn claim_avoids_existing_file() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let existing = dir.path().join("report-final.bin");
+    std::fs::write(&existing, b"keep me").unwrap();
+    let mgr = manager_in(dir.path());
+
+    let id = mgr.add(server.url("/named"), dir.path(), None, None);
+    let snap = completed(&mgr, id).await;
+
+    assert_eq!(snap.filename, "report-final (1).bin");
+    assert_eq!(std::fs::read(&existing).unwrap(), b"keep me");
+    assert_eq!(
+        std::fs::read(snap.final_path.unwrap()).unwrap(),
+        common::payload()
+    );
+}
+
+/// A claimed name survives an app restart: a download paused after claiming its
+/// `Content-Disposition` name resumes under that name in a fresh manager.
+#[tokio::test]
+async fn claimed_name_survives_restart_and_resumes() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let expected = dir.path().join("report-final.bin");
+
+    let id;
+    {
+        let mgr = manager_in(dir.path());
+        id = mgr.add(server.url("/named-slow"), dir.path(), None, None);
+        let placeholder = mgr.snapshot().into_iter().find(|s| s.id == id).unwrap();
+        assert_eq!(
+            placeholder.filename, "named-slow",
+            "URL-derived until claimed"
+        );
+        let partial = wait_for(&mgr, id, T, |s| s.downloaded > 0).await.unwrap();
+        assert_eq!(partial.target, expected, "claimed before bytes stream");
+        mgr.pause(id);
+        assert!(wait_status(&mgr, id, Status::Paused, T).await);
+        assert!(state::part_path(&expected).exists());
+    }
+
+    let mgr = manager_in(dir.path());
+    let restored = mgr.snapshot().into_iter().find(|s| s.id == id).unwrap();
+    assert_eq!(restored.status, Status::Paused);
+    assert_eq!(restored.filename, "report-final.bin");
+    assert!(
+        restored.downloaded > 0,
+        "progress restored from the `.part`"
+    );
+
+    mgr.resume(id);
+    let snap = completed(&mgr, id).await;
+    assert_eq!(snap.final_path.as_deref(), Some(expected.as_path()));
+    assert_eq!(std::fs::read(&expected).unwrap(), common::payload());
+}
+
+/// An explicit `out` is used as-is; the server's name is never claimed.
+#[tokio::test]
+async fn explicit_out_ignores_content_disposition() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    let out = dir.path().join("chosen.dat");
+
+    let id = mgr.add(server.url("/named"), dir.path(), Some(out.clone()), None);
+    let snap = completed(&mgr, id).await;
+    assert_eq!(snap.final_path, Some(out));
+    assert!(!dir.path().join("report-final.bin").exists());
+}
+
+/// A download restored before it ever claimed a name owns nothing on disk:
+/// cancelling it must not delete a same-named `.part` belonging to another.
+#[tokio::test]
+async fn cancelling_unclaimed_download_leaves_other_partials() {
+    let dir = tempfile::tempdir().unwrap();
+    let placeholder = dir.path().join("shared.bin");
+    let other_part = state::part_path(&placeholder);
+    std::fs::write(&other_part, b"someone else's bytes").unwrap();
+    let doc = serde_json::json!({
+        "next_id": 2,
+        "downloads": [{
+            "id": 1,
+            "url": "http://127.0.0.1:9/shared.bin",
+            "target": placeholder,
+            "target_provisional": true,
+            "status": "downloading",
+        }],
+    });
+    std::fs::write(dir.path().join("state.json"), doc.to_string()).unwrap();
+
+    let mgr = manager_in(dir.path());
+    let restored = mgr.snapshot().into_iter().find(|s| s.id == 1).unwrap();
+    assert_eq!(restored.status, Status::Paused);
+    assert_eq!(
+        restored.downloaded, 0,
+        "another download's `.part` is not ours"
+    );
+
+    mgr.cancel(1);
+    assert!(wait_status(&mgr, 1, Status::Cancelled, T).await);
+    assert!(other_part.exists());
+}

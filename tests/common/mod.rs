@@ -10,16 +10,22 @@
 //! # Fixture route contract
 //! - `GET /file`      — payload with `Content-Length`; no range support.
 //! - `GET /named`     — payload with a `Content-Disposition` filename.
+//! - `GET /named/report-final.bin` — `/named`, under a URL naming the same file.
 //! - `GET /redirect`  — 307 to `/file`.
 //! - `GET /missing`   — 404.
 //! - `GET /ranged`    — payload, full+correct `Range`/`If-Range` support.
 //! - `GET /slow`      — like `/ranged` but streamed slowly (a kill/pause window).
+//! - `GET /named-slow` — `/slow` plus `/named`'s `Content-Disposition`.
 //! - `GET /norange`   — always 200, full body, never honours `Range`.
 //! - `GET /liar`      — advertises `Accept-Ranges` but ignores `Range` (200).
 //! - `GET /flaky`     — supports ranges; drops the connection mid-body for the
 //!   first `FLAKY_FAILURES` requests, then serves fully.
 //! - `GET /mutable`   — serves the current version with `Range`/`If-Range`.
 //! - `GET /mutable/bump` — flip `/mutable` to v2 (new bytes, length, ETag).
+//!
+//! The same routes back the GUI's webview E2E suite through the
+//! `fixture_server` example, which serves them on a fixed port with a slower
+//! `/slow` so a human-speed UI click can land mid-stream.
 
 #![allow(dead_code)] // Not every test binary uses every helper.
 
@@ -47,8 +53,9 @@ const FLAKY_FAILURES: usize = 2;
 /// Bytes streamed per chunk by the slow/flaky streaming bodies.
 const STREAM_CHUNK: usize = 4 * 1024;
 
-/// Per-chunk delay for `/slow`, opening a window to kill/pause mid-stream.
-const SLOW_CHUNK_DELAY: Duration = Duration::from_millis(15);
+/// Default per-chunk delay for `/slow`, opening a window to kill/pause
+/// mid-stream.
+pub const SLOW_CHUNK_DELAY: Duration = Duration::from_millis(15);
 
 /// Deterministic payload served by the fixture (just under 100 KB, enough to
 /// span many chunks). Reproduced byte-for-byte on every call.
@@ -62,9 +69,11 @@ pub fn payload_v2() -> Vec<u8> {
     (0..61_237u32).map(|i| ((i % 241) as u8) ^ 0x5a).collect()
 }
 
-/// Mutable-resource version state behind `/mutable`.
+/// Per-server state: route counters and the `/mutable` version.
 #[derive(Default)]
 struct AppState {
+    /// `/slow`, `/named-slow`: delay between streamed chunks.
+    slow_chunk_delay: Duration,
     /// `/flaky`: how many requests have been served so far.
     flaky_hits: AtomicUsize,
     /// `/mutable`: `false` = v1 (`payload`), `true` = v2 (`payload_v2`).
@@ -78,14 +87,14 @@ async fn file_handler() -> impl IntoResponse {
     )
 }
 
+/// `Content-Disposition` served by the named routes.
+const NAMED_DISPOSITION: &str = "attachment; filename=\"report-final.bin\"";
+
 async fn named_handler() -> impl IntoResponse {
     (
         [
             (header::CONTENT_TYPE, "application/octet-stream"),
-            (
-                header::CONTENT_DISPOSITION,
-                "attachment; filename=\"report-final.bin\"",
-            ),
+            (header::CONTENT_DISPOSITION, NAMED_DISPOSITION),
         ],
         payload(),
     )
@@ -185,12 +194,21 @@ async fn ranged_handler(headers: HeaderMap) -> Response {
 /// `/slow`: same semantics as `/ranged`, but the body is streamed in small
 /// chunks with a short delay — a window to kill or pause mid-stream. Range and
 /// If-Range are honoured so a resume finishes quickly.
-async fn slow_handler(headers: HeaderMap) -> Response {
+async fn slow_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    slow_response(&headers, None, state.slow_chunk_delay)
+}
+
+/// `/named-slow`: `/slow` with a `Content-Disposition` filename.
+async fn named_slow_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    slow_response(&headers, Some(NAMED_DISPOSITION), state.slow_chunk_delay)
+}
+
+fn slow_response(headers: &HeaderMap, disposition: Option<&str>, delay: Duration) -> Response {
     let etag = "\"v1\"";
     let body = payload();
     let total = body.len();
-    let range_start = parse_range_start(&headers);
-    let validator_ok = if_range_matches(&headers, etag);
+    let range_start = parse_range_start(headers);
+    let validator_ok = if_range_matches(headers, etag);
 
     let (status, start, slice): (StatusCode, u64, Vec<u8>) = match range_start {
         Some(s) if validator_ok && (s as usize) < total => {
@@ -207,7 +225,7 @@ async fn slow_handler(headers: HeaderMap) -> Response {
     };
 
     let slice_len = slice.len();
-    let stream_body = slow_stream(slice);
+    let stream_body = slow_stream(slice, delay);
 
     let mut builder = Response::builder()
         .status(status)
@@ -216,6 +234,9 @@ async fn slow_handler(headers: HeaderMap) -> Response {
         .header(header::LAST_MODIFIED, LAST_MODIFIED)
         .header(header::CONTENT_TYPE, "application/octet-stream")
         .header(header::CONTENT_LENGTH, slice_len);
+    if let Some(cd) = disposition {
+        builder = builder.header(header::CONTENT_DISPOSITION, cd);
+    }
     if status == StatusCode::PARTIAL_CONTENT {
         let last = total as u64 - 1;
         builder = builder.header(
@@ -227,14 +248,14 @@ async fn slow_handler(headers: HeaderMap) -> Response {
 }
 
 /// A body that yields `slice` a few KB at a time with a per-chunk delay.
-fn slow_stream(slice: Vec<u8>) -> Body {
+fn slow_stream(slice: Vec<u8>, delay: Duration) -> Body {
     // Hand-rolled stream without an extra dependency: chunk the buffer and
     // sleep between yields.
     let chunks: Vec<Vec<u8>> = slice.chunks(STREAM_CHUNK).map(|c| c.to_vec()).collect();
-    let s = futures_util::stream::unfold(chunks.into_iter(), |mut it| async move {
+    let s = futures_util::stream::unfold(chunks.into_iter(), move |mut it| async move {
         match it.next() {
             Some(chunk) => {
-                tokio::time::sleep(SLOW_CHUNK_DELAY).await;
+                tokio::time::sleep(delay).await;
                 Some((Ok::<_, std::io::Error>(axum::body::Bytes::from(chunk)), it))
             }
             None => None,
@@ -377,10 +398,30 @@ impl Drop for TestServer {
 /// Spawn the fixture on a random free loopback port. See the module-level
 /// contract for the full route list.
 pub async fn spawn() -> TestServer {
-    let state = Arc::new(AppState::default());
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind loopback");
+    let addr = listener.local_addr().expect("local addr");
+    let handle = tokio::spawn(serve(listener, SLOW_CHUNK_DELAY));
+
+    TestServer {
+        base: format!("http://{addr}"),
+        handle,
+    }
+}
+
+/// Serve the fixture routes on `listener` until the task is dropped, streaming
+/// `/slow` and `/named-slow` with `slow_chunk_delay` between chunks.
+pub async fn serve(listener: TcpListener, slow_chunk_delay: Duration) {
+    let state = Arc::new(AppState {
+        slow_chunk_delay,
+        ..AppState::default()
+    });
     let app = Router::new()
         .route("/file", get(file_handler))
         .route("/named", get(named_handler))
+        .route("/named/report-final.bin", get(named_handler))
+        .route("/named-slow", get(named_slow_handler))
         .route("/redirect", get(redirect_handler))
         .route("/missing", get(missing_handler))
         .route("/ranged", get(ranged_handler))
@@ -391,17 +432,5 @@ pub async fn spawn() -> TestServer {
         .route("/mutable", get(mutable_handler))
         .route("/mutable/bump", get(mutable_bump_handler))
         .with_state(state);
-
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind loopback");
-    let addr = listener.local_addr().expect("local addr");
-    let handle = tokio::spawn(async move {
-        axum::serve(listener, app).await.expect("serve");
-    });
-
-    TestServer {
-        base: format!("http://{addr}"),
-        handle,
-    }
+    axum::serve(listener, app).await.expect("serve");
 }

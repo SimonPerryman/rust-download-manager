@@ -4,13 +4,14 @@ import { Folder } from "./icons";
 
 type Props = {
   open: boolean;
+  initialUrl?: string;
   onClose: () => void;
 };
 
 // The Add-download modal. Destination defaults to the OS download dir; Browse
 // opens a native folder picker; Add calls `add_download` then closes. The
 // backend owns everything after that — this dialog is just a form.
-export function AddDialog({ open, onClose }: Props) {
+export function AddDialog({ open, initialUrl = "", onClose }: Props) {
   const [url, setUrl] = useState("");
   const [dest, setDest] = useState("");
   const [checksum, setChecksum] = useState("");
@@ -18,17 +19,17 @@ export function AddDialog({ open, onClose }: Props) {
   const [busy, setBusy] = useState(false);
 
   // Prime the destination field with the OS download dir each time it opens,
-  // and reset transient state.
+  // and reset transient state (the URL may arrive pre-filled from drop/paste).
   useEffect(() => {
     if (!open) return;
     setError(null);
-    setUrl("");
+    setUrl(initialUrl);
     setChecksum("");
     api
       .defaultDownloadDir()
       .then(setDest)
       .catch(() => setDest(""));
-  }, [open]);
+  }, [open, initialUrl]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -68,7 +69,12 @@ export function AddDialog({ open, onClose }: Props) {
         onClick={onClose}
         className="fixed inset-0 bg-black/60 backdrop-blur-[1px] transition-opacity"
       />
-      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 px-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add download"
+        className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 px-4"
+      >
         <div className="rounded-lg border border-border bg-card text-card-foreground shadow-lg">
           <div className="flex flex-col space-y-1.5 px-6 pb-4 pt-6">
             <h2 className="text-lg font-semibold leading-none tracking-tight">Add download</h2>
@@ -82,6 +88,7 @@ export function AddDialog({ open, onClose }: Props) {
               <input
                 autoFocus
                 type="text"
+                aria-label="URL"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submit()}
@@ -94,6 +101,7 @@ export function AddDialog({ open, onClose }: Props) {
               <div className="flex gap-2">
                 <input
                   type="text"
+                  aria-label="Destination folder"
                   value={dest}
                   onChange={(e) => setDest(e.target.value)}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -111,6 +119,7 @@ export function AddDialog({ open, onClose }: Props) {
             <Field label="SHA-256 checksum" optional>
               <input
                 type="text"
+                aria-label="SHA-256 checksum"
                 value={checksum}
                 onChange={(e) => setChecksum(e.target.value)}
                 placeholder="e3b0c44298fc1c149afbf4c8996fb924…"

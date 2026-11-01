@@ -71,6 +71,14 @@ workspace crate) that drives the same engine — so the CLI and engine never
 depend on Tauri, Node, or a webview, and a headless server build stays fully
 functional. Your download list and history are stored in `~/.rdm/state.json`.
 
+To add a download, click **Add download**, drag a link (or the address bar's
+URL) from your browser onto the window, or press Ctrl/Cmd+V with an `http(s)`
+URL on the clipboard — the latter two open the Add dialog pre-filled.
+
+The sliders button in the header opens **Display settings**: theme (System —
+follows your OS — Light, or Dark) and row density (Comfortable or Compact).
+These are remembered per machine in the webview's local storage.
+
 Prerequisites: [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/), and the
 [Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) for your
 OS (on Windows, the WebView2 runtime, which ships with Windows 11).
@@ -83,11 +91,48 @@ pnpm tauri build        # produce a release bundle/installer
 
 pnpm lint               # lint the frontend (oxlint)
 pnpm format             # format the frontend (oxfmt); pnpm format:check to verify
+pnpm test               # frontend unit tests (vitest)
 ```
 
 Troubleshooting: the GUI logs to stderr and to `~/.rdm/rdm.log` (download
 starts, each retry with its reason, and failures); set `RUST_LOG=debug` for
 more detail.
+
+Two environment variables relocate the GUI's files, mainly for automated runs:
+`RDM_HOME` replaces `~/.rdm` (state, log, and — except on macOS — the webview's
+local storage), and `RDM_DOWNLOAD_DIR` replaces the OS download folder as the
+Add dialog's default destination.
+
+### GUI end-to-end tests
+
+`gui/e2e/` holds a [WebdriverIO](https://webdriver.io/) suite that drives the
+real app through [tauri-driver](https://v2.tauri.app/develop/tests/webdriver/):
+adding a download through the Add dialog (and seeing its `Content-Disposition`
+name), pause/resume to completion with the bytes checked on disk, a paused
+download surviving an app restart, display settings, and paste/drop URL
+intake. It downloads only from the repo's own fixture server
+(`cargo run --example fixture_server`) on loopback, and keeps all app state in
+a throwaway temp dir via `RDM_HOME`/`RDM_DOWNLOAD_DIR`. It is a separate pnpm
+package and not part of `cargo test` or `pnpm test`; CI runs it on Linux.
+
+One-time setup:
+
+- `cargo install tauri-driver --locked`
+- Windows: [Microsoft Edge WebDriver](https://developer.microsoft.com/microsoft-edge/tools/webdriver/)
+  matching your WebView2 runtime version; put `msedgedriver.exe` on `PATH` or
+  point `MSEDGEDRIVER_PATH` at it.
+- Linux: `webkit2gtk-driver` (provides `WebKitWebDriver`), plus `xvfb` when
+  headless.
+
+```sh
+cd gui/e2e
+pnpm install
+pnpm e2e                # build the app + fixture server, then run the suite
+pnpm test               # re-run against the existing build
+xvfb-run -a pnpm test   # headless Linux
+```
+
+On Windows, build from a shell with the MSVC environment loaded.
 
 ## Development
 
