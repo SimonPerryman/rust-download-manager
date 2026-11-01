@@ -75,6 +75,10 @@ To add a download, click **Add download**, drag a link (or the address bar's
 URL) from your browser onto the window, or press Ctrl/Cmd+V with an `http(s)`
 URL on the clipboard — the latter two open the Add dialog pre-filled.
 
+The sliders button in the header opens **Display settings**: theme (System —
+follows your OS — Light, or Dark) and row density (Comfortable or Compact).
+These are remembered per machine in the webview's local storage.
+
 Prerequisites: [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/), and the
 [Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) for your
 OS (on Windows, the WebView2 runtime, which ships with Windows 11).

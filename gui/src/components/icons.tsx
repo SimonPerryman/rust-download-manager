@@ -150,3 +150,24 @@ export const Sun = (p: Props) =>
   );
 
 export const Moon = (p: Props) => svg(<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />, p);
+
+export const Monitor = (p: Props) =>
+  svg(
+    <>
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8" />
+      <path d="M12 17v4" />
+    </>,
+    p,
+  );
+
+export const Sliders = (p: Props) =>
+  svg(
+    <>
+      <path d="M20 7h-9" />
+      <path d="M14 17H5" />
+      <circle cx="17" cy="17" r="3" />
+      <circle cx="7" cy="7" r="3" />
+    </>,
+    p,
+  );

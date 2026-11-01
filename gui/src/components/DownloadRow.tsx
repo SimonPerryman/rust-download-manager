@@ -47,13 +47,13 @@ function Shell({
   actions: React.ReactNode;
 }) {
   return (
-    <li className="flex items-start gap-4 px-5 py-4">
+    <li className="flex items-start gap-row-gap px-row-px py-row-py">
       <div
-        className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted ${
+        className={`mt-0.5 flex h-row-icon w-row-icon shrink-0 items-center justify-center rounded-md bg-muted ${
           dim ? "text-muted-foreground/60" : "text-muted-foreground"
         }`}
       >
-        <FileIcon size={17} />
+        <FileIcon size={17} className="h-row-glyph w-row-glyph" />
       </div>
       <div className="min-w-0 flex-1">{children}</div>
       <div className="flex shrink-0 items-center gap-0.5 self-center">{actions}</div>
@@ -74,7 +74,7 @@ function IconButton({
     <button
       title={title}
       onClick={onClick}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      className="inline-flex h-row-action w-row-action items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
     >
       {children}
     </button>
@@ -83,7 +83,9 @@ function IconButton({
 
 function Title({ name, dim }: { name: string; dim?: boolean }) {
   return (
-    <p className={`truncate text-sm font-medium ${dim ? "text-muted-foreground" : ""}`}>{name}</p>
+    <p className={`truncate text-row-title font-medium ${dim ? "text-muted-foreground" : ""}`}>
+      {name}
+    </p>
   );
 }
 
@@ -93,7 +95,7 @@ function sizeLabel(d: DownloadSnapshot): string {
 
 function Source({ d, extra }: { d: DownloadSnapshot; extra?: string }) {
   return (
-    <p className="mt-0.5 text-xs text-muted-foreground">
+    <p className="mt-0.5 text-row-meta text-muted-foreground">
       {host(d.url)} · {sizeLabel(d)}
       {extra ? ` · ${extra}` : ""}
     </p>
@@ -104,12 +106,12 @@ function ProgressBar({ pct, tone }: { pct: number | null; tone: "brand" | "muted
   const width = pct ?? 0;
   const bar = tone === "brand" ? "bg-brand" : "bg-muted-foreground/50";
   return (
-    <div className="mt-2.5 flex items-center gap-3">
+    <div className="mt-row-stack flex items-center gap-3">
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
         <div className={`h-full rounded-full ${bar}`} style={{ width: `${width}%` }} />
       </div>
       <span
-        className={`w-9 shrink-0 text-right text-xs font-medium tabular-nums ${
+        className={`w-9 shrink-0 text-right text-row-meta font-medium tabular-nums ${
           tone === "muted" ? "text-muted-foreground" : ""
         }`}
       >
@@ -145,7 +147,7 @@ function DownloadingRow({ d }: { d: DownloadSnapshot }) {
       </div>
       <Source d={d} />
       <ProgressBar pct={pct} tone="brand" />
-      <div className="mt-1.5 flex items-center gap-4 text-xs text-muted-foreground">
+      <div className="mt-row-stack-sm flex items-center gap-4 text-row-meta text-muted-foreground">
         {d.bytes_per_sec > 0 && (
           <span className="tabular-nums">{formatSpeed(d.bytes_per_sec)}</span>
         )}
@@ -184,7 +186,7 @@ function PausedRow({ d }: { d: DownloadSnapshot }) {
       </div>
       <Source d={d} />
       <ProgressBar pct={pct} tone="muted" />
-      <div className="mt-1.5 flex items-center gap-4 text-xs text-muted-foreground">
+      <div className="mt-row-stack-sm flex items-center gap-4 text-row-meta text-muted-foreground">
         <span className="italic">resumes where it left off</span>
         <span className="tabular-nums">
           {formatBytes(d.downloaded)}
@@ -218,7 +220,7 @@ function QueuedRow({ d }: { d: DownloadSnapshot }) {
         </span>
       </div>
       <Source d={d} />
-      <p className="mt-2 text-xs text-muted-foreground">Waiting — starts shortly.</p>
+      <p className="mt-row-note text-row-meta text-muted-foreground">Waiting — starts shortly.</p>
     </Shell>
   );
 }
@@ -247,7 +249,7 @@ function FailedRow({ d }: { d: DownloadSnapshot }) {
         </span>
       </div>
       <Source d={d} extra={d.finished_at != null ? formatAgo(d.finished_at) : undefined} />
-      <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600/90 dark:text-red-400/90">
+      <div className="mt-row-note flex items-center gap-1.5 text-row-meta text-red-600/90 dark:text-red-400/90">
         <AlertTriangle size={13} />
         {d.error ?? "download failed"}
       </div>

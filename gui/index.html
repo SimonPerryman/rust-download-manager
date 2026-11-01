@@ -3,6 +3,24 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      // Applies theme/density before first paint (no flash). Mirrors parsePrefs +
+      // applyPrefs in src/lib/prefs.ts; prefs.test.ts checks they agree.
+      (function () {
+        var p = {};
+        try {
+          p = JSON.parse(localStorage.getItem("rdm.gui.prefs")) || {};
+        } catch (e) {}
+        var theme = p.theme === "light" || p.theme === "dark" ? p.theme : "system";
+        var dark =
+          theme === "dark" ||
+          (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        var root = document.documentElement;
+        root.dataset.theme = theme;
+        root.dataset.density = p.density === "compact" ? "compact" : "comfortable";
+        root.classList.toggle("dark", dark);
+      })();
+    </script>
     <title>rdm — download manager</title>
   </head>
   <body class="min-h-screen font-sans antialiased">

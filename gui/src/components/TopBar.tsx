@@ -1,5 +1,5 @@
 import { DownloadMark, Pause, Plus } from "./icons";
-import { ThemeToggle } from "./ThemeToggle";
+import { SettingsMenu } from "./SettingsMenu";
 
 type Props = {
   onAdd: () => void;
@@ -8,7 +8,7 @@ type Props = {
 };
 
 // The sticky header: mark + name, Pause all (ghost), Add download (accent),
-// and the theme toggle. Ported from the mockup's <header>.
+// and the display-settings popover. Ported from the mockup's <header>.
 export function TopBar({ onAdd, onPauseAll, canPauseAll }: Props) {
   return (
     <header className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -40,7 +40,7 @@ export function TopBar({ onAdd, onPauseAll, canPauseAll }: Props) {
 
           <div className="mx-1 h-5 w-px bg-border" />
 
-          <ThemeToggle />
+          <SettingsMenu />
         </div>
       </div>
     </header>
