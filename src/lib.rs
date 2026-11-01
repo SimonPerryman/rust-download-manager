@@ -8,6 +8,7 @@
 pub mod engine;
 
 pub use engine::{
-    download, Algo, Checksum, Control, DownloadRequest, DownloadState, Error, Progress, Result,
-    RetryPolicy, Summary,
+    download, Algo, Checksum, Control, DownloadRecord, DownloadRequest, DownloadSnapshot,
+    DownloadState, Error, JsonStore, Manager, Progress, Result, RetryPolicy, Status, Store,
+    StoreData, Summary,
 };

@@ -10,15 +10,19 @@
 pub mod control;
 pub mod filename;
 pub mod integrity;
+pub mod manager;
 pub mod progress;
 pub mod retry;
 pub mod state;
+pub mod store;
 
 pub use control::{Control, Flow};
 pub use integrity::{Algo, Checksum};
+pub use manager::{DownloadSnapshot, Manager};
 pub use progress::{Progress, SpeedMeter};
 pub use retry::RetryPolicy;
 pub use state::DownloadState;
+pub use store::{DownloadRecord, JsonStore, Status, Store, StoreData};
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
