@@ -2,13 +2,7 @@
 // names and the `status` set are the frozen contract the backend serializes.
 // There is intentionally no "retrying" status: the engine retries internally.
 
-export type Status =
-  | "queued"
-  | "downloading"
-  | "paused"
-  | "completed"
-  | "failed"
-  | "cancelled";
+export type Status = "queued" | "downloading" | "paused" | "completed" | "failed" | "cancelled";
 
 export interface DownloadSnapshot {
   id: number;

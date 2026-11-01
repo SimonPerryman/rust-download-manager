@@ -146,6 +146,7 @@ pub async fn download(
     // but when it is known up front we can detect an existing resume.
     let known_target = req.out.clone();
 
+    tracing::info!(url = %req.url, "download started");
     let mut attempt: u32 = 0;
     loop {
         attempt += 1;
@@ -155,9 +156,18 @@ pub async fn download(
             }
             Err(e) => {
                 if is_transient(&e) && attempt < req.retry.max_attempts {
-                    tokio::time::sleep(req.retry.delay_for(attempt)).await;
+                    let delay = req.retry.delay_for(attempt);
+                    tracing::warn!(
+                        attempt,
+                        max_attempts = req.retry.max_attempts,
+                        delay_ms = delay.as_millis() as u64,
+                        error = %error_detail(&e),
+                        "download attempt failed; retrying"
+                    );
+                    tokio::time::sleep(delay).await;
                     continue;
                 }
+                tracing::error!(attempts = attempt, error = %error_detail(&e), "download failed");
                 return Err(e);
             }
         }
@@ -495,6 +505,24 @@ fn is_transient(err: &Error) -> bool {
     }
 }
 
+/// Format an error with its full `source()` chain, so a frontend surfaces the
+/// real underlying cause (e.g. a DNS or connection failure) rather than just
+/// the top-level message. De-duplicates the leading segment that `thiserror`'s
+/// `{0}` already embeds in the outer `Display`.
+pub(crate) fn error_detail(err: &dyn std::error::Error) -> String {
+    let mut msg = err.to_string();
+    let mut source = err.source();
+    while let Some(e) = source {
+        let s = e.to_string();
+        if !msg.ends_with(&s) {
+            msg.push_str(": ");
+            msg.push_str(&s);
+        }
+        source = e.source();
+    }
+    msg
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -515,5 +543,54 @@ mod tests {
         assert!(!is_transient(&Error::Cancelled));
         assert!(!is_transient(&Error::Paused));
         assert!(!is_transient(&Error::Integrity("x".into())));
+    }
+
+    #[test]
+    fn error_detail_walks_and_dedups_chain() {
+        use std::fmt;
+
+        #[derive(Debug)]
+        struct Dns;
+        impl fmt::Display for Dns {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "dns error")
+            }
+        }
+        impl std::error::Error for Dns {}
+
+        #[derive(Debug)]
+        struct Connect(Dns);
+        impl fmt::Display for Connect {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "connect failed")
+            }
+        }
+        impl std::error::Error for Connect {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+
+        // `Outer` embeds its source's `Display` (as `thiserror`'s `{0}` does)
+        // and also exposes it via `source()`.
+        #[derive(Debug)]
+        struct Outer(Connect);
+        impl fmt::Display for Outer {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "request failed: {}", self.0)
+            }
+        }
+        impl std::error::Error for Outer {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+
+        // The embedded "connect failed" is not repeated; the deeper "dns error"
+        // cause is appended.
+        assert_eq!(
+            error_detail(&Outer(Connect(Dns))),
+            "request failed: connect failed: dns error"
+        );
     }
 }

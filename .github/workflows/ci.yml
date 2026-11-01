@@ -97,6 +97,14 @@ jobs:
         working-directory: gui
         run: pnpm install --frozen-lockfile
 
+      - name: Lint frontend (oxlint)
+        working-directory: gui
+        run: pnpm lint
+
+      - name: Check frontend formatting (oxfmt)
+        working-directory: gui
+        run: pnpm format:check
+
       # Build the static frontend first: `cargo build -p rdm-gui` embeds
       # gui/dist via tauri::generate_context!, so it must exist beforehand.
       # `pnpm build` also typechecks the frontend (tsc).

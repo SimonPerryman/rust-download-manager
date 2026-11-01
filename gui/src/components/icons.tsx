@@ -3,10 +3,7 @@
 
 type Props = { size?: number; className?: string; strokeWidth?: number };
 
-function svg(
-  children: React.ReactNode,
-  { size = 16, className, strokeWidth = 2 }: Props,
-) {
+function svg(children: React.ReactNode, { size = 16, className, strokeWidth = 2 }: Props) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -44,8 +41,7 @@ export const Pause = (p: Props) =>
     p,
   );
 
-export const Play = (p: Props) =>
-  svg(<polygon points="6 3 20 12 6 21 6 3" />, p);
+export const Play = (p: Props) => svg(<polygon points="6 3 20 12 6 21 6 3" />, p);
 
 export const Plus = (p: Props) =>
   svg(
@@ -153,5 +149,4 @@ export const Sun = (p: Props) =>
     p,
   );
 
-export const Moon = (p: Props) =>
-  svg(<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />, p);
+export const Moon = (p: Props) => svg(<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />, p);

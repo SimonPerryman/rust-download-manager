@@ -16,21 +16,18 @@ export default function App() {
   // Seed with a one-shot snapshot, then track the backend's live event stream.
   // All state flows from the engine; the UI never computes download state.
   useEffect(() => {
-    api.list().then(setDownloads).catch(() => {});
+    api
+      .list()
+      .then(setDownloads)
+      .catch(() => {});
     const unlisten = api.onDownloadsChanged(setDownloads);
     return () => {
       unlisten.then((fn) => fn());
     };
   }, []);
 
-  const active = useMemo(
-    () => downloads.filter((d) => ACTIVE.has(d.status)),
-    [downloads],
-  );
-  const history = useMemo(
-    () => downloads.filter((d) => !ACTIVE.has(d.status)),
-    [downloads],
-  );
+  const active = useMemo(() => downloads.filter((d) => ACTIVE.has(d.status)), [downloads]);
+  const history = useMemo(() => downloads.filter((d) => !ACTIVE.has(d.status)), [downloads]);
   const canPauseAll = active.some((d) => d.status === "downloading");
 
   return (
@@ -46,9 +43,8 @@ export default function App() {
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Downloads</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Restored from{" "}
-              <span className="font-mono text-[12.5px]">~/.rdm/state.json</span>{" "}
-              — your list and history persist across restarts.
+              Restored from <span className="font-mono text-[12.5px]">~/.rdm/state.json</span> —
+              your list and history persist across restarts.
             </p>
           </div>
         </div>
@@ -61,20 +57,15 @@ export default function App() {
         />
 
         {tab === "active" ? (
-          <DownloadList
-            downloads={active}
-            empty="No active downloads. Add one to get started."
-          />
+          <DownloadList downloads={active} empty="No active downloads. Add one to get started." />
         ) : (
           <DownloadList
             downloads={history}
             empty="No history yet."
             footer={
               <p className="mt-3 px-1 text-xs text-muted-foreground">
-                History is kept in{" "}
-                <span className="font-mono text-[12px]">~/.rdm/state.json</span>{" "}
-                and survives restarts. Removing an entry only clears it from this
-                list.
+                History is kept in <span className="font-mono text-[12px]">~/.rdm/state.json</span>{" "}
+                and survives restarts. Removing an entry only clears it from this list.
               </p>
             }
           />

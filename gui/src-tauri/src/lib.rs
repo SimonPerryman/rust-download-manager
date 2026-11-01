@@ -124,11 +124,39 @@ fn default_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| e.to_string())
 }
 
+/// Install the tracing subscriber: human-readable logs to stderr (visible when
+/// run via `tauri dev`) and appended to `<dir>/rdm.log`. The engine emits the
+/// events (download start, each retry with its reason, failures); the default
+/// level is `info`, overridable with `RUST_LOG`. Best-effort: logging must
+/// never stop the app from starting.
+fn init_logging(dir: &std::path::Path) {
+    use tracing_subscriber::prelude::*;
+
+    let file_appender = tracing_appender::rolling::never(dir, "rdm.log");
+    let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
+    // Keep the non-blocking writer's flush worker alive for the whole process.
+    Box::leak(Box::new(guard));
+
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
+    let _ = tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(file_writer),
+        )
+        .try_init();
+}
+
 /// Build the `Manager` over `~/.rdm/state.json` and spawn the snapshot bridge.
 fn init_manager(app: &tauri::AppHandle) -> Result<Arc<Manager>, Box<dyn std::error::Error>> {
     let home = app.path().home_dir()?;
     let dir = home.join(".rdm");
     std::fs::create_dir_all(&dir)?;
+    init_logging(&dir);
     let store = JsonStore::new(dir.join("state.json"));
 
     // The engine spawns each download on a Tokio runtime. Tauri's synchronous

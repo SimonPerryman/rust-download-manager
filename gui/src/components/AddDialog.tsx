@@ -53,11 +53,7 @@ export function AddDialog({ open, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await api.addDownload(
-        url.trim(),
-        dest.trim() || null,
-        checksum.trim() || null,
-      );
+      await api.addDownload(url.trim(), dest.trim() || null, checksum.trim() || null);
       onClose();
     } catch (e) {
       setError(String(e));
@@ -75,9 +71,7 @@ export function AddDialog({ open, onClose }: Props) {
       <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 px-4">
         <div className="rounded-lg border border-border bg-card text-card-foreground shadow-lg">
           <div className="flex flex-col space-y-1.5 px-6 pb-4 pt-6">
-            <h2 className="text-lg font-semibold leading-none tracking-tight">
-              Add download
-            </h2>
+            <h2 className="text-lg font-semibold leading-none tracking-tight">Add download</h2>
             <p className="text-sm text-muted-foreground">
               Paste a URL. Destination and checksum are optional.
             </p>
@@ -123,14 +117,11 @@ export function AddDialog({ open, onClose }: Props) {
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-[13px] shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
               <p className="text-xs text-muted-foreground">
-                If provided, the file is verified after download and discarded on
-                mismatch.
+                If provided, the file is verified after download and discarded on mismatch.
               </p>
             </Field>
 
-            {error && (
-              <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
-            )}
+            {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
           </div>
 
           <div className="flex items-center justify-end gap-2 px-6 pb-6 pt-4">
@@ -166,10 +157,7 @@ function Field({
   return (
     <div className="space-y-2">
       <label className="text-sm font-medium leading-none">
-        {label}{" "}
-        {optional && (
-          <span className="font-normal text-muted-foreground">(optional)</span>
-        )}
+        {label} {optional && <span className="font-normal text-muted-foreground">(optional)</span>}
       </label>
       {children}
     </div>

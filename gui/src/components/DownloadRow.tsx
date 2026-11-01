@@ -1,12 +1,5 @@
 import type { DownloadSnapshot } from "../lib/types";
-import {
-  formatBytes,
-  formatSpeed,
-  formatDuration,
-  formatAgo,
-  percent,
-  host,
-} from "../lib/format";
+import { formatBytes, formatSpeed, formatDuration, formatAgo, percent, host } from "../lib/format";
 import * as api from "../lib/api";
 import {
   FileIcon,
@@ -63,9 +56,7 @@ function Shell({
         <FileIcon size={17} />
       </div>
       <div className="min-w-0 flex-1">{children}</div>
-      <div className="flex shrink-0 items-center gap-0.5 self-center">
-        {actions}
-      </div>
+      <div className="flex shrink-0 items-center gap-0.5 self-center">{actions}</div>
     </li>
   );
 }
@@ -92,11 +83,7 @@ function IconButton({
 
 function Title({ name, dim }: { name: string; dim?: boolean }) {
   return (
-    <p
-      className={`truncate text-sm font-medium ${dim ? "text-muted-foreground" : ""}`}
-    >
-      {name}
-    </p>
+    <p className={`truncate text-sm font-medium ${dim ? "text-muted-foreground" : ""}`}>{name}</p>
   );
 }
 
@@ -113,13 +100,7 @@ function Source({ d, extra }: { d: DownloadSnapshot; extra?: string }) {
   );
 }
 
-function ProgressBar({
-  pct,
-  tone,
-}: {
-  pct: number | null;
-  tone: "brand" | "muted";
-}) {
+function ProgressBar({ pct, tone }: { pct: number | null; tone: "brand" | "muted" }) {
   const width = pct ?? 0;
   const bar = tone === "brand" ? "bg-brand" : "bg-muted-foreground/50";
   return (
@@ -237,9 +218,7 @@ function QueuedRow({ d }: { d: DownloadSnapshot }) {
         </span>
       </div>
       <Source d={d} />
-      <p className="mt-2 text-xs text-muted-foreground">
-        Waiting — starts shortly.
-      </p>
+      <p className="mt-2 text-xs text-muted-foreground">Waiting — starts shortly.</p>
     </Shell>
   );
 }
@@ -301,7 +280,10 @@ function CompletedRow({ d }: { d: DownloadSnapshot }) {
           Completed
         </span>
       </div>
-      <Source d={d} extra={d.finished_at != null ? `finished ${formatAgo(d.finished_at)}` : undefined} />
+      <Source
+        d={d}
+        extra={d.finished_at != null ? `finished ${formatAgo(d.finished_at)}` : undefined}
+      />
     </Shell>
   );
 }
@@ -327,7 +309,10 @@ function CancelledRow({ d }: { d: DownloadSnapshot }) {
           Cancelled
         </span>
       </div>
-      <Source d={d} extra={d.finished_at != null ? `cancelled ${formatAgo(d.finished_at)}` : undefined} />
+      <Source
+        d={d}
+        extra={d.finished_at != null ? `cancelled ${formatAgo(d.finished_at)}` : undefined}
+      />
     </Shell>
   );
 }

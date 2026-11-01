@@ -80,7 +80,14 @@ cd gui
 pnpm install
 pnpm tauri dev          # run the app in development
 pnpm tauri build        # produce a release bundle/installer
+
+pnpm lint               # lint the frontend (oxlint)
+pnpm format             # format the frontend (oxfmt); pnpm format:check to verify
 ```
+
+Troubleshooting: the GUI logs to stderr and to `~/.rdm/rdm.log` (download
+starts, each retry with its reason, and failures); set `RUST_LOG=debug` for
+more detail.
 
 ## Development
 

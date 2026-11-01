@@ -223,7 +223,7 @@ impl Inner {
             }
             Err(other) => {
                 e.record.status = Status::Failed;
-                e.record.error = Some(other.to_string());
+                e.record.error = Some(crate::engine::error_detail(&other));
                 e.record.finished_at = now_secs();
             }
         }
