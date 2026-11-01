@@ -1,7 +1,7 @@
 ---
 id: M1
 title: Robust single-connection downloads (MVP core)
-status: todo
+status: done
 depends-on: [M0]
 tags: [engine, network, persistence, testing]
 ---
@@ -36,25 +36,28 @@ CLI-only.**
 - GUI (→ M2).
 
 ## Tasks
-- [ ] Define the persistable download-state model + on-disk format (sidecar
+- [x] Define the persistable download-state model + on-disk format (sidecar
       file alongside the partial download).
-- [ ] Pause/cancel via the engine's control hooks; flush state on pause.
-- [ ] Resume logic: read state, issue `Range` request from offset, append.
-- [ ] Resource-changed detection (ETag/Last-Modified mismatch → restart).
-- [ ] Retry/backoff wrapper around transient network/5xx failures.
-- [ ] Integrity check (size always; checksum when provided).
-- [ ] Filename collision strategy (e.g. `file (1).ext`).
-- [ ] Fixture cases: server without `Accept-Ranges`; server advertising ranges
+- [x] Pause/cancel via the engine's control hooks; flush state on pause.
+- [x] Resume logic: read state, issue `Range` request from offset, append.
+- [x] Resource-changed detection (ETag/Last-Modified mismatch → restart).
+- [x] Retry/backoff wrapper around transient network/5xx failures.
+- [x] Integrity check (size always; checksum when provided).
+- [x] Filename collision strategy (e.g. `file (1).ext`).
+- [x] Fixture cases: server without `Accept-Ranges`; server advertising ranges
       but ignoring `Range`; mid-stream disconnect.
 
 ## Acceptance criteria
 _Standing gates (fmt/clippy/test/CI) live in AGENTS.md's Definition of Done and
 apply here without being restated._
-- [ ] Kill the process mid-download, restart, and the resulting file is
+- [x] Kill the process mid-download, restart, and the resulting file is
       byte-identical to a full download (verified by checksum).
-- [ ] Pausing then resuming produces a byte-identical file.
-- [ ] A server that doesn't support ranges falls back to a clean restart (no
-      corruption).
-- [ ] A server that lies about range support is detected; the file is not
-      silently corrupted.
-- [ ] Transient failures are retried with backoff and the download completes.
+      (`tests/cli.rs::kill_mid_download_then_restart_is_byte_identical`)
+- [x] Pausing then resuming produces a byte-identical file.
+      (`tests/resume.rs::pause_then_resume_is_byte_identical`)
+- [x] A server that doesn't support ranges falls back to a clean restart (no
+      corruption). (`tests/resume.rs::norange_server_restarts_cleanly`)
+- [x] A server that lies about range support is detected; the file is not
+      silently corrupted. (`tests/resume.rs::range_liar_does_not_corrupt`)
+- [x] Transient failures are retried with backoff and the download completes.
+      (`tests/resume.rs::flaky_server_retries_to_completion`)

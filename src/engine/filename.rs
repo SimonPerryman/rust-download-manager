@@ -4,7 +4,7 @@
 //! `Content-Disposition` filename; otherwise the last path segment of the
 //! (post-redirect) URL; otherwise a `download` fallback.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Resolve the bare filename (no directory) to save a download under.
 pub fn resolve(
@@ -31,6 +31,36 @@ pub fn resolve(
         }
     }
     "download".to_string()
+}
+
+/// A path that doesn't collide with an existing file: `desired` if free, else
+/// `name (1).ext`, `name (2).ext`, … preserving the extension. Used at finalize
+/// so a completed download never clobbers an existing file.
+pub fn unique_path(desired: &Path) -> PathBuf {
+    if !desired.exists() {
+        return desired.to_path_buf();
+    }
+    let parent = desired.parent();
+    let stem = desired
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("download");
+    let ext = desired.extension().and_then(|e| e.to_str());
+
+    for n in 1u32.. {
+        let name = match ext {
+            Some(ext) => format!("{stem} ({n}).{ext}"),
+            None => format!("{stem} ({n})"),
+        };
+        let candidate = match parent {
+            Some(p) if !p.as_os_str().is_empty() => p.join(&name),
+            _ => PathBuf::from(&name),
+        };
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    unreachable!("the range is effectively unbounded")
 }
 
 /// Pull a filename out of a `Content-Disposition` header value. Prefers the
@@ -141,6 +171,32 @@ mod tests {
     fn trailing_slash_url_falls_back_to_download() {
         let name = resolve(None, "https://example.com/", None);
         assert_eq!(name, "download");
+    }
+
+    #[test]
+    fn unique_path_increments_on_collision() {
+        let dir = tempfile::tempdir().unwrap();
+        let desired = dir.path().join("file.ext");
+
+        // Nothing there yet → the desired path.
+        assert_eq!(unique_path(&desired), desired);
+
+        std::fs::write(&desired, b"a").unwrap();
+        let one = unique_path(&desired);
+        assert_eq!(one.file_name().unwrap(), "file (1).ext");
+
+        std::fs::write(&one, b"b").unwrap();
+        let two = unique_path(&desired);
+        assert_eq!(two.file_name().unwrap(), "file (2).ext");
+    }
+
+    #[test]
+    fn unique_path_handles_no_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let desired = dir.path().join("README");
+        std::fs::write(&desired, b"a").unwrap();
+        let one = unique_path(&desired);
+        assert_eq!(one.file_name().unwrap(), "README (1)");
     }
 
     #[test]

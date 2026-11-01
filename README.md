@@ -3,9 +3,9 @@
 A download manager in Rust. `rdm` downloads a file from a URL on the command
 line, streaming it to disk with a live progress readout.
 
-> **Status: early.** This is the M0 "walking skeleton" — a single-connection
-> CLI download that works end to end. Pause/resume, retry, and parallel
-> segments are on the [roadmap](roadmap.md), not built yet.
+> **Status: early.** This is the M0 + M1 MVP — a robust single-connection CLI
+> download: pause/resume, resume-after-restart, retry, and integrity checking.
+> Parallel segments and a GUI are on the [roadmap](roadmap.md), not built yet.
 
 ## Features
 
@@ -14,6 +14,13 @@ line, streaming it to disk with a live progress readout.
 - Derives the output filename from `Content-Disposition` or the URL, or takes
   an explicit path.
 - Live progress bar with size, speed, and ETA.
+- Resumable: data streams to a `<file>.part` with a `<file>.rdm` sidecar;
+  re-running the same command continues where an interrupted download left off
+  (via HTTP range requests, validated against `ETag`/`Last-Modified`).
+- Retries transient failures (timeouts, dropped connections, 5xx/408/429) with
+  exponential backoff.
+- Verifies the finished file's size, and an optional `--checksum sha256:<hex>`,
+  before moving it into place; never clobbers an existing file (`name (1).ext`).
 
 ## Installation
 
@@ -36,12 +43,18 @@ rdm https://example.com/big-file.zip
 
 # Choose the output path:
 rdm https://example.com/big-file.zip -o ~/Downloads/archive.zip
+
+# Verify the download against a SHA-256 checksum:
+rdm https://example.com/big-file.zip --checksum sha256:<hex>
+
+# Interrupted? Re-run the same command to resume from where it stopped.
 ```
 
 | Argument | Description |
 |---|---|
 | `<url>` | The URL to download (required). |
 | `-o, --output <path>` | Output file path. Defaults to a name derived from the URL/headers, saved in the current directory. |
+| `--checksum <algo:hex>` | Verify the finished file against a checksum (e.g. `sha256:…`). |
 
 Run `rdm --help` for the full, generated help, and `rdm --version` for the
 version.

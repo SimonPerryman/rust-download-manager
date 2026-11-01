@@ -5,6 +5,8 @@ instruction sheet for any agent (and human) working in this repo.
 
 ## Toolchain
 - Rust stable (MSVC on Windows). Edition 2021+.
+- On Windows, build from a Developer PowerShell for VS (MSVC env loaded) so the
+  linker (`link.exe`) and the Windows SDK are on PATH.
 
 ## Commands
 - Build: `cargo build`
