@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 
-use rdm::engine::state;
+use common::FixtureConfig;
+use rdm::engine::state::{self, DownloadState};
 use rdm::{Checksum, DownloadSnapshot, JsonStore, Manager, Status, Store};
 
 /// Build a manager over a fresh JSON store inside `dir`.
@@ -226,7 +227,8 @@ async fn subscribe_delivers_live_updates() {
     assert!(saw_completion, "never observed completion via subscribe");
 }
 
-/// Removing a download drops it from the list and cleans up any partial data.
+/// Removing a download drops it from the list and cleans up any partial data,
+/// including sidecar temp files a hard kill left behind.
 #[tokio::test]
 async fn remove_drops_entry_and_partial() {
     let server = common::spawn().await;
@@ -236,6 +238,10 @@ async fn remove_drops_entry_and_partial() {
     let id = mgr.add(server.url("/slow"), dir.path(), None, None);
     let snap = wait_for(&mgr, id, T, |s| s.downloaded > 0).await.unwrap();
     let target = snap.target;
+    // As if an earlier run was killed mid-checkpoint.
+    let mut stale_temp = state::sidecar_path(&target).into_os_string();
+    stale_temp.push(".4242.7.tmp");
+    std::fs::write(&stale_temp, b"{}").unwrap();
 
     mgr.remove(id);
     // Give the aborted task a moment to unwind.
@@ -247,6 +253,10 @@ async fn remove_drops_entry_and_partial() {
     );
     assert!(mgr.snapshot().is_empty());
     assert!(!state::part_path(&target).exists());
+    assert!(
+        !std::path::Path::new(&stale_temp).exists(),
+        "stale sidecar temp left"
+    );
 }
 
 /// A wrong checksum surfaces as a failed download with an error message.
@@ -498,4 +508,99 @@ async fn cancelling_unclaimed_download_leaves_other_partials() {
     mgr.cancel(1);
     assert!(wait_status(&mgr, 1, Status::Cancelled, T).await);
     assert!(other_part.exists());
+}
+
+/// A fixture whose `/seg` streams slowly enough to act mid-flight.
+async fn slow_seg_server() -> common::TestServer {
+    common::spawn_with(FixtureConfig {
+        seg_chunk_delay: Duration::from_millis(40),
+        ..FixtureConfig::default()
+    })
+    .await
+}
+
+/// M3: a multi-segment download paused through the manager is restored by a
+/// fresh manager with its real progress (the checkpointed segment total, not
+/// the pre-allocated `.part` size) and resumes to a byte-identical file.
+#[tokio::test]
+async fn paused_multi_segment_download_restores_progress_and_completes() {
+    let server = slow_seg_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let downloads = dir.path().join("downloads");
+    let total = common::SEG_LEN as u64;
+
+    let (id, target) = {
+        let mgr = manager_in(dir.path());
+        let id = mgr.add(server.url("/seg"), &downloads, None, None);
+        let partial = wait_for(&mgr, id, T, |s| s.downloaded > 0 && s.downloaded < total)
+            .await
+            .expect("never reached partial progress");
+        mgr.pause(id);
+        assert!(
+            wait_status(&mgr, id, Status::Paused, T).await,
+            "never paused"
+        );
+        (id, partial.target)
+    };
+
+    let st = DownloadState::load(&state::sidecar_path(&target)).unwrap();
+    assert_eq!(st.version, 2, "should have run multi-segment");
+    let done: u64 = st.segments.iter().flatten().map(|s| s.done).sum();
+    assert!(done > 0 && done < total, "checkpointed {done} of {total}");
+
+    let mgr = manager_in(dir.path());
+    let restored = mgr.snapshot().into_iter().find(|s| s.id == id).unwrap();
+    assert_eq!(restored.status, Status::Paused);
+    assert_eq!(restored.downloaded, done, "restored readout is Σdone");
+
+    mgr.resume(id);
+    assert!(
+        wait_status(&mgr, id, Status::Completed, T).await,
+        "never resumed to completion"
+    );
+    let snap = mgr.snapshot().into_iter().find(|s| s.id == id).unwrap();
+    assert_eq!(
+        std::fs::read(snap.final_path.unwrap()).unwrap(),
+        server.seg_payload()
+    );
+}
+
+/// M3: removing a running multi-segment download leaves no `.part`, sidecar or
+/// temp file behind — not even from a checkpoint still in flight.
+#[tokio::test]
+async fn removing_running_multi_segment_download_leaves_no_files() {
+    let server = slow_seg_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let downloads = dir.path().join("downloads");
+    let total = common::SEG_LEN as u64;
+
+    let mgr = manager_in(dir.path());
+    let id = mgr.add(server.url("/seg"), &downloads, None, None);
+    let target = wait_for(&mgr, id, T, |s| s.downloaded > 0 && s.downloaded < total)
+        .await
+        .expect("never reached partial progress")
+        .target;
+    mgr.remove(id);
+
+    let part = state::part_path(&target);
+    let sidecar = state::sidecar_path(&target);
+    let all_gone = || {
+        let tmp_left = std::fs::read_dir(&downloads)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .any(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+            })
+            .unwrap_or(false);
+        !part.exists() && !sidecar.exists() && !tmp_left
+    };
+    let deadline = Instant::now() + T;
+    while !all_gone() && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(all_gone(), "partial state left after remove");
+
+    // Outlast one checkpoint interval: nothing reappears.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(all_gone(), "a late checkpoint resurrected partial state");
 }
