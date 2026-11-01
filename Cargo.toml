@@ -1,3 +1,8 @@
+[workspace]
+members = ["gui/src-tauri"]
+default-members = ["."]
+resolver = "2"
+
 [package]
 name = "rdm"
 version = "0.1.0"
