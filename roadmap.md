@@ -49,9 +49,17 @@ the parallel-download speed feature; M4 is the day-to-day queue/throttle layer.
   second product; large surface area)
 - **Protocols beyond HTTP**: FTP/SFTP, BitTorrent, metalink/mirror failover
 - **Batch**: wildcard / URL-list downloads, site mirroring
+- **Persistence at scale**: migrate the download-list + history store from JSON
+  v1 (chosen at M2) to SQLite (`sqlx`/`rusqlite`) once query/filter/search or
+  large histories justify it — likely alongside M4's queue work. JSON v1 sits
+  behind a thin store boundary at M2 so this is a contained swap, not a rewrite.
+- **GUI polish (post-M2)**: density variants (compact/full), alternate layouts/
+  themes beyond the shipped slick light+dark, richer per-download detail views,
+  drag-and-drop / clipboard-URL add. M2 ships one clean slick design; these are
+  deliberately deferred.
 
 ## Candidate crates
 
 `reqwest` (HTTP), `tokio` (async), `futures` (concurrency), `clap` (CLI),
 `indicatif` (CLI progress), `serde` (config/state), `sqlx`/`rusqlite`
-(persistence), `sha2` (checksums). GUI toolkit TBD at M2.
+(persistence), `sha2` (checksums). GUI: Tauri (chosen at M2).

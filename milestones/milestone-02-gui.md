@@ -23,14 +23,19 @@ to test regardless.
 - Decide the toolkit (candidates: `egui`, `iced`, Tauri) — first task.
 - Add / remove / pause / resume / cancel downloads from the UI.
 - Per-download progress, speed, ETA; a download list view.
-- Persist the download list + history (SQLite via `sqlx`/`rusqlite`, or JSON v1).
+- Persist the download list + history (**JSON v1 chosen**; swappable store
+  boundary, SQLite deferred to the roadmap backlog).
+- Keep the CLI a first-class frontend: the GUI is an *additive* second frontend.
+  A headless build (no webview/Node) must stay fully functional so `rdm` works
+  on a server with no desktop — so the engine + CLI never depend on Tauri.
 
 **Out (deferred):**
 - Multi-segment downloads (→ M3).
 - Queue management + speed limiting UI (→ M4).
 
 ## Tasks
-- [ ] Toolkit decision recorded (with the agentic-testing trade-off noted).
+- [x] Toolkit decision recorded (with the agentic-testing trade-off noted) —
+      Tauri + React/shadcn/Tailwind; design approved in `.ai-cache/mockups/slick.html`.
 - [ ] Engine API reviewed/extended for GUI needs (observe + control downloads).
 - [ ] Download list view with live progress/speed/ETA.
 - [ ] Add-download flow; pause/resume/cancel controls.
