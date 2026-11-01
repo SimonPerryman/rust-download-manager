@@ -25,6 +25,16 @@ struct Cli {
     /// `--checksum sha256:<hex>`.
     #[arg(long = "checksum", value_parser = parse_checksum)]
     checksum: Option<Checksum>,
+
+    /// Max parallel connections for a large file on a range-capable server
+    /// (1 = single connection).
+    #[arg(
+        short = 'c',
+        long = "connections",
+        default_value_t = 4,
+        value_parser = clap::value_parser!(u8).range(1..=16)
+    )]
+    connections: u8,
 }
 
 /// clap value parser: `sha256:<hex>` → [`Checksum`].
@@ -39,7 +49,8 @@ async fn main() -> anyhow::Result<()> {
     let mut req = match cli.output {
         Some(out) => DownloadRequest::to_path(cli.url, out),
         None => DownloadRequest::new(cli.url, std::env::current_dir()?),
-    };
+    }
+    .with_connections(cli.connections);
     if let Some(checksum) = cli.checksum {
         req = req.with_checksum(checksum);
     }
@@ -48,9 +59,8 @@ async fn main() -> anyhow::Result<()> {
     // partial exists so we can tell the user we're resuming. The engine does
     // the actual resume off the `.part` + sidecar; this is only a message.
     if let Some(out) = &req.out {
-        let part = state::part_path(out);
         let sidecar = state::sidecar_path(out);
-        if part.exists() && sidecar.exists() {
+        if sidecar.exists() && state::downloaded_bytes(out).is_some() {
             println!("Resuming {}", out.display());
         }
     }

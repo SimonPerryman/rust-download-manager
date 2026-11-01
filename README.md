@@ -5,19 +5,27 @@ line or through a desktop GUI — streaming to disk with a live progress readout
 
 > **Status: early.** M0 + M1 are a robust single-connection CLI download
 > (pause/resume, resume-after-restart, retry, integrity checking); M2 adds a
-> desktop GUI over the same engine. Parallel segments and a download queue are
-> on the [roadmap](roadmap.md), not built yet.
+> desktop GUI over the same engine; M3 adds multi-segment parallel downloads.
+> A download queue and speed limits are on the [roadmap](roadmap.md), not built
+> yet.
 
 ## Features
 
 - Download over HTTP/HTTPS, streamed to disk chunk-by-chunk (no full buffering).
+- Parallel segments: a large file (≥ 2 MiB) on a server that supports range
+  requests, sends a strong `ETag` or a `Last-Modified`, and doesn't set a
+  `Content-Encoding` is split into byte ranges fetched over several connections
+  at once (4 by default, `-c` to change); idle connections take over half of
+  the largest remaining range. Servers without range support fall back to one
+  connection automatically.
 - Follows redirects and handles common HTTP status codes.
 - Derives the output filename from `Content-Disposition` or the URL, or takes
   an explicit path.
 - Live progress bar with size, speed, and ETA.
 - Resumable: data streams to a `<file>.part` with a `<file>.rdm` sidecar;
   re-running the same command continues where an interrupted download left off
-  (via HTTP range requests, validated against `ETag`/`Last-Modified`).
+  (via HTTP range requests, validated against `ETag`/`Last-Modified`). A
+  multi-segment download re-fetches only the ranges that were still missing.
 - Retries transient failures (timeouts, dropped connections, 5xx/408/429) with
   exponential backoff.
 - Verifies the finished file's size, and an optional `--checksum sha256:<hex>`,
@@ -52,6 +60,9 @@ rdm https://example.com/big-file.zip -o ~/Downloads/archive.zip
 # Verify the download against a SHA-256 checksum:
 rdm https://example.com/big-file.zip --checksum sha256:<hex>
 
+# Use up to 8 parallel connections (or -c 1 for a single connection):
+rdm https://example.com/big-file.zip -c 8
+
 # Interrupted? Re-run the same command to resume from where it stopped.
 ```
 
@@ -60,6 +71,7 @@ rdm https://example.com/big-file.zip --checksum sha256:<hex>
 | `<url>` | The URL to download (required). |
 | `-o, --output <path>` | Output file path. Defaults to a name derived from the URL/headers, saved in the current directory. |
 | `--checksum <algo:hex>` | Verify the finished file against a checksum (e.g. `sha256:…`). |
+| `-c, --connections <n>` | Max parallel connections, 1–16 (default 4). Used only for files ≥ 2 MiB on servers that support range requests; `1` forces a single connection. |
 
 Run `rdm --help` for the full, generated help, and `rdm --version` for the
 version.
@@ -147,7 +159,7 @@ conventions and the [roadmap](roadmap.md) for what's planned.
 ```sh
 cargo build                 # build the engine + CLI
 cargo test                  # fast, offline test suite (the default gate)
-cargo test -- --ignored     # add the live network smoke test
+cargo test -- --ignored     # add the live network smoke tests
 cargo clippy -- -D warnings # lint (warnings are errors)
 cargo fmt --all --check     # formatting check (all workspace crates)
 cargo build -p rdm-gui      # build the GUI's Rust crate (needs gui/ deps built)
@@ -155,8 +167,8 @@ cargo build -p rdm-gui      # build the GUI's Rust crate (needs gui/ deps built)
 
 Tests are deterministic and offline by default — they drive the engine against
 an in-process HTTP server (including the `Manager` the GUI uses, in
-`tests/manager.rs`). A single `#[ignore]`d live smoke test exercises a real
-network download against a pinned public asset.
+`tests/manager.rs`). Two `#[ignore]`d live smoke tests exercise real network
+downloads (single-connection and multi-segment) against pinned public assets.
 
 ## License
 

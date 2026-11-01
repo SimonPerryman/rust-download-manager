@@ -21,7 +21,9 @@ left in at M0. See [[roadmap]]. Depends on M1; benefits from M3 if present.
 - Download queue with a configurable concurrency cap (scheduler above engine).
 - Per-download speed limiting (throttle inside the engine chunk loop).
 - Global speed limiting across all active downloads.
-- Dynamic connection scaling based on measured speed (ties into M3 if present).
+- Dynamic connection scaling based on measured speed: throughput-driven
+  connection ramping for M3's multi-segment downloads (moved here from M3,
+  which ships a static split + work-stealing).
 
 **Out (deferred):**
 - Scheduling by time-of-day, bandwidth schedules (backlog).
@@ -32,6 +34,9 @@ left in at M0. See [[roadmap]]. Depends on M1; benefits from M3 if present.
 - [ ] Per-download throttle wired into the engine chunk loop.
 - [ ] Global rate limiter shared across active downloads (token-bucket style).
 - [ ] Surface queue state + limits to the frontend(s).
+- [ ] Throughput-driven connection ramping for multi-segment downloads: add
+      connections while aggregate speed keeps rising, shed them when it
+      doesn't (deferred from M3).
 - [ ] Fixture/tests measuring effective rate against configured limits.
 
 ## Acceptance criteria

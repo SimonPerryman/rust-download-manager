@@ -80,8 +80,9 @@ pub struct DownloadRecord {
     pub checksum: Option<String>,
     /// Coarse lifecycle status.
     pub status: Status,
-    /// Bytes downloaded as of the last persist. The `.part` size is
-    /// authoritative on resume; this is a best-effort figure for display.
+    /// Bytes downloaded as of the last persist. The on-disk state (the `.part`
+    /// size, or a v2 sidecar's segment progress) is authoritative on resume;
+    /// this is a best-effort figure for display.
     #[serde(default)]
     pub downloaded: u64,
     /// Expected total size when the server reported one.

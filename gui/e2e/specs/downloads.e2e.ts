@@ -98,6 +98,29 @@ describe("rdm GUI", () => {
     await expectCompleted("slow");
   });
 
+  // Runs after the restore spec, so `slow` is taken and this one is claimed as `slow (1)`.
+  it("cancels a running download, then removes it from History", async () => {
+    const name = "slow (1)";
+    const target = path.join(downloadDir, name);
+    await addThroughDialog(`${baseUrl}/slow`);
+    await waitForStatus(name, "downloading");
+    await browser.waitUntil(() => existsSync(`${target}.part`), {
+      timeoutMsg: `${target}.part never appeared`,
+    });
+
+    await clickRowAction(name, "Cancel");
+    await $("button*=History").click();
+    await waitForStatus(name, "cancelled");
+    await browser.waitUntil(() => !existsSync(`${target}.part`) && !existsSync(`${target}.rdm`), {
+      timeoutMsg: `cancel left partial state for ${name}`,
+    });
+    expect(existsSync(target)).toBe(false);
+
+    await clickRowAction(name, "Remove");
+    await row(name).waitForExist({ reverse: true });
+    await $("button*=Active").click();
+  });
+
   // Across a reload, not a restart: msedgedriver gives every session a fresh
   // throwaway webview profile, so localStorage can't outlive a session there.
   it("keeps theme and density choices across a reload", async () => {

@@ -283,10 +283,11 @@ impl Manager {
             if rec.status.is_running() {
                 rec.status = Status::Paused;
             }
-            // The `.part` on disk is authoritative for how far we got.
+            // The on-disk state is authoritative for how far we got (a
+            // multi-segment `.part` is pre-allocated, so not its length).
             if !rec.target_provisional {
-                if let Ok(meta) = std::fs::metadata(state::part_path(&rec.target)) {
-                    rec.downloaded = meta.len();
+                if let Some(downloaded) = state::downloaded_bytes(&rec.target) {
+                    rec.downloaded = downloaded;
                 }
             }
             order.push(rec.id);
@@ -566,14 +567,17 @@ fn unique_target(st: &ManagerState, base: PathBuf) -> PathBuf {
     unreachable!("the range is effectively unbounded")
 }
 
-/// Best-effort removal of a record's `.part` and `.rdm` sidecar. A provisional
-/// target has none (and may name another download's), so it is left alone.
+/// Best-effort removal of a record's `.part`, `.rdm` sidecar and any stale
+/// sidecar temp files. A provisional target has none (and may name another
+/// download's), so it is left alone.
 fn remove_partial(record: &DownloadRecord) {
     if record.target_provisional {
         return;
     }
     let _ = std::fs::remove_file(state::part_path(&record.target));
-    let _ = std::fs::remove_file(state::sidecar_path(&record.target));
+    let sidecar = state::sidecar_path(&record.target);
+    let _ = std::fs::remove_file(&sidecar);
+    state::remove_stale_temps(&sidecar);
 }
 
 /// Current Unix-epoch seconds, or `None` if the clock is before the epoch.
