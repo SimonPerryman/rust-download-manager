@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "projectType": "cli",
+  "conventions": ["CLAUDE.md"],
+  "defaultBranch": "main",
+  "gate": {
+    "format": "cargo fmt --check",
+    "lint": "cargo clippy -- -D warnings",
+    "typecheck": null,
+    "test": "cargo test"
+  },
+  "vcs": {
+    "host": "github"
+  },
+  "review": {
+    "panel": ["claude", "claude"],
+    "maxIterations": 5
+  },
+  "plan": {
+    "maxRounds": 5
+  },
+  "devStack": {
+    "enabled": false,
+    "provider": "none",
+    "command": null,
+    "healthUrl": null,
+    "startTimeoutSec": 90
+  },
+  "e2e": {
+    "enabled": false,
+    "provider": "none",
+    "specDir": null,
+    "auth": "none"
+  }
+}
