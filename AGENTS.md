@@ -24,8 +24,8 @@ instruction sheet for any agent (and human) working in this repo.
 ## Testing philosophy
 - **Default tests are deterministic and offline:** drive the engine against a
   local in-process HTTP server (fixtures), never the real network.
-- **A real end-to-end smoke test exists** against a self-hosted asset (GitHub
-  Releases on this repo), marked `#[ignore]` so it only runs on demand / in a
+- **A real end-to-end smoke test exists** against a public asset pinned to an
+  immutable commit SHA, marked `#[ignore]` so it only runs on demand / in a
   dedicated CI job — keeps the default gate fast and reliable.
 - Every feature ships with a test. Acceptance criteria must be runnable, not
   "looked fine".

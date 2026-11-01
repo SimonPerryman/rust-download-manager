@@ -26,7 +26,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 
 | ID | Milestone | Status | Ticket |
 |----|-----------|--------|--------|
-| M0 | Walking skeleton | todo | [[milestone-00-walking-skeleton]] |
+| M0 | Walking skeleton | done | [[milestone-00-walking-skeleton]] |
 | M1 | Robust single-connection (MVP core) | todo | [[milestone-01-robust-single-connection]] |
 | M2 | GUI (first post-MVP) | todo | [[milestone-02-gui]] |
 | M3 | Multi-segment parallel downloads | todo | [[milestone-03-multi-segment]] |
