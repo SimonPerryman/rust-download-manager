@@ -15,7 +15,7 @@ use rdm::{Checksum, DownloadSnapshot, JsonStore, Manager, Status, Store};
 /// Build a manager over a fresh JSON store inside `dir`.
 fn manager_in(dir: &std::path::Path) -> Manager {
     let store: Box<dyn Store> = Box::new(JsonStore::new(dir.join("state.json")));
-    Manager::load(store).unwrap()
+    Manager::load(store, tokio::runtime::Handle::current()).unwrap()
 }
 
 /// SHA-256 of a buffer, hex-encoded (mirrors the engine's own encoding).
@@ -284,5 +284,46 @@ async fn good_checksum_completes() {
     assert!(
         wait_status(&mgr, id, Status::Completed, T).await,
         "should complete"
+    );
+}
+
+/// Regression: the manager must drive downloads when `add` is called from a
+/// *synchronous* context with no ambient tokio runtime — exactly how a GUI's
+/// sync command handler calls it. It spawns onto the handle it was given, not
+/// an ambient one. (Before the explicit-handle fix this panicked with "there is
+/// no reactor running".) This is a plain `#[test]`, deliberately not
+/// `#[tokio::test]`, so there is no current runtime on the calling thread.
+#[test]
+fn add_from_sync_context_without_ambient_runtime() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    // Start the fixture server on the runtime.
+    let server = rt.block_on(common::spawn());
+    let dir = tempfile::tempdir().unwrap();
+    let store: Box<dyn Store> = Box::new(JsonStore::new(dir.path().join("state.json")));
+    let mgr = Manager::load(store, rt.handle().clone()).unwrap();
+
+    // The critical call: on the main thread, outside any async context.
+    let id = mgr.add(server.url("/file"), dir.path(), None, None);
+
+    // Drive to completion on the runtime.
+    let completed = rt.block_on(async {
+        let deadline = Instant::now() + T;
+        while Instant::now() < deadline {
+            if let Some(s) = mgr.snapshot().into_iter().find(|s| s.id == id) {
+                if s.status == Status::Completed {
+                    return true;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        false
+    });
+    assert!(
+        completed,
+        "download added from a sync context should complete"
     );
 }

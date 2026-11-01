@@ -130,7 +130,19 @@ fn init_manager(app: &tauri::AppHandle) -> Result<Arc<Manager>, Box<dyn std::err
     let dir = home.join(".rdm");
     std::fs::create_dir_all(&dir)?;
     let store = JsonStore::new(dir.join("state.json"));
-    let manager = Arc::new(Manager::load(Box::new(store))?);
+
+    // The engine spawns each download on a Tokio runtime. Tauri's synchronous
+    // command handlers run on the main thread with no ambient runtime, so give
+    // the Manager a dedicated multi-thread runtime to spawn onto. It is leaked
+    // so it lives for the whole process (a desktop app's lifetime) — which also
+    // avoids dropping a runtime from within another runtime's context.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let handle = runtime.handle().clone();
+    Box::leak(Box::new(runtime));
+
+    let manager = Arc::new(Manager::load(Box::new(store), handle)?);
 
     // Bridge the manager's watch channel to a webview event. The receiver
     // always holds the latest coalesced snapshot, so a slow webview never

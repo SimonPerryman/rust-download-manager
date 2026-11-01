@@ -130,6 +130,10 @@ struct Inner {
     store: Box<dyn Store>,
     tx: watch::Sender<Vec<DownloadSnapshot>>,
     last_publish: Mutex<Instant>,
+    /// Runtime the download tasks are spawned onto. Held explicitly (rather
+    /// than relying on an ambient runtime) so the manager works when driven
+    /// from a non-async caller, e.g. a GUI's synchronous command handler.
+    handle: tokio::runtime::Handle,
     /// Set true once dropped, so late task callbacks become no-ops.
     closed: AtomicBool,
 }
@@ -240,15 +244,20 @@ pub struct Manager {
 }
 
 impl Manager {
-    /// Build a manager over `store`, restoring any previously persisted
-    /// downloads. Downloads that were mid-flight at the last shutdown are
-    /// restored as [`Status::Paused`] (resumable) rather than auto-resumed, so
-    /// launching the app never kicks off surprise network activity.
+    /// Build a manager over `store`, spawning download tasks onto `handle`,
+    /// and restore any previously persisted downloads. Downloads that were
+    /// mid-flight at the last shutdown are restored as [`Status::Paused`]
+    /// (resumable) rather than auto-resumed, so launching the app never kicks
+    /// off surprise network activity.
     ///
-    /// Construction does not require a tokio runtime, but
-    /// [`add`](Manager::add)/[`resume`](Manager::resume) spawn tasks and so must
-    /// be called from within one.
-    pub fn load(store: Box<dyn Store>) -> crate::engine::Result<Self> {
+    /// Taking an explicit [`tokio::runtime::Handle`] (instead of relying on an
+    /// ambient runtime) lets the manager be driven from a synchronous caller
+    /// such as a GUI command handler. Inside an async context,
+    /// `tokio::runtime::Handle::current()` is the handle to pass.
+    pub fn load(
+        store: Box<dyn Store>,
+        handle: tokio::runtime::Handle,
+    ) -> crate::engine::Result<Self> {
         let data = store.load()?;
         let mut entries = HashMap::new();
         let mut order = Vec::new();
@@ -285,6 +294,7 @@ impl Manager {
             tx,
             store,
             last_publish: Mutex::new(Instant::now()),
+            handle,
             closed: AtomicBool::new(false),
             state: Mutex::new(st),
         });
@@ -461,7 +471,8 @@ fn spawn_task(
     req: DownloadRequest,
     control: Control,
 ) -> JoinHandle<()> {
-    tokio::spawn(async move {
+    let handle = inner.handle.clone();
+    handle.spawn(async move {
         let progress = inner.clone();
         let result = download(&req, &control, move |p| progress.on_progress(id, p)).await;
         inner.finish(id, result);
