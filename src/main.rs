@@ -7,7 +7,7 @@ use anyhow::Context;
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 
-use rdm::{download, Control, DownloadRequest};
+use rdm::{download, engine::state, Checksum, Control, DownloadRequest};
 
 /// A download manager in Rust.
 #[derive(Parser, Debug)]
@@ -20,16 +20,40 @@ struct Cli {
     /// in the current directory).
     #[arg(short = 'o', long = "output")]
     output: Option<PathBuf>,
+
+    /// Verify the finished file against a checksum, e.g.
+    /// `--checksum sha256:<hex>`.
+    #[arg(long = "checksum", value_parser = parse_checksum)]
+    checksum: Option<Checksum>,
+}
+
+/// clap value parser: `sha256:<hex>` → [`Checksum`].
+fn parse_checksum(s: &str) -> Result<Checksum, String> {
+    s.parse()
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let req = match cli.output {
+    let mut req = match cli.output {
         Some(out) => DownloadRequest::to_path(cli.url, out),
         None => DownloadRequest::new(cli.url, std::env::current_dir()?),
     };
+    if let Some(checksum) = cli.checksum {
+        req = req.with_checksum(checksum);
+    }
+
+    // When the target is known up front (explicit -o), note whether a prior
+    // partial exists so we can tell the user we're resuming. The engine does
+    // the actual resume off the `.part` + sidecar; this is only a message.
+    if let Some(out) = &req.out {
+        let part = state::part_path(out);
+        let sidecar = state::sidecar_path(out);
+        if part.exists() && sidecar.exists() {
+            println!("Resuming {}", out.display());
+        }
+    }
 
     let bar = ProgressBar::new(0);
     bar.set_style(
