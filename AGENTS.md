@@ -5,6 +5,10 @@ instruction sheet for any agent (and human) working in this repo.
 
 ## Toolchain
 - Rust stable (MSVC on Windows). Edition 2021+.
+- **The toolchain is pinned in `rust-toolchain.toml`; CI installs from that
+  file and never names a version.** Why: newer clippy adds lints, so an
+  unpinned local toolchain passes code CI rejects. Bump the pin in its own
+  commit and fix any new lints there.
 - On Windows, build from a Developer PowerShell for VS (MSVC env loaded) so the
   linker (`link.exe`) and the Windows SDK are on PATH.
 
@@ -31,6 +35,10 @@ instruction sheet for any agent (and human) working in this repo.
   dedicated CI job â€” keeps the default gate fast and reliable.
 - Every feature ships with a test. Acceptance criteria must be runnable, not
   "looked fine".
+- **When a test asserts ordering or overlap ("A was running while B…"), assert
+  on Manager status or a fixture-controlled gate (`/gated`), not on progress
+  bytes.** Why: progress is reported after each chunk's throttle wait, so
+  "has bytes yet" lags reality and flakes on slow CI runners.
 
 ## Comments & docs
 - Doc-comment (`///`) the public engine API: it's the contract and renders in

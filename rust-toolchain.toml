@@ -1,0 +1,6 @@
+# The single source of truth for the Rust version, locally and in CI (see
+# AGENTS.md "Toolchain"). Bump it deliberately, in its own commit.
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
