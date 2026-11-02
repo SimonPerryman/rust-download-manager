@@ -244,7 +244,7 @@ impl Inner {
         }
         let cap = st.settings.max_concurrent;
         let connections = st.settings.max_connections;
-        let mut running = st.entries.values().filter(|e| e.task.is_some()).count();
+        let running = st.entries.values().filter(|e| e.task.is_some()).count();
         // A lowered cap can leave `running > cap`; nothing is preempted.
         let free = cap.saturating_sub(running);
         let waiting: Vec<u64> = st
@@ -258,7 +258,7 @@ impl Inner {
             })
             .take(free)
             .collect();
-        for id in waiting {
+        for (running, id) in (running..).zip(waiting) {
             debug_assert!(running < cap, "promoted past the concurrency cap");
             let e = st.entries.get_mut(&id).expect("collected above");
             // A fresh control each start: `cancel` latches and can't be
@@ -268,7 +268,6 @@ impl Inner {
             e.control = control.clone();
             e.record.status = Status::Downloading;
             e.task = Some(spawn_task(self.clone(), &e.record, control, connections));
-            running += 1;
         }
     }
 
