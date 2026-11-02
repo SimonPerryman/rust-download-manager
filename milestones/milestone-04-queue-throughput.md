@@ -1,7 +1,7 @@
 ---
 id: M4
 title: Queue & throughput management
-status: todo
+status: in-progress
 depends-on: [M1]
 tags: [engine, perf]
 ---
@@ -30,22 +30,22 @@ left in at M0. See [[roadmap]]. Depends on M1; benefits from M3 if present.
 - Post-download actions (backlog).
 
 ## Tasks
-- [ ] Scheduler: active vs. waiting sets, honour the concurrency cap.
-- [ ] Per-download throttle wired into the engine chunk loop.
-- [ ] Global rate limiter shared across active downloads (token-bucket style).
-- [ ] Surface queue state + limits to the frontend(s).
-- [ ] Throughput-driven connection ramping for multi-segment downloads: add
+- [x] Scheduler: active vs. waiting sets, honour the concurrency cap.
+- [x] Per-download throttle wired into the engine chunk loop.
+- [x] Global rate limiter shared across active downloads (token-bucket style).
+- [x] Surface queue state + limits to the frontend(s).
+- [ ] (PR B) Throughput-driven connection ramping for multi-segment downloads: add
       connections while aggregate speed keeps rising, shed them when it
       doesn't (deferred from M3).
-- [ ] Fixture/tests measuring effective rate against configured limits.
+- [x] Fixture/tests measuring effective rate against configured limits.
 
 ## Acceptance criteria
 _Standing gates (fmt/clippy/test/CI) live in AGENTS.md's Definition of Done and
 apply here without being restated._
-- [ ] Queue 10 downloads with a cap of 3: at most 3 run concurrently; the rest
+- [x] Queue 10 downloads with a cap of 3: at most 3 run concurrently; the rest
       start as slots free.
-- [ ] A per-download speed limit is honoured within tolerance (measured rate ≤
+- [x] A per-download speed limit is honoured within tolerance (measured rate ≤
       limit).
-- [ ] A global speed limit caps aggregate throughput across active downloads
+- [x] A global speed limit caps aggregate throughput across active downloads
       within tolerance.
-- [ ] Removing/pausing a queued item reschedules correctly.
+- [x] Removing/pausing a queued item reschedules correctly.

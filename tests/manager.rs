@@ -1,7 +1,8 @@
 //! Headless tests for the engine-side [`Manager`]: the full add/pause/resume/
 //! cancel/remove lifecycle and restart persistence, driven against the
 //! in-process fixture with no UI involved. These assert the M2 acceptance
-//! criteria at the engine layer (the GUI is a thin frontend over exactly this).
+//! criteria at the engine layer (the GUI is a thin frontend over exactly this),
+//! plus M4's queue, concurrency cap and speed-limit settings.
 
 mod common;
 
@@ -11,7 +12,10 @@ use sha2::{Digest, Sha256};
 
 use common::FixtureConfig;
 use rdm::engine::state::{self, DownloadState};
-use rdm::{Checksum, DownloadSnapshot, JsonStore, Manager, Status, Store};
+use rdm::{
+    AddOptions, Checksum, DownloadSnapshot, JsonStore, Manager, RateLimiter, Settings, Status,
+    Store,
+};
 
 /// Build a manager over a fresh JSON store inside `dir`.
 fn manager_in(dir: &std::path::Path) -> Manager {
@@ -603,4 +607,399 @@ async fn removing_running_multi_segment_download_leaves_no_files() {
     // Outlast one checkpoint interval: nothing reappears.
     tokio::time::sleep(Duration::from_millis(1500)).await;
     assert!(all_gone(), "a late checkpoint resurrected partial state");
+}
+
+const KIB: u64 = 1024;
+const MIB: u64 = 1024 * KIB;
+
+/// Poll `cond` until it holds or `timeout` elapses.
+async fn wait_until(timeout: Duration, cond: impl Fn() -> bool) -> bool {
+    let deadline = Instant::now() + timeout;
+    while !cond() {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    true
+}
+
+/// Ids currently in `status`, in display order.
+fn ids_in(mgr: &Manager, status: Status) -> Vec<u64> {
+    mgr.snapshot()
+        .into_iter()
+        .filter(|s| s.status == status)
+        .map(|s| s.id)
+        .collect()
+}
+
+fn status_of(mgr: &Manager, id: u64) -> Option<Status> {
+    mgr.snapshot()
+        .into_iter()
+        .find(|s| s.id == id)
+        .map(|s| s.status)
+}
+
+/// Long enough for an unwanted promotion to have shown up as a request.
+const SETTLE: Duration = Duration::from_millis(200);
+
+/// M4 AC: with a cap of 3, ten downloads never run more than three at once;
+/// the rest wait as Queued and start in FIFO order as slots free.
+#[tokio::test]
+async fn queue_caps_concurrency_and_promotes_in_fifo_order() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    assert_eq!(mgr.settings().max_concurrent, 3, "default cap");
+    mgr.set_max_connections(1);
+    let gated = server.stats("/gated");
+
+    let ids: Vec<u64> = (0..10)
+        .map(|_| mgr.add(server.url("/gated"), dir.path(), None, None))
+        .collect();
+    assert!(wait_until(T, || gated.requests() == 3).await);
+    tokio::time::sleep(SETTLE).await;
+    assert_eq!(gated.requests(), 3, "a fourth download started");
+    assert_eq!(ids_in(&mgr, Status::Downloading), ids[..3]);
+    assert_eq!(ids_in(&mgr, Status::Queued), ids[3..]);
+
+    server.gate().release_next().expect("a held request");
+    assert!(wait_until(T, || gated.requests() == 4).await);
+    assert!(wait_status(&mgr, ids[3], Status::Downloading, T).await);
+    assert_eq!(ids_in(&mgr, Status::Completed).len(), 1);
+    assert_eq!(ids_in(&mgr, Status::Queued), ids[4..]);
+
+    server.gate().release_all();
+    for &id in &ids {
+        completed(&mgr, id).await;
+    }
+    assert_eq!(gated.requests(), 10);
+}
+
+/// M4 AC: pausing, cancelling or removing a queued download takes it out of
+/// the queue without a request; the rest still promote in order, and pausing
+/// or removing the running download promotes the queue head.
+#[tokio::test]
+async fn queued_downloads_leave_the_queue_without_starting() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    mgr.set_max_concurrent(1);
+    let gated = server.stats("/gated");
+
+    let ids: Vec<u64> = (0..7)
+        .map(|_| mgr.add(server.url("/gated"), dir.path(), None, None))
+        .collect();
+    let [a, b, c, d, e, f, g] = ids[..] else {
+        unreachable!()
+    };
+    assert!(wait_until(T, || gated.requests() == 1).await);
+
+    mgr.pause(b);
+    mgr.cancel(c);
+    mgr.remove(d);
+    assert_eq!(status_of(&mgr, b), Some(Status::Paused));
+    assert_eq!(status_of(&mgr, c), Some(Status::Cancelled));
+    assert_eq!(status_of(&mgr, d), None);
+    tokio::time::sleep(SETTLE).await;
+    assert_eq!(gated.requests(), 1, "a queued download made a request");
+    assert_eq!(ids_in(&mgr, Status::Downloading), [a]);
+    assert_eq!(ids_in(&mgr, Status::Queued), [e, f, g]);
+
+    // Releasing the runner starts the next *remaining* queued download.
+    server.gate().release_next().expect("a held request");
+    completed(&mgr, a).await;
+    assert!(wait_until(T, || gated.requests() == 2).await);
+    assert_eq!(status_of(&mgr, e), Some(Status::Downloading));
+    assert_eq!(status_of(&mgr, b), Some(Status::Paused));
+
+    // Pausing the running (trickling) download promotes the head.
+    mgr.pause(e);
+    assert!(wait_status(&mgr, e, Status::Paused, T).await);
+    assert!(wait_until(T, || gated.requests() == 3).await);
+    assert_eq!(status_of(&mgr, f), Some(Status::Downloading));
+
+    // So does removing it.
+    mgr.remove(f);
+    assert!(wait_until(T, || gated.requests() == 4).await);
+    assert_eq!(status_of(&mgr, g), Some(Status::Downloading));
+
+    // A paused-while-queued download rejoins the queue and completes.
+    mgr.resume(b);
+    assert_eq!(status_of(&mgr, b), Some(Status::Queued));
+    server.gate().release_all();
+    completed(&mgr, g).await;
+    completed(&mgr, b).await;
+    assert_eq!(gated.requests(), 5);
+    assert_eq!(status_of(&mgr, e), Some(Status::Paused));
+}
+
+/// M4: lowering the cap never interrupts running downloads; it only holds
+/// back promotion until fewer than the new cap are running.
+#[tokio::test]
+async fn lowering_the_cap_never_preempts() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    let gated = server.stats("/gated");
+
+    let ids: Vec<u64> = (0..4)
+        .map(|_| mgr.add(server.url("/gated"), dir.path(), None, None))
+        .collect();
+    assert!(wait_until(T, || gated.requests() == 3).await);
+
+    mgr.set_max_concurrent(1);
+    tokio::time::sleep(SETTLE).await;
+    assert_eq!(ids_in(&mgr, Status::Downloading), ids[..3], "preempted");
+    assert_eq!(mgr.settings().max_concurrent, 1);
+
+    for done in 1..=2 {
+        server.gate().release_next().expect("a held request");
+        assert!(wait_until(T, || ids_in(&mgr, Status::Completed).len() == done).await);
+        tokio::time::sleep(SETTLE).await;
+        assert_eq!(gated.requests(), 3, "promoted while at or over the cap");
+        assert_eq!(status_of(&mgr, ids[3]), Some(Status::Queued));
+    }
+
+    server.gate().release_next().expect("a held request");
+    assert!(wait_until(T, || gated.requests() == 4).await);
+    server.gate().release_all();
+    completed(&mgr, ids[3]).await;
+}
+
+/// M4 AC: a global limit caps the aggregate throughput of concurrent
+/// downloads. With debt, the last wait ends only once the shared balance is
+/// repaid, so `elapsed >= (total - burst) / rate`; slow CI only lengthens it.
+#[tokio::test]
+async fn global_limit_caps_aggregate_throughput() {
+    const SEG_LEN: usize = 512 * 1024;
+    const RATE: u64 = 512 * KIB;
+    let server = common::spawn_with(FixtureConfig {
+        seg_len: SEG_LEN,
+        ..FixtureConfig::default()
+    })
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    mgr.set_global_limit(Some(RATE));
+    let burst = RateLimiter::new(Some(RATE)).burst();
+    let total = 3 * SEG_LEN as u64;
+    let ideal = Duration::from_secs_f64((total - burst) as f64 / RATE as f64);
+
+    let started = Instant::now();
+    let ids: Vec<u64> = (0..3)
+        .map(|_| mgr.add(server.url("/seg"), dir.path(), None, None))
+        .collect();
+
+    // All three run at once (cap 3) with no per-download limit, so only the
+    // shared global bucket can be throttling them. Progress is reported after
+    // each chunk's throttle wait, so "has bytes" isn't a reliable overlap probe.
+    assert_eq!(ids_in(&mgr, Status::Downloading), ids, "not all concurrent");
+
+    for &id in &ids {
+        let snap = wait_for(&mgr, id, 3 * T, |s| s.status == Status::Completed)
+            .await
+            .unwrap_or_else(|| panic!("download {id} never completed"));
+        assert_eq!(
+            std::fs::read(snap.final_path.unwrap()).unwrap(),
+            server.seg_payload()
+        );
+    }
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed >= ideal.mul_f64(0.95),
+        "took {elapsed:?}, expected at least ~{ideal:?}"
+    );
+}
+
+/// M4: the max-connections setting bounds each download's parallel requests.
+#[tokio::test]
+async fn max_connections_setting_bounds_parallel_requests() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_chunk_delay: Duration::from_millis(10),
+        ..FixtureConfig::default()
+    })
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    mgr.set_max_connections(2);
+
+    let id = mgr.add(server.url("/seg"), dir.path(), None, None);
+    completed(&mgr, id).await;
+    let max = server.stats("/seg").max_in_flight();
+    assert!(max <= 2, "{max} connections, setting is 2");
+    assert!(max > 1, "never went multi-segment");
+}
+
+/// M4: settings and per-download limits persist across a restart, and the
+/// setters normalise their input.
+#[tokio::test]
+async fn settings_and_limits_survive_restart() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+
+    let (limited, unlimited) = {
+        let mgr = manager_in(dir.path());
+        mgr.set_max_concurrent(0);
+        assert_eq!(mgr.settings().max_concurrent, 1, "cap is at least 1");
+        mgr.set_max_concurrent(5);
+        mgr.set_global_limit(Some(MIB));
+        mgr.set_max_connections(200);
+        assert_eq!(mgr.settings().max_connections, 16, "clamped to 16");
+        mgr.set_max_connections(8);
+
+        let options = |limit| AddOptions {
+            limit,
+            ..AddOptions::default()
+        };
+        let limited = mgr.add_with(server.url("/file"), dir.path(), options(Some(256 * KIB)));
+        let unlimited = mgr.add_with(server.url("/file"), dir.path(), options(Some(0)));
+        assert_eq!(completed(&mgr, limited).await.limit, Some(256 * KIB));
+        assert_eq!(
+            completed(&mgr, unlimited).await.limit,
+            None,
+            "0 = unlimited"
+        );
+        (limited, unlimited)
+    };
+
+    let mgr = manager_in(dir.path());
+    assert_eq!(
+        mgr.settings(),
+        Settings {
+            max_concurrent: 5,
+            global_limit: Some(MIB),
+            max_connections: 8,
+        }
+    );
+    let snap = mgr.snapshot();
+    let limit_of = |id| snap.iter().find(|s| s.id == id).unwrap().limit;
+    assert_eq!(limit_of(limited), Some(256 * KIB));
+    assert_eq!(limit_of(unlimited), None);
+}
+
+/// M4: a per-download limit changes live: lifting it mid-download lets one
+/// that would take a minute finish at once.
+#[tokio::test]
+async fn set_limit_applies_to_a_running_download() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+
+    // 4 MiB at 64 KiB/s would take ~64 s.
+    let options = AddOptions {
+        limit: Some(64 * KIB),
+        ..AddOptions::default()
+    };
+    let id = mgr.add_with(server.url("/seg"), dir.path(), options);
+    let total = common::SEG_LEN as u64;
+    wait_for(&mgr, id, T, |s| s.downloaded > 0 && s.downloaded < total)
+        .await
+        .expect("never streamed");
+
+    mgr.set_limit(id, None);
+    let snap = completed(&mgr, id).await;
+    assert_eq!(snap.limit, None);
+    assert_eq!(
+        std::fs::read(snap.final_path.unwrap()).unwrap(),
+        server.seg_payload()
+    );
+}
+
+/// M4: raising the cap promotes queued downloads at once, without waiting
+/// for a running one to finish.
+#[tokio::test]
+async fn raising_the_cap_promotes_queued_downloads() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    mgr.set_max_concurrent(1);
+    mgr.set_max_connections(1);
+    let gated = server.stats("/gated");
+
+    let ids: Vec<u64> = (0..3)
+        .map(|_| mgr.add(server.url("/gated"), dir.path(), None, None))
+        .collect();
+    assert!(wait_until(T, || gated.requests() == 1).await);
+    tokio::time::sleep(SETTLE).await;
+    assert_eq!(ids_in(&mgr, Status::Queued), ids[1..]);
+
+    mgr.set_max_concurrent(3);
+    assert!(
+        wait_until(T, || gated.requests() == 3).await,
+        "raising the cap didn't promote the queue"
+    );
+    assert_eq!(ids_in(&mgr, Status::Downloading), ids);
+
+    server.gate().release_all();
+    for &id in &ids {
+        completed(&mgr, id).await;
+    }
+}
+
+/// M4: a download still queued at shutdown is restored paused, like a running
+/// one, so launching the app never starts it unasked; resuming it completes.
+#[tokio::test]
+async fn queued_download_is_restored_paused() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let gated = server.stats("/gated");
+
+    let queued = {
+        let mgr = manager_in(dir.path());
+        mgr.set_max_concurrent(1);
+        mgr.set_max_connections(1);
+        mgr.add(server.url("/gated"), dir.path(), None, None);
+        let queued = mgr.add(server.url("/gated"), dir.path(), None, None);
+        assert!(wait_until(T, || gated.requests() == 1).await);
+        assert_eq!(status_of(&mgr, queued), Some(Status::Queued));
+        queued
+    };
+
+    let mgr = manager_in(dir.path());
+    assert_eq!(status_of(&mgr, queued), Some(Status::Paused));
+    tokio::time::sleep(SETTLE).await;
+    assert_eq!(gated.requests(), 1, "a restored queued download started");
+
+    mgr.resume(queued);
+    assert!(wait_until(T, || gated.requests() == 2).await);
+    server.gate().release_all();
+    completed(&mgr, queued).await;
+}
+
+/// M4: cancelling a download that is queued after a resume (so it owns a
+/// `.part` but has no task to clean up) discards its partial state.
+#[tokio::test]
+async fn cancelling_a_queued_resumed_download_discards_partial() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    mgr.set_max_concurrent(1);
+    let gated = server.stats("/gated");
+
+    let slow = mgr.add(server.url("/slow"), dir.path(), None, None);
+    let target = wait_for(&mgr, slow, T, |s| s.downloaded > 0)
+        .await
+        .expect("never streamed")
+        .target;
+    mgr.pause(slow);
+    assert!(wait_status(&mgr, slow, Status::Paused, T).await);
+    let (part, sidecar) = (state::part_path(&target), state::sidecar_path(&target));
+    assert!(
+        part.exists() && sidecar.exists(),
+        "paused without partial state"
+    );
+
+    let runner = mgr.add(server.url("/gated"), dir.path(), None, None);
+    assert!(wait_until(T, || gated.requests() == 1).await);
+    mgr.resume(slow);
+    assert_eq!(status_of(&mgr, slow), Some(Status::Queued));
+
+    mgr.cancel(slow);
+    assert_eq!(status_of(&mgr, slow), Some(Status::Cancelled));
+    assert!(!part.exists(), "`.part` must be gone");
+    assert!(!sidecar.exists(), "sidecar must be gone");
+
+    server.gate().release_all();
+    completed(&mgr, runner).await;
 }

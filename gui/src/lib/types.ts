@@ -18,4 +18,14 @@ export interface DownloadSnapshot {
   error: string | null;
   added_at: number | null;
   finished_at: number | null;
+  /** Per-download speed cap in bytes/s; null is unlimited. */
+  limit: number | null;
+}
+
+/** Mirrors the engine's manager-wide `Settings` (see src/engine/store.rs). */
+export interface Settings {
+  max_concurrent: number;
+  /** Aggregate speed cap in bytes/s; null is unlimited. */
+  global_limit: number | null;
+  max_connections: number;
 }

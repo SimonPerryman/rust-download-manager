@@ -4,17 +4,42 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { DownloadSnapshot } from "./types";
+import type { SettingsPatch } from "./settings";
+import type { DownloadSnapshot, Settings } from "./types";
 
 /** One-shot snapshot of every download, in display order. */
 export const list = () => invoke<DownloadSnapshot[]>("list");
 
-/** Add a download; `dir`/`checksum` optional. Returns the new id (or rejects). */
-export const addDownload = (url: string, dir?: string | null, checksum?: string | null) =>
+/**
+ * Add a download; `dir`/`checksum`/`limit` optional (`limit` is a rate like
+ * `"500K"`). Returns the new id, or rejects with a parse/validation error.
+ */
+export const addDownload = (
+  url: string,
+  dir?: string | null,
+  checksum?: string | null,
+  limit?: string | null,
+) =>
   invoke<number>("add_download", {
     url,
     dir: dir ?? null,
     checksum: checksum ?? null,
+    limit: limit ?? null,
+  });
+
+/** The engine's manager-wide settings. */
+export const getSettings = () => invoke<Settings>("get_settings");
+
+/**
+ * Apply some manager-wide settings; omitted fields are left unchanged
+ * (`globalLimit` is a rate string, blank = unlimited). Resolves with the
+ * settings as the engine clamped them.
+ */
+export const setSettings = (patch: SettingsPatch) =>
+  invoke<Settings>("set_settings", {
+    maxConcurrent: patch.maxConcurrent ?? null,
+    globalLimit: patch.globalLimit ?? null,
+    maxConnections: patch.maxConnections ?? null,
   });
 
 export const pause = (id: number) => invoke<void>("pause", { id });

@@ -124,7 +124,7 @@ describe("rdm GUI", () => {
   // Across a reload, not a restart: msedgedriver gives every session a fresh
   // throwaway webview profile, so localStorage can't outlive a session there.
   it("keeps theme and density choices across a reload", async () => {
-    const settings = $('button[aria-label="Display settings"]');
+    const settings = $('button[aria-label="Settings"]');
     await settings.click();
     await $('[role="group"][aria-label="Theme"]').$("button=Dark").click();
     await $('[role="group"][aria-label="Density"]').$("button=Compact").click();

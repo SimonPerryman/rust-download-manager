@@ -3,7 +3,7 @@
 //! [`download`] streams an HTTP(S) GET to a `.part` file with a JSON sidecar
 //! for resume state, then verifies and renames it into place. The chunk loop
 //! consults a [`Control`] before each chunk (cancel/pause) and runs a throttle
-//! hook after each write (rate limiting, M4). Transient failures are retried
+//! hook after each write (rate limiting). Transient failures are retried
 //! with backoff, and retry and resume share one mechanism: each attempt picks
 //! up from the on-disk state.
 //!
@@ -16,6 +16,7 @@
 pub mod control;
 pub mod filename;
 pub mod integrity;
+pub mod limit;
 pub mod manager;
 pub mod progress;
 pub mod retry;
@@ -25,12 +26,13 @@ pub mod store;
 
 pub use control::{Control, Flow};
 pub use integrity::{Algo, Checksum};
-pub use manager::{DownloadSnapshot, Manager};
+pub use limit::{parse_rate, RateLimiter};
+pub use manager::{AddOptions, DownloadSnapshot, Manager};
 pub use progress::{Progress, SpeedMeter};
 pub use retry::RetryPolicy;
 pub use segment::Segment;
 pub use state::DownloadState;
-pub use store::{DownloadRecord, JsonStore, Status, Store, StoreData};
+pub use store::{DownloadRecord, JsonStore, Settings, Status, Store, StoreData};
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -73,7 +75,7 @@ pub struct DownloadRequest {
 }
 
 /// Default for [`DownloadRequest::connections`].
-const DEFAULT_CONNECTIONS: u8 = 4;
+pub(crate) const DEFAULT_CONNECTIONS: u8 = 4;
 
 /// Default for [`DownloadRequest::min_segment_size`].
 const DEFAULT_MIN_SEGMENT_SIZE: u64 = 1024 * 1024;
@@ -752,7 +754,7 @@ async fn stream_to_part(
         file.write_all(&chunk).await?;
         downloaded += chunk.len() as u64;
 
-        // Throttle point: M4's rate limiter sleeps here. No-op today.
+        // Throttle point: sleeps off rate-limit debt; pause/cancel cut it short.
         control.throttle(chunk.len()).await;
 
         let bytes_per_sec = meter.observe(start.elapsed(), downloaded);

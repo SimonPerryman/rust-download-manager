@@ -505,10 +505,14 @@ async fn fetch_segment(
             };
             progressed |= n > 0;
 
-            // Throttle point: M4's rate limiter sleeps here. No-op today.
-            shared.control.throttle(n as usize).await;
+            // Throttle point: sleeps off rate-limit debt. A sibling's failure
+            // raises `stop` without touching `Control`, so watch it too.
+            let stopped = tokio::select! {
+                _ = shared.control.throttle(n as usize) => false,
+                _ = stop.wait_for(|stopped| *stopped) => true,
+            };
             shared.progressed.notify_one();
-            if complete {
+            if complete || stopped {
                 return Ok(());
             }
         }

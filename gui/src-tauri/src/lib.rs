@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use rdm::{Checksum, DownloadSnapshot, JsonStore, Manager};
+use rdm::{AddOptions, Checksum, DownloadSnapshot, JsonStore, Manager, Settings};
 use tauri::{Emitter, Manager as _, State};
 use tauri_plugin_opener::OpenerExt;
 
@@ -26,7 +26,8 @@ fn list(state: State<'_, AppState>) -> Vec<DownloadSnapshot> {
 }
 
 /// Add a download. `dir` defaults to [`default_dir`]; `checksum`, if
-/// given, must parse as `"sha256:<hex>"`. Returns the new download's id.
+/// given, must parse as `"sha256:<hex>"`; `limit` is a rate like `"500K"`
+/// (blank = unlimited). Returns the new download's id.
 #[tauri::command]
 fn add_download(
     app: tauri::AppHandle,
@@ -34,6 +35,7 @@ fn add_download(
     url: String,
     dir: Option<String>,
     checksum: Option<String>,
+    limit: Option<String>,
 ) -> Result<u64, String> {
     let dir = match dir {
         Some(d) if !d.trim().is_empty() => PathBuf::from(d),
@@ -45,7 +47,51 @@ fn add_download(
         }
         _ => None,
     };
-    Ok(state.manager.add(url, dir, None, checksum))
+    let options = AddOptions {
+        checksum,
+        limit: parse_limit(limit)?,
+        ..AddOptions::default()
+    };
+    Ok(state.manager.add_with(url, dir, options))
+}
+
+/// Parse an optional rate string (`"2M"`, `"500K"`); blank or absent is
+/// unlimited.
+fn parse_limit(limit: Option<String>) -> Result<Option<u64>, String> {
+    match limit {
+        Some(l) if !l.trim().is_empty() => rdm::parse_rate(l.trim()).map(Some),
+        _ => Ok(None),
+    }
+}
+
+/// The engine's current manager-wide settings.
+#[tauri::command]
+fn get_settings(state: State<'_, AppState>) -> Settings {
+    state.manager.settings()
+}
+
+/// Update some of the manager-wide settings: an absent field is left as is,
+/// so concurrent edits of different fields can't clobber each other.
+/// `global_limit` is a rate string (blank = unlimited), validated before
+/// anything is applied. Returns the settings as the engine clamped them.
+#[tauri::command]
+fn set_settings(
+    state: State<'_, AppState>,
+    max_concurrent: Option<usize>,
+    global_limit: Option<String>,
+    max_connections: Option<u8>,
+) -> Result<Settings, String> {
+    let global_limit = global_limit.map(|l| parse_limit(Some(l))).transpose()?;
+    if let Some(n) = max_concurrent {
+        state.manager.set_max_concurrent(n);
+    }
+    if let Some(limit) = global_limit {
+        state.manager.set_global_limit(limit);
+    }
+    if let Some(n) = max_connections {
+        state.manager.set_max_connections(n);
+    }
+    Ok(state.manager.settings())
 }
 
 /// Pause a running download.
@@ -247,6 +293,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list,
             add_download,
+            get_settings,
+            set_settings,
             pause,
             resume,
             cancel,

@@ -16,6 +16,11 @@
 //! - `GET /ranged`    — payload, full+correct `Range`/`If-Range` support.
 //! - `GET /slow`      — like `/ranged` but streamed slowly (a kill/pause window).
 //! - `GET /named-slow` — `/slow` plus `/named`'s `Content-Disposition`.
+//! - `GET /crawl`     — `/slow` over a [`CRAWL_LEN`] payload (~150 chunks), so
+//!   it outlasts a multi-step UI flow at the E2E delay.
+//! - `GET /gated`     — no `Accept-Ranges`, no length: headers at once, then a
+//!   1 KiB chunk every [`GATED_TRICKLE`] until the test releases it through
+//!   [`TestServer::gate`] (keyed by arrival order), then ends.
 //! - `GET /norange`   — always 200, full body, never honours `Range`.
 //! - `GET /liar`      — advertises `Accept-Ranges` but ignores `Range` (200).
 //! - `GET /flaky`     — supports ranges; drops the connection mid-body for the
@@ -43,6 +48,7 @@
 //! - `GET /seg-drop`   — every ranged response aborts after
 //!   [`FixtureConfig::seg_abort_after`] chunks.
 //! - `GET /seg-503`    — every ranged request gets 503.
+//! - `GET /seg-403`    — every ranged request gets 403 after [`FORBIDDEN_DELAY`].
 //! - `GET /liar-etag`  — `/liar` over [`seg_payload`], with a strong ETag.
 //! - `GET /seg-identity` — `/seg` plus `Content-Encoding: identity`.
 //! - `GET /seg-expiring` — 307 to a freshly minted `/seg-signed?sig=<n>`.
@@ -52,7 +58,8 @@
 //!
 //! Aborting bodies wait [`ABORT_GRACE`] after their prefix before erroring, so
 //! the prefix really reaches the client. Every `/seg*` route, `/liar-etag`,
-//! `/norange` and `/liar` keeps [`RouteStats`] (see [`TestServer::stats`]).
+//! `/norange`, `/liar` and `/gated` keeps [`RouteStats`] (see
+//! [`TestServer::stats`]).
 //!
 //! The same routes back the GUI's webview E2E suite through the
 //! `fixture_server` example, which serves them on a fixed port with a slower
@@ -60,7 +67,7 @@
 
 #![allow(dead_code)] // Not every test binary uses every helper.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -88,6 +95,15 @@ const STREAM_CHUNK: usize = 4 * 1024;
 /// Default per-chunk delay for `/slow`, opening a window to kill/pause
 /// mid-stream.
 pub const SLOW_CHUNK_DELAY: Duration = Duration::from_millis(15);
+
+/// `/crawl`: payload length, ~150 [`STREAM_CHUNK`]s (~30 s at the E2E delay).
+pub const CRAWL_LEN: usize = 150 * STREAM_CHUNK;
+
+/// `/gated`: delay between trickled chunks while held.
+pub const GATED_TRICKLE: Duration = Duration::from_millis(20);
+
+/// `/gated`: bytes per trickled chunk.
+const GATED_CHUNK: usize = 1024;
 
 /// Deterministic payload served by the fixture (just under 100 KB, enough to
 /// span many chunks). Reproduced byte-for-byte on every call.
@@ -123,6 +139,9 @@ pub const SIGNED_URL_USES: usize = 2;
 /// How long an aborting body waits after its prefix before erroring.
 pub const ABORT_GRACE: Duration = Duration::from_millis(25);
 
+/// `/seg-403`: how long a ranged request waits before its 403.
+pub const FORBIDDEN_DELAY: Duration = Duration::from_millis(200);
+
 /// Strong ETag of the `/seg*` resources.
 pub const SEG_ETAG: &str = "\"seg-v1\"";
 
@@ -150,7 +169,7 @@ pub fn seg_payload() -> Vec<u8> {
 /// Tunables for a fixture server; [`spawn`] uses the defaults.
 #[derive(Debug, Clone)]
 pub struct FixtureConfig {
-    /// `/slow`, `/named-slow`: delay between streamed chunks.
+    /// `/slow`, `/named-slow`, `/crawl`: delay between streamed chunks.
     pub slow_chunk_delay: Duration,
     /// Length of [`seg_payload_of`] served by the `/seg*` routes.
     pub seg_len: usize,
@@ -305,13 +324,85 @@ const COUNTED_ROUTES: &[&str] = &[
     "/seg-capped",
     "/seg-drop",
     "/seg-503",
+    "/seg-403",
     "/liar-etag",
     "/seg-identity",
     "/seg-expiring",
     "/seg-signed",
     "/norange",
     "/liar",
+    "/gated",
 ];
+
+/// The `/gated` hold: each request gets an arrival sequence number and
+/// trickles until its number is released.
+#[derive(Default)]
+pub struct Gate(Mutex<GateState>);
+
+#[derive(Default)]
+struct GateState {
+    next_seq: usize,
+    /// Requests still connected.
+    live: BTreeSet<usize>,
+    released: HashSet<usize>,
+    release_all: bool,
+}
+
+impl Gate {
+    /// Release the oldest still-connected, held request; returns its sequence
+    /// number, or `None` if none is held.
+    pub fn release_next(&self) -> Option<usize> {
+        let mut st = self.0.lock().unwrap();
+        let seq = st
+            .live
+            .iter()
+            .copied()
+            .find(|seq| !st.released.contains(seq))?;
+        st.released.insert(seq);
+        Some(seq)
+    }
+
+    /// Release every current and future request.
+    pub fn release_all(&self) {
+        self.0.lock().unwrap().release_all = true;
+    }
+
+    /// Release request `seq` (0-based arrival order).
+    pub fn release(&self, seq: usize) {
+        self.0.lock().unwrap().released.insert(seq);
+    }
+
+    fn enter(self: &Arc<Self>) -> GateTicket {
+        let mut st = self.0.lock().unwrap();
+        let seq = st.next_seq;
+        st.next_seq += 1;
+        st.live.insert(seq);
+        GateTicket {
+            gate: self.clone(),
+            seq,
+        }
+    }
+}
+
+/// One `/gated` request's place in the [`Gate`]; dropped with the body, so a
+/// disconnected request can never swallow a release.
+struct GateTicket {
+    gate: Arc<Gate>,
+    seq: usize,
+}
+
+impl GateTicket {
+    fn released(&self) -> bool {
+        let st = self.gate.0.lock().unwrap();
+        st.release_all || st.released.contains(&self.seq)
+    }
+}
+
+impl Drop for GateTicket {
+    fn drop(&mut self) {
+        self.gate.0.lock().unwrap().live.remove(&self.seq);
+    }
+}
 
 /// Per-server state: route counters and the `/mutable` version.
 struct AppState {
@@ -330,6 +421,8 @@ struct AppState {
     next_sig: AtomicU64,
     /// `/seg-signed`: requests served per `sig`.
     sig_uses: Mutex<HashMap<u64, usize>>,
+    /// `/gated`: which held requests may finish.
+    gate: Arc<Gate>,
     stats: HashMap<&'static str, Arc<RouteStats>>,
 }
 
@@ -344,6 +437,7 @@ impl AppState {
             mutable_bumped: AtomicBool::new(false),
             next_sig: AtomicU64::new(0),
             sig_uses: Mutex::new(HashMap::new()),
+            gate: Arc::default(),
             stats: COUNTED_ROUTES
                 .iter()
                 .map(|route| (*route, Arc::new(RouteStats::default())))
@@ -471,7 +565,13 @@ async fn ranged_handler(headers: HeaderMap) -> Response {
 /// chunks with a short delay — a window to kill or pause mid-stream. Range and
 /// If-Range are honoured so a resume finishes quickly.
 async fn slow_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    slow_response(&headers, None, state.cfg.slow_chunk_delay)
+    slow_response(&headers, None, state.cfg.slow_chunk_delay, payload())
+}
+
+/// `/crawl`: `/slow` over a [`CRAWL_LEN`] payload.
+async fn crawl_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    let body = (0..CRAWL_LEN).map(|i| (i % 251) as u8).collect();
+    slow_response(&headers, None, state.cfg.slow_chunk_delay, body)
 }
 
 /// `/named-slow`: `/slow` with a `Content-Disposition` filename.
@@ -480,12 +580,17 @@ async fn named_slow_handler(State(state): State<Arc<AppState>>, headers: HeaderM
         &headers,
         Some(NAMED_DISPOSITION),
         state.cfg.slow_chunk_delay,
+        payload(),
     )
 }
 
-fn slow_response(headers: &HeaderMap, disposition: Option<&str>, delay: Duration) -> Response {
+fn slow_response(
+    headers: &HeaderMap,
+    disposition: Option<&str>,
+    delay: Duration,
+    body: Vec<u8>,
+) -> Response {
     let etag = "\"v1\"";
-    let body = payload();
     let total = body.len();
     let range_start = parse_range_start(headers);
     let validator_ok = if_range_matches(headers, etag);
@@ -566,6 +671,25 @@ async fn liar_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) ->
         .header(header::CONTENT_TYPE, "application/octet-stream")
         .header(header::CONTENT_LENGTH, payload().len())
         .body(Body::from(payload()))
+        .unwrap()
+}
+
+/// `/gated`: trickle until this request's arrival number is released.
+async fn gated_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    state.stats("/gated").record(&headers);
+    let ticket = state.gate.enter();
+    let chunk = Bytes::from(vec![0x47; GATED_CHUNK]);
+    let s = futures_util::stream::unfold(ticket, move |ticket| {
+        let chunk = chunk.clone();
+        async move {
+            tokio::time::sleep(GATED_TRICKLE).await;
+            (!ticket.released()).then(|| (Ok::<_, std::io::Error>(chunk), ticket))
+        }
+    });
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .body(Body::from_stream(s))
         .unwrap()
 }
 
@@ -670,6 +794,7 @@ enum Seg {
     Capped,
     Drop,
     Unavailable,
+    Forbidden,
     LiarEtag,
     Identity,
     Signed,
@@ -688,6 +813,7 @@ impl Seg {
             Seg::Capped => "/seg-capped",
             Seg::Drop => "/seg-drop",
             Seg::Unavailable => "/seg-503",
+            Seg::Forbidden => "/seg-403",
             Seg::LiarEtag => "/liar-etag",
             Seg::Identity => "/seg-identity",
             Seg::Signed => "/seg-signed",
@@ -698,6 +824,11 @@ impl Seg {
 fn seg_route(kind: Seg) -> MethodRouter<Arc<AppState>> {
     get(
         move |State(state): State<Arc<AppState>>, headers: HeaderMap| async move {
+            if kind == Seg::Forbidden && headers.contains_key(header::RANGE) {
+                state.stats(kind.route()).record(&headers);
+                tokio::time::sleep(FORBIDDEN_DELAY).await;
+                return StatusCode::FORBIDDEN.into_response();
+            }
             seg_response(&state, &headers, kind)
         },
     )
@@ -912,6 +1043,11 @@ impl TestServer {
         self.state.stats(route).clone()
     }
 
+    /// The `/gated` hold, to release its requests.
+    pub fn gate(&self) -> &Gate {
+        &self.state.gate
+    }
+
     /// The bytes the `/seg*` routes serve on this server.
     pub fn seg_payload(&self) -> Vec<u8> {
         self.state.seg.to_vec()
@@ -947,7 +1083,7 @@ pub async fn spawn_with(cfg: FixtureConfig) -> TestServer {
 }
 
 /// Serve the fixture routes on `listener` until the task is dropped, streaming
-/// `/slow` and `/named-slow` with `slow_chunk_delay` between chunks.
+/// `/slow`, `/named-slow` and `/crawl` with `slow_chunk_delay` between chunks.
 pub async fn serve(listener: TcpListener, slow_chunk_delay: Duration) {
     let cfg = FixtureConfig {
         slow_chunk_delay,
@@ -966,6 +1102,8 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/missing", get(missing_handler))
         .route("/ranged", get(ranged_handler))
         .route("/slow", get(slow_handler))
+        .route("/crawl", get(crawl_handler))
+        .route("/gated", get(gated_handler))
         .route("/norange", get(norange_handler))
         .route("/liar", get(liar_handler))
         .route("/flaky", get(flaky_handler))
@@ -982,6 +1120,7 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/seg-capped", seg_route(Seg::Capped))
         .route("/seg-drop", seg_route(Seg::Drop))
         .route("/seg-503", seg_route(Seg::Unavailable))
+        .route("/seg-403", seg_route(Seg::Forbidden))
         .route("/liar-etag", seg_route(Seg::LiarEtag))
         .route("/seg-identity", seg_route(Seg::Identity))
         .route("/seg-expiring", get(seg_expiring_handler))

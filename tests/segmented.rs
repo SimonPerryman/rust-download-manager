@@ -6,6 +6,7 @@
 mod common;
 
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
@@ -13,7 +14,7 @@ use sha2::{Digest, Sha256};
 use common::{FixtureConfig, RouteStats};
 use rdm::engine::state::{self, DownloadState};
 use rdm::engine::Segment;
-use rdm::{download, Control, DownloadRequest, Error, Progress, RetryPolicy};
+use rdm::{download, Control, DownloadRequest, Error, Progress, RateLimiter, RetryPolicy};
 
 const KIB: u64 = 1024;
 const MIB: u64 = 1024 * KIB;
@@ -1051,4 +1052,34 @@ async fn pause_is_noticed_while_all_workers_wait_on_the_network() {
     assert!(waited < Duration::from_secs(1), "pause took {waited:?}");
     let st = DownloadState::load(&state::sidecar_path(&out)).unwrap();
     assert_eq!(st.version, 2);
+}
+
+/// M4: a throttled worker sleeping off rate-limit debt still notices a
+/// sibling's fatal failure, so the download fails promptly instead of
+/// waiting out the debt first.
+#[tokio::test]
+async fn sibling_failure_interrupts_a_throttled_worker() {
+    // A 1 KiB/s cap: past the 64 KiB burst, even one more small chunk is
+    // seconds of debt for the probe's worker.
+    const RATE: u64 = KIB;
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("forbidden.bin");
+
+    let req = DownloadRequest::to_path(server.url("/seg-403"), &out)
+        .with_connections(4)
+        .with_retry(fast_retry(1));
+    let control = Control::new().with_limiters([Arc::new(RateLimiter::new(Some(RATE)))]);
+    let started = Instant::now();
+    let result = tokio::time::timeout(Duration::from_secs(10), download(&req, &control, |_| {}))
+        .await
+        .expect("download never returned: the throttled worker waited out its debt");
+    let elapsed = started.elapsed();
+
+    assert!(matches!(result, Err(Error::Status(403))), "got {result:?}");
+    // The 403s land after `FORBIDDEN_DELAY`; the debt would take >= 4 s.
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "took {elapsed:?}: the throttled worker waited out its debt"
+    );
 }

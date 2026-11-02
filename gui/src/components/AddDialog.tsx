@@ -15,6 +15,7 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
   const [url, setUrl] = useState("");
   const [dest, setDest] = useState("");
   const [checksum, setChecksum] = useState("");
+  const [limit, setLimit] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -25,6 +26,7 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
     setError(null);
     setUrl(initialUrl);
     setChecksum("");
+    setLimit("");
     api
       .defaultDownloadDir()
       .then(setDest)
@@ -54,7 +56,12 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await api.addDownload(url.trim(), dest.trim() || null, checksum.trim() || null);
+      await api.addDownload(
+        url.trim(),
+        dest.trim() || null,
+        checksum.trim() || null,
+        limit.trim() || null,
+      );
       onClose();
     } catch (e) {
       setError(String(e));
@@ -79,7 +86,7 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
           <div className="flex flex-col space-y-1.5 px-6 pb-4 pt-6">
             <h2 className="text-lg font-semibold leading-none tracking-tight">Add download</h2>
             <p className="text-sm text-muted-foreground">
-              Paste a URL. Destination and checksum are optional.
+              Paste a URL. Everything else is optional.
             </p>
           </div>
 
@@ -128,6 +135,18 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
               <p className="text-xs text-muted-foreground">
                 If provided, the file is verified after download and discarded on mismatch.
               </p>
+            </Field>
+
+            <Field label="Speed limit" optional>
+              <input
+                type="text"
+                aria-label="Speed limit"
+                value={limit}
+                onChange={(e) => setLimit(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+                placeholder="Unlimited — e.g. 500K or 2M"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              />
             </Field>
 
             {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
