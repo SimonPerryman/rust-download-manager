@@ -42,6 +42,21 @@ async function waitForStatus(id: string, status: string): Promise<void> {
   );
 }
 
+/** Waits until no row with `id` is rendered. Polls a fresh query each time: a
+ * row detached mid-check can surface as a stale-element error, not absence. */
+async function waitForGone(id: string): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      try {
+        return (await $$(`li[data-testid="download-row"][data-id="${id}"]`).length) === 0;
+      } catch {
+        return false;
+      }
+    },
+    { timeoutMsg: `download ${id} was never removed` },
+  );
+}
+
 /** Sets the concurrency cap through the Settings popover and checks the engine kept it. */
 async function setMaxConcurrent(n: number): Promise<void> {
   await settingsButton().click();
@@ -118,7 +133,7 @@ describe("rdm GUI download queue", () => {
       for (const id of ids) {
         await rowById(id).waitForExist({ timeoutMsg: `download ${id} never reached History` });
         await rowById(id).$('button[aria-label="Remove"]').click();
-        await rowById(id).waitForExist({ reverse: true });
+        await waitForGone(id);
       }
       await $("button*=Active").click();
     }
