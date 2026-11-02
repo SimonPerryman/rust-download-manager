@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::engine::Result;
+use crate::engine::{segment, Result, DEFAULT_CONNECTIONS};
 
 /// Current store schema version. Bump when the on-disk shape changes.
 const SCHEMA_VERSION: u32 = 1;
@@ -27,7 +27,7 @@ const SCHEMA_VERSION: u32 = 1;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
-    /// Added but not yet streaming (transient; M2 starts immediately).
+    /// Waiting for a free slot under the manager's concurrency cap.
     Queued,
     /// Actively downloading.
     Downloading,
@@ -42,7 +42,8 @@ pub enum Status {
 }
 
 impl Status {
-    /// Whether a download in this status has a live task running (or about to).
+    /// Whether a download in this status is active: streaming or waiting for
+    /// a slot.
     pub fn is_running(self) -> bool {
         matches!(self, Status::Queued | Status::Downloading)
     }
@@ -97,6 +98,44 @@ pub struct DownloadRecord {
     /// Unix-epoch seconds when it reached a terminal status.
     #[serde(default)]
     pub finished_at: Option<u64>,
+    /// Per-download speed cap in bytes/s; `None` is unlimited.
+    #[serde(default)]
+    pub limit: Option<u64>,
+}
+
+/// Manager-wide download settings, persisted with the download list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Settings {
+    /// Most downloads streaming at once; the rest wait as [`Status::Queued`].
+    pub max_concurrent: usize,
+    /// Aggregate speed cap across all downloads in bytes/s; `None` is
+    /// unlimited.
+    pub global_limit: Option<u64>,
+    /// Parallel connections per download, applied when a download (re)starts.
+    pub max_connections: u8,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            max_concurrent: 3,
+            global_limit: None,
+            max_connections: DEFAULT_CONNECTIONS,
+        }
+    }
+}
+
+impl Settings {
+    /// Pull every field into its valid range: at least one slot, 1..=16
+    /// connections, and a zero limit meaning unlimited.
+    pub(crate) fn clamped(self) -> Self {
+        Self {
+            max_concurrent: self.max_concurrent.max(1),
+            global_limit: self.global_limit.filter(|&r| r > 0),
+            max_connections: self.max_connections.clamp(1, segment::MAX_CONNECTIONS),
+        }
+    }
 }
 
 /// The full on-disk document: schema version, the id counter, and the records.
@@ -112,6 +151,9 @@ pub struct StoreData {
     /// Every download, in display order.
     #[serde(default)]
     pub downloads: Vec<DownloadRecord>,
+    /// Manager-wide settings; defaults when absent (stores written before M4).
+    #[serde(default)]
+    pub settings: Settings,
 }
 
 fn default_version() -> u32 {
@@ -128,6 +170,7 @@ impl Default for StoreData {
             version: SCHEMA_VERSION,
             next_id: 1,
             downloads: Vec::new(),
+            settings: Settings::default(),
         }
     }
 }
@@ -216,6 +259,7 @@ mod tests {
             error: None,
             added_at: Some(1_700_000_000),
             finished_at: None,
+            limit: None,
         }
     }
 
@@ -231,6 +275,11 @@ mod tests {
                 sample_record(1, Status::Completed),
                 sample_record(2, Status::Paused),
             ],
+            settings: Settings {
+                max_concurrent: 5,
+                global_limit: Some(512 * 1024),
+                max_connections: 8,
+            },
         };
         store.save(&data).unwrap();
 
@@ -281,6 +330,44 @@ mod tests {
         assert_eq!(rec.total, None);
         assert_eq!(rec.checksum, None);
         assert!(!rec.target_provisional);
+        assert_eq!(rec.limit, None);
+        assert_eq!(loaded.settings, Settings::default());
+    }
+
+    #[test]
+    fn pre_settings_v1_store_loads_with_default_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"next_id":2,"downloads":[{"id":1,"url":"u","target":"t","status":"paused","downloaded":10,"total":100}]}"#,
+        )
+        .unwrap();
+
+        let loaded = JsonStore::new(&path).load().unwrap();
+        assert_eq!(loaded.version, 1);
+        assert_eq!(loaded.settings.max_concurrent, 3);
+        assert_eq!(loaded.settings.max_connections, 4);
+        assert_eq!(loaded.settings.global_limit, None);
+        assert_eq!(loaded.downloads[0].limit, None);
+    }
+
+    #[test]
+    fn settings_clamp_into_range() {
+        let wild = Settings {
+            max_concurrent: 0,
+            global_limit: Some(0),
+            max_connections: 200,
+        };
+        let clamped = wild.clamped();
+        assert_eq!(clamped.max_concurrent, 1);
+        assert_eq!(clamped.global_limit, None);
+        assert_eq!(clamped.max_connections, segment::MAX_CONNECTIONS);
+        let none = Settings {
+            max_connections: 0,
+            ..Settings::default()
+        };
+        assert_eq!(none.clamped().max_connections, 1);
     }
 
     #[test]

@@ -51,6 +51,7 @@ function Shell({
   return (
     <li
       data-testid="download-row"
+      data-id={d.id}
       data-filename={d.filename}
       data-status={d.status}
       className="flex items-start gap-row-gap px-row-px py-row-py"
@@ -101,11 +102,21 @@ function sizeLabel(d: DownloadSnapshot): string {
   return d.total != null ? formatBytes(d.total) : formatBytes(d.downloaded);
 }
 
+// A speed cap only matters while a download can still stream, so finished
+// rows don't show it.
+const LIMIT_SHOWN: DownloadSnapshot["status"][] = ["downloading", "paused", "queued"];
+
 function Source({ d, extra }: { d: DownloadSnapshot; extra?: string }) {
   return (
     <p className="mt-0.5 text-row-meta text-muted-foreground">
       {host(d.url)} · {sizeLabel(d)}
       {extra ? ` · ${extra}` : ""}
+      {d.limit != null && LIMIT_SHOWN.includes(d.status) && (
+        <span data-testid="row-limit" className="tabular-nums">
+          {" "}
+          · limit {formatSpeed(d.limit)}
+        </span>
+      )}
     </p>
   );
 }
@@ -214,8 +225,8 @@ function QueuedRow({ d }: { d: DownloadSnapshot }) {
       dim
       actions={
         <>
-          <IconButton title="Start now" onClick={() => api.resume(d.id)}>
-            <Play />
+          <IconButton title="Pause" onClick={() => api.pause(d.id)}>
+            <Pause />
           </IconButton>
           <IconButton title="Cancel" onClick={() => api.cancel(d.id)}>
             <X />
@@ -231,7 +242,7 @@ function QueuedRow({ d }: { d: DownloadSnapshot }) {
         </span>
       </div>
       <Source d={d} />
-      <p className="mt-row-note text-row-meta text-muted-foreground">Waiting — starts shortly.</p>
+      <p className="mt-row-note text-row-meta text-muted-foreground">Waiting for a free slot</p>
     </Shell>
   );
 }

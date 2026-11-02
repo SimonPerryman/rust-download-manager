@@ -8,6 +8,11 @@
 //! exposes a [`watch`] channel of [`DownloadSnapshot`]s so a frontend can
 //! render live state without any download logic of its own.
 //!
+//! Downloads beyond [`Settings::max_concurrent`] wait as [`Status::Queued`]
+//! and start in display order as slots free. Each download is throttled by
+//! its own [`RateLimiter`] and a manager-wide one, both owned here so live
+//! limit changes reach a running download.
+//!
 //! Observation is coalesced: per-chunk progress updates in-memory counters
 //! cheaply and only publishes a fresh snapshot at ~10 Hz, so UI update rate is
 //! decoupled from chunk rate. Lifecycle transitions publish immediately.
@@ -22,9 +27,9 @@ use serde::Serialize;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use crate::engine::store::{DownloadRecord, Status, Store, StoreData};
+use crate::engine::store::{DownloadRecord, Settings, Status, Store, StoreData};
 use crate::engine::{
-    download, filename, state, Checksum, Control, DownloadRequest, Error, Progress,
+    download, filename, state, Checksum, Control, DownloadRequest, Error, Progress, RateLimiter,
 };
 
 /// Minimum wall-clock gap between progress-driven snapshot publishes.
@@ -62,6 +67,19 @@ pub struct DownloadSnapshot {
     pub added_at: Option<u64>,
     /// Unix-epoch seconds when it reached a terminal status.
     pub finished_at: Option<u64>,
+    /// Per-download speed cap in bytes/s; `None` is unlimited.
+    pub limit: Option<u64>,
+}
+
+/// Optional extras for [`Manager::add_with`].
+#[derive(Debug, Clone, Default)]
+pub struct AddOptions {
+    /// Explicit full target path, overriding the derived name.
+    pub out: Option<PathBuf>,
+    /// Integrity check for the finished file.
+    pub checksum: Option<Checksum>,
+    /// Speed cap in bytes/s (`None` or `Some(0)` is unlimited).
+    pub limit: Option<u64>,
 }
 
 /// Live, non-persisted throughput for one download.
@@ -71,11 +89,14 @@ struct Live {
     eta_secs: Option<u64>,
 }
 
-/// One managed download: its persisted record, control handle, live speed, and
-/// the running task (if any).
+/// One managed download: its persisted record, control handle, rate limiter,
+/// live speed, and the running task (if any).
 struct Entry {
     record: DownloadRecord,
     control: Control,
+    /// Outlives each start's `Control`, so a limit set while queued or paused
+    /// still applies.
+    limiter: Arc<RateLimiter>,
     live: Live,
     task: Option<JoinHandle<()>>,
 }
@@ -101,6 +122,7 @@ impl Entry {
             error: self.record.error.clone(),
             added_at: self.record.added_at,
             finished_at: self.record.finished_at,
+            limit: self.record.limit,
         }
     }
 }
@@ -110,6 +132,7 @@ struct ManagerState {
     next_id: u64,
     order: Vec<u64>,
     entries: HashMap<u64, Entry>,
+    settings: Settings,
 }
 
 /// Shared manager internals, held behind an `Arc` so download tasks can report
@@ -125,6 +148,8 @@ struct Inner {
     handle: tokio::runtime::Handle,
     /// Set true once dropped, so late task callbacks become no-ops.
     closed: AtomicBool,
+    /// Shared by every download; unlimited until a global limit is set.
+    global: Arc<RateLimiter>,
 }
 
 impl Inner {
@@ -154,6 +179,7 @@ impl Inner {
                 .filter_map(|id| st.entries.get(id))
                 .map(|e| e.record.clone())
                 .collect(),
+            settings: st.settings,
         };
         let _ = self.store.save(&data);
     }
@@ -210,8 +236,44 @@ impl Inner {
         target
     }
 
+    /// Start queued downloads, in display order, while fewer than
+    /// `max_concurrent` are running. Called with the state lock held.
+    fn schedule(self: &Arc<Self>, st: &mut ManagerState) {
+        if self.closed.load(Ordering::SeqCst) {
+            return;
+        }
+        let cap = st.settings.max_concurrent;
+        let connections = st.settings.max_connections;
+        let mut running = st.entries.values().filter(|e| e.task.is_some()).count();
+        // A lowered cap can leave `running > cap`; nothing is preempted.
+        let free = cap.saturating_sub(running);
+        let waiting: Vec<u64> = st
+            .order
+            .iter()
+            .copied()
+            .filter(|id| {
+                st.entries
+                    .get(id)
+                    .is_some_and(|e| e.record.status == Status::Queued && e.task.is_none())
+            })
+            .take(free)
+            .collect();
+        for id in waiting {
+            debug_assert!(running < cap, "promoted past the concurrency cap");
+            let e = st.entries.get_mut(&id).expect("collected above");
+            // A fresh control each start: `cancel` latches and can't be
+            // cleared, and the `.part` + sidecar, not the control, carry the
+            // resume position. `with_limiters` must precede any clone.
+            let control = Control::new().with_limiters([e.limiter.clone(), self.global.clone()]);
+            e.control = control.clone();
+            e.record.status = Status::Downloading;
+            e.task = Some(spawn_task(self.clone(), &e.record, control, connections));
+            running += 1;
+        }
+    }
+
     /// A download task has ended; record its terminal status and persist.
-    fn finish(&self, id: u64, result: crate::engine::Result<crate::engine::Summary>) {
+    fn finish(self: &Arc<Self>, id: u64, result: crate::engine::Result<crate::engine::Summary>) {
         if self.closed.load(Ordering::SeqCst) {
             return;
         }
@@ -243,6 +305,7 @@ impl Inner {
                 e.record.finished_at = now_secs();
             }
         }
+        self.schedule(st);
         self.persist(st);
         self.publish(st);
     }
@@ -253,8 +316,9 @@ impl Inner {
 /// Cheap to clone-by-`Arc` internally; a frontend holds one `Manager` and
 /// drives it with [`add`](Manager::add), [`pause`](Manager::pause),
 /// [`resume`](Manager::resume), [`cancel`](Manager::cancel) and
-/// [`remove`](Manager::remove), observing via [`subscribe`](Manager::subscribe)
-/// or [`snapshot`](Manager::snapshot).
+/// [`remove`](Manager::remove), tunes it with the [`Settings`] setters, and
+/// observes via [`subscribe`](Manager::subscribe) or
+/// [`snapshot`](Manager::snapshot).
 pub struct Manager {
     inner: Arc<Inner>,
 }
@@ -290,10 +354,13 @@ impl Manager {
                     rec.downloaded = downloaded;
                 }
             }
+            let limiter = Arc::new(RateLimiter::new(rec.limit));
+            rec.limit = limiter.rate();
             order.push(rec.id);
             entries.insert(
                 rec.id,
                 Entry {
+                    limiter,
                     record: rec,
                     control: Control::new(),
                     live: Live::default(),
@@ -302,11 +369,13 @@ impl Manager {
             );
         }
         let next_id = data.next_id.max(1);
+        let settings = data.settings.clamped();
 
         let st = ManagerState {
             next_id,
             order,
             entries,
+            settings,
         };
         let (tx, _rx) = watch::channel(Vec::new());
         let inner = Arc::new(Inner {
@@ -315,6 +384,7 @@ impl Manager {
             last_publish: Mutex::new(Instant::now()),
             handle,
             closed: AtomicBool::new(false),
+            global: Arc::new(RateLimiter::new(settings.global_limit)),
             state: Mutex::new(st),
         });
         // Prime the channel with the restored list.
@@ -325,9 +395,10 @@ impl Manager {
         Ok(Self { inner })
     }
 
-    /// Add a new download and start it immediately. `dir` is the destination
-    /// folder; `out`, when given, is an explicit full target path that
-    /// overrides the derived name. Returns the new download's id.
+    /// Add a new download, starting it now if a slot is free or queueing it
+    /// otherwise. `dir` is the destination folder; `out`, when given, is an
+    /// explicit full target path that overrides the derived name. Returns the
+    /// new download's id.
     ///
     /// Without `out`, the target shows a URL-derived placeholder until the first
     /// response, when the server's `Content-Disposition` (or URL) name is
@@ -339,61 +410,87 @@ impl Manager {
         out: Option<PathBuf>,
         checksum: Option<Checksum>,
     ) -> u64 {
+        let options = AddOptions {
+            out,
+            checksum,
+            ..AddOptions::default()
+        };
+        self.add_with(url, dir, options)
+    }
+
+    /// [`add`](Self::add) with every option, including a per-download speed
+    /// limit. Returns the new download's id.
+    pub fn add_with(
+        &self,
+        url: impl Into<String>,
+        dir: impl Into<PathBuf>,
+        options: AddOptions,
+    ) -> u64 {
         let url = url.into();
         let st = &mut *self.inner.state.lock().unwrap();
 
         let id = st.next_id;
         st.next_id += 1;
 
-        let (target, target_provisional) = match out {
+        let (target, target_provisional) = match options.out {
             Some(out) => (unique_target(st, out), false),
             None => (dir.into().join(filename::resolve(None, &url, None)), true),
         };
-        let control = Control::new();
+        let limiter = Arc::new(RateLimiter::new(options.limit));
         let record = DownloadRecord {
             id,
             url,
             target,
             target_provisional,
             final_path: None,
-            checksum: checksum.map(|c| c.to_string()),
-            status: Status::Downloading,
+            checksum: options.checksum.map(|c| c.to_string()),
+            status: Status::Queued,
             downloaded: 0,
             total: None,
             error: None,
             added_at: now_secs(),
             finished_at: None,
+            limit: limiter.rate(),
         };
-        let task = spawn_task(self.inner.clone(), &record, control.clone());
         let entry = Entry {
             record,
-            control,
+            control: Control::new(),
+            limiter,
             live: Live::default(),
-            task: Some(task),
+            task: None,
         };
 
         st.order.push(id);
         st.entries.insert(id, entry);
+        self.inner.schedule(st);
         self.inner.persist(st);
         self.inner.publish(st);
         id
     }
 
-    /// Request a pause. The running task stops at the next chunk boundary,
+    /// Request a pause. A running task stops at the next chunk boundary,
     /// keeping the `.part` + sidecar; the status flips to [`Status::Paused`]
-    /// once the task observes it. No-op if the download isn't running.
+    /// once the task observes it. A queued download leaves the queue at once.
+    /// No-op otherwise.
     pub fn pause(&self, id: u64) {
-        let st = self.inner.state.lock().unwrap();
-        if let Some(e) = st.entries.get(&id) {
-            if e.record.status.is_running() {
-                e.control.pause();
-            }
+        let st = &mut *self.inner.state.lock().unwrap();
+        let Some(e) = st.entries.get_mut(&id) else {
+            return;
+        };
+        if e.task.is_some() {
+            e.control.pause();
+        } else if e.record.status == Status::Queued {
+            e.record.status = Status::Paused;
+            self.inner.schedule(st);
+            self.inner.persist(st);
+            self.inner.publish(st);
         }
     }
 
     /// Start, resume, or retry a download: resumes a paused one from its
     /// `.part`, retries a failed one, or restarts a cancelled one from scratch.
-    /// No-op if it's already running or already completed.
+    /// It rejoins the queue, starting now if a slot is free. No-op if it's
+    /// already running, queued or completed.
     pub fn resume(&self, id: u64) {
         let st = &mut *self.inner.state.lock().unwrap();
         let Some(e) = st.entries.get_mut(&id) else {
@@ -402,40 +499,40 @@ impl Manager {
         if e.task.is_some() || !e.record.status.is_resumable() {
             return;
         }
-        // A fresh control each (re)start: `cancel` latches and can't be
-        // cleared, and the `.part` + sidecar — not the control — carry resume
-        // position, so a new handle is always safe.
-        let control = Control::new();
-        e.control = control.clone();
-        e.record.status = Status::Downloading;
+        e.record.status = Status::Queued;
         e.record.error = None;
         e.record.finished_at = None;
-        e.task = Some(spawn_task(self.inner.clone(), &e.record, control));
+        self.inner.schedule(st);
         self.inner.persist(st);
         self.inner.publish(st);
     }
 
-    /// Cancel a running or paused download and discard its partial data. No-op
-    /// for downloads that have already finished.
+    /// Cancel a running, queued or paused download and discard its partial
+    /// data. No-op for downloads that have already finished.
     pub fn cancel(&self, id: u64) {
         let st = &mut *self.inner.state.lock().unwrap();
         let Some(e) = st.entries.get_mut(&id) else {
             return;
         };
+        if e.task.is_some() {
+            // The live task observes the cancel, removes `.part` + sidecar
+            // itself, and reports back through `finish`.
+            e.control.cancel();
+            return;
+        }
         match e.record.status {
-            // A live task observes the cancel, removes `.part` + sidecar itself,
-            // and reports back through `finish`.
-            Status::Downloading | Status::Queued => e.control.cancel(),
-            // No task to observe it — discard the partial here and now.
-            Status::Paused => {
+            // No task to observe it: discard the partial here and now (a
+            // resumed-then-queued download may own a `.part`).
+            Status::Queued | Status::Paused => {
                 remove_partial(&e.record);
                 e.record.status = Status::Cancelled;
                 e.record.downloaded = 0;
                 e.record.finished_at = now_secs();
+                self.inner.schedule(st);
                 self.inner.persist(st);
                 self.inner.publish(st);
             }
-            Status::Completed | Status::Failed | Status::Cancelled => {}
+            Status::Downloading | Status::Completed | Status::Failed | Status::Cancelled => {}
         }
     }
 
@@ -454,6 +551,7 @@ impl Manager {
         if e.record.status != Status::Completed {
             remove_partial(&e.record);
         }
+        self.inner.schedule(st);
         self.inner.persist(st);
         self.inner.publish(st);
     }
@@ -469,6 +567,52 @@ impl Manager {
     /// behind — it just sees the most recent state.
     pub fn subscribe(&self) -> watch::Receiver<Vec<DownloadSnapshot>> {
         self.inner.tx.subscribe()
+    }
+
+    /// The current manager-wide settings.
+    pub fn settings(&self) -> Settings {
+        self.inner.state.lock().unwrap().settings
+    }
+
+    /// Set how many downloads may stream at once (at least 1). Raising it
+    /// starts queued downloads; lowering it never interrupts running ones.
+    pub fn set_max_concurrent(&self, n: usize) {
+        self.update_settings(|s| s.max_concurrent = n);
+    }
+
+    /// Cap the aggregate speed of all downloads in bytes/s (`None` or
+    /// `Some(0)` is unlimited). Applies live, including to running downloads.
+    pub fn set_global_limit(&self, limit: Option<u64>) {
+        self.update_settings(|s| s.global_limit = limit);
+    }
+
+    /// Set the parallel connections per download (clamped to 1..=16). Applies
+    /// from each download's next start, not to ones already running.
+    pub fn set_max_connections(&self, n: u8) {
+        self.update_settings(|s| s.max_connections = n);
+    }
+
+    /// Cap one download's speed in bytes/s (`None` or `Some(0)` is
+    /// unlimited). Applies live if it's running, and persists across restarts.
+    pub fn set_limit(&self, id: u64, limit: Option<u64>) {
+        let st = &mut *self.inner.state.lock().unwrap();
+        let Some(e) = st.entries.get_mut(&id) else {
+            return;
+        };
+        e.limiter.set_rate(limit);
+        e.record.limit = e.limiter.rate();
+        self.inner.persist(st);
+        self.inner.publish(st);
+    }
+
+    fn update_settings(&self, change: impl FnOnce(&mut Settings)) {
+        let st = &mut *self.inner.state.lock().unwrap();
+        change(&mut st.settings);
+        st.settings = st.settings.clamped();
+        self.inner.global.set_rate(st.settings.global_limit);
+        self.inner.schedule(st);
+        self.inner.persist(st);
+        self.inner.publish(st);
     }
 }
 
@@ -489,9 +633,15 @@ impl Drop for Manager {
 
 /// Spawn the engine `download` for one record on its own task, reporting
 /// progress and completion back through `inner`.
-fn spawn_task(inner: Arc<Inner>, record: &DownloadRecord, control: Control) -> JoinHandle<()> {
+/// Runs under the state lock, so it must never take it.
+fn spawn_task(
+    inner: Arc<Inner>,
+    record: &DownloadRecord,
+    control: Control,
+    connections: u8,
+) -> JoinHandle<()> {
     let id = record.id;
-    let req = request_for(&inner, record, &control);
+    let req = request_for(&inner, record, &control, connections);
     let handle = inner.handle.clone();
     handle.spawn(async move {
         let progress = inner.clone();
@@ -503,7 +653,12 @@ fn spawn_task(inner: Arc<Inner>, record: &DownloadRecord, control: Control) -> J
 /// Build the engine request for `record`. A provisional target is left for
 /// the engine to derive from the response and claimed back via `inner`; a
 /// claimed one is passed explicitly so the engine resumes its `.part`.
-fn request_for(inner: &Arc<Inner>, record: &DownloadRecord, control: &Control) -> DownloadRequest {
+fn request_for(
+    inner: &Arc<Inner>,
+    record: &DownloadRecord,
+    control: &Control,
+    connections: u8,
+) -> DownloadRequest {
     let mut req = if record.target_provisional {
         let dir = record
             .target
@@ -520,7 +675,7 @@ fn request_for(inner: &Arc<Inner>, record: &DownloadRecord, control: &Control) -
         let cs: Checksum = cs;
         req = req.with_checksum(cs);
     }
-    req
+    req.with_connections(connections)
 }
 
 /// Choose a target path that no other *active* download and no file on disk is
@@ -586,4 +741,69 @@ fn now_secs() -> Option<u64> {
         .duration_since(UNIX_EPOCH)
         .ok()
         .map(|d| d.as_secs())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A [`Store`] that serves a fixed document and discards saves.
+    struct FixedStore(StoreData);
+
+    impl Store for FixedStore {
+        fn load(&self) -> crate::engine::Result<StoreData> {
+            Ok(self.0.clone())
+        }
+
+        fn save(&self, _: &StoreData) -> crate::engine::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn record(id: u64, limit: Option<u64>) -> DownloadRecord {
+        DownloadRecord {
+            id,
+            url: format!("http://example.invalid/{id}"),
+            target: PathBuf::from(format!("{id}.bin")),
+            target_provisional: false,
+            final_path: None,
+            checksum: None,
+            status: Status::Paused,
+            downloaded: 0,
+            total: None,
+            error: None,
+            added_at: None,
+            finished_at: None,
+            limit,
+        }
+    }
+
+    /// Restored limits are enforced, not just displayed: each download's
+    /// limiter and the global one run at the persisted rates, and a stored
+    /// zero limit restores as unlimited.
+    #[tokio::test]
+    async fn load_restores_enforced_limits() {
+        let data = StoreData {
+            version: 1,
+            next_id: 3,
+            downloads: vec![record(1, Some(256 * 1024)), record(2, Some(0))],
+            settings: Settings {
+                global_limit: Some(1024 * 1024),
+                ..Settings::default()
+            },
+        };
+        let mgr = Manager::load(
+            Box::new(FixedStore(data)),
+            tokio::runtime::Handle::current(),
+        )
+        .unwrap();
+
+        assert_eq!(mgr.inner.global.rate(), Some(1024 * 1024));
+        let st = mgr.inner.state.lock().unwrap();
+        for (id, want) in [(1, Some(256 * 1024)), (2, None)] {
+            let e = &st.entries[&id];
+            assert_eq!(e.limiter.rate(), want, "download {id}'s limiter");
+            assert_eq!(e.snapshot().limit, want, "download {id}'s shown limit");
+        }
+    }
 }

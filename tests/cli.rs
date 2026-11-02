@@ -289,3 +289,75 @@ async fn wait_until(timeout: Duration, mut cond: impl FnMut() -> bool) -> bool {
     }
     cond()
 }
+
+/// `--limit-rate` rejects values outside its grammar (or zero) before any
+/// download starts, and accepts a valid rate.
+#[tokio::test]
+async fn cli_limit_rate_validates_and_downloads() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("limited.bin");
+    let exe = env!("CARGO_BIN_EXE_rdm");
+
+    for bad in ["0", "5X", "-1", ""] {
+        let output = Command::new(exe)
+            .arg(server.url("/file"))
+            .arg("-o")
+            .arg(&out)
+            .arg(format!("--limit-rate={bad}"))
+            .output()
+            .await
+            .expect("spawn rdm");
+        assert!(
+            !output.status.success(),
+            "--limit-rate {bad:?} was accepted"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("--limit-rate"), "unhelpful error: {stderr}");
+        assert!(!out.exists());
+    }
+
+    let status = Command::new(exe)
+        .arg(server.url("/file"))
+        .arg("-o")
+        .arg(&out)
+        .arg("--limit-rate")
+        .arg("2M")
+        .status()
+        .await
+        .expect("spawn rdm");
+    assert!(status.success(), "rdm exited with {status}");
+    assert_eq!(std::fs::read(&out).unwrap(), common::payload());
+}
+
+/// `--limit-rate` actually throttles: past the limiter's burst, the payload
+/// can't arrive faster than the rate (one-sided; slow CI only lengthens it).
+#[tokio::test]
+async fn cli_limit_rate_throttles_the_download() {
+    const RATE: u64 = 16 * 1024;
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("throttled.bin");
+    let size = common::payload().len() as u64;
+    let burst = rdm::RateLimiter::new(Some(RATE)).burst();
+    let ideal = Duration::from_secs_f64((size - burst) as f64 / RATE as f64);
+
+    let started = Instant::now();
+    let status = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .arg(server.url("/file"))
+        .arg("-o")
+        .arg(&out)
+        .arg("--limit-rate")
+        .arg("16K")
+        .status()
+        .await
+        .expect("spawn rdm");
+    let elapsed = started.elapsed();
+
+    assert!(status.success(), "rdm exited with {status}");
+    assert_eq!(std::fs::read(&out).unwrap(), common::payload());
+    assert!(
+        elapsed >= ideal.mul_f64(0.95),
+        "took {elapsed:?}, expected at least ~{ideal:?}"
+    );
+}

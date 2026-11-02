@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Density, ThemePref } from "../lib/prefs";
 import { usePrefs } from "../lib/usePrefs";
+import { DownloadSettings } from "./DownloadSettings";
 import { Monitor, Moon, Sliders, Sun } from "./icons";
 
 const THEME_OPTIONS: { value: ThemePref; label: string; icon: React.ReactNode }[] = [
@@ -14,7 +15,8 @@ const DENSITY_OPTIONS: { value: Density; label: string }[] = [
   { value: "compact", label: "Compact" },
 ];
 
-// Header popover for the cosmetic display prefs (theme + row density).
+// Header settings popover: cosmetic display prefs (theme + row density, kept
+// in localStorage) and the engine-backed Downloads settings.
 export function SettingsMenu() {
   const [prefs, update] = usePrefs();
   const [open, setOpen] = useState(false);
@@ -40,7 +42,7 @@ export function SettingsMenu() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        aria-label="Display settings"
+        aria-label="Settings"
         aria-haspopup="dialog"
         aria-expanded={open}
         className={`inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
@@ -53,9 +55,10 @@ export function SettingsMenu() {
       {open && (
         <div
           role="dialog"
-          aria-label="Display settings"
-          className="absolute right-0 top-full z-30 mt-2 w-64 space-y-3 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+          aria-label="Settings"
+          className="absolute right-0 top-full z-30 mt-2 w-80 space-y-3 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg"
         >
+          <SectionHeading>Display</SectionHeading>
           <Segmented
             label="Theme"
             options={THEME_OPTIONS}
@@ -68,10 +71,17 @@ export function SettingsMenu() {
             value={prefs.density}
             onChange={(density) => update({ density })}
           />
+          <div className="-mx-3 h-px bg-border" />
+          <SectionHeading>Downloads</SectionHeading>
+          <DownloadSettings />
         </div>
       )}
     </div>
   );
+}
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return <h3 className="px-0.5 text-[13px] font-semibold tracking-tight">{children}</h3>;
 }
 
 // A labelled row of toggle buttons in the Tabs control's visual style.

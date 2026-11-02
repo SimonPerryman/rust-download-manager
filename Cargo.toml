@@ -41,5 +41,5 @@ tracing = "0.1"
 axum = "0.8"
 # Only the test-only extras; Cargo unifies these with the `[dependencies]`
 # tokio features (rt-multi-thread, macros, fs, io-util) for test builds.
-tokio = { version = "1", features = ["net", "process"] }
+tokio = { version = "1", features = ["net", "process", "test-util"] }
 tempfile = "3"

@@ -2,12 +2,13 @@
 //! and delegates everything else to the engine. No download logic lives here.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 
-use rdm::{download, engine::state, Checksum, Control, DownloadRequest};
+use rdm::{download, engine::state, parse_rate, Checksum, Control, DownloadRequest, RateLimiter};
 
 /// A download manager in Rust.
 #[derive(Parser, Debug)]
@@ -35,6 +36,11 @@ struct Cli {
         value_parser = clap::value_parser!(u8).range(1..=16)
     )]
     connections: u8,
+
+    /// Cap the download speed in bytes/s, with an optional K/M/G suffix
+    /// (×1024), e.g. `500K` or `2M`.
+    #[arg(long = "limit-rate", value_name = "RATE", value_parser = parse_rate)]
+    limit_rate: Option<u64>,
 }
 
 /// clap value parser: `sha256:<hex>` → [`Checksum`].
@@ -74,7 +80,8 @@ async fn main() -> anyhow::Result<()> {
         .progress_chars("=>-"),
     );
 
-    let control = Control::new();
+    let limiter = Arc::new(RateLimiter::new(cli.limit_rate));
+    let control = Control::new().with_limiters([limiter]);
     let summary = download(&req, &control, |p| {
         if let Some(total) = p.total {
             bar.set_length(total);

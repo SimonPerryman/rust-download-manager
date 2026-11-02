@@ -5,9 +5,9 @@ line or through a desktop GUI — streaming to disk with a live progress readout
 
 > **Status: early.** M0 + M1 are a robust single-connection CLI download
 > (pause/resume, resume-after-restart, retry, integrity checking); M2 adds a
-> desktop GUI over the same engine; M3 adds multi-segment parallel downloads.
-> A download queue and speed limits are on the [roadmap](roadmap.md), not built
-> yet.
+> desktop GUI over the same engine; M3 adds multi-segment parallel downloads;
+> M4 adds a download queue and speed limits (CLI `--limit-rate`, and global +
+> per-download limits in the GUI).
 
 ## Features
 
@@ -30,9 +30,14 @@ line or through a desktop GUI — streaming to disk with a live progress readout
   exponential backoff.
 - Verifies the finished file's size, and an optional `--checksum sha256:<hex>`,
   before moving it into place; never clobbers an existing file (`name (1).ext`).
+- Speed limits: `--limit-rate` on the CLI; in the GUI, a global limit (applied
+  live) and an optional per-download limit set when adding.
+- Download queue (GUI): at most 3 downloads stream at once by default
+  (configurable); the rest wait as *Queued* and start in order as slots free.
 - Optional **desktop GUI** (Tauri + React): manage many downloads at once —
-  add/pause/resume/cancel, live progress/speed/ETA, and an Active/History list
-  that persists across restarts. The GUI is an *additive* frontend; the CLI and
+  add/pause/resume/cancel, live progress/speed/ETA, a download queue with a
+  concurrency cap, global and per-download speed limits, and an Active/History
+  list that persists across restarts. The GUI is an *additive* frontend; the CLI and
   engine stay fully functional headless (no webview/Node needed).
 
 ## Installation
@@ -63,6 +68,9 @@ rdm https://example.com/big-file.zip --checksum sha256:<hex>
 # Use up to 8 parallel connections (or -c 1 for a single connection):
 rdm https://example.com/big-file.zip -c 8
 
+# Cap the speed at 2 MiB/s:
+rdm https://example.com/big-file.zip --limit-rate 2M
+
 # Interrupted? Re-run the same command to resume from where it stopped.
 ```
 
@@ -72,6 +80,7 @@ rdm https://example.com/big-file.zip -c 8
 | `-o, --output <path>` | Output file path. Defaults to a name derived from the URL/headers, saved in the current directory. |
 | `--checksum <algo:hex>` | Verify the finished file against a checksum (e.g. `sha256:…`). |
 | `-c, --connections <n>` | Max parallel connections, 1–16 (default 4). Used only for files ≥ 2 MiB on servers that support range requests; `1` forces a single connection. |
+| `--limit-rate <rate>` | Cap the download speed in bytes/s, with an optional `K`/`M`/`G` suffix (×1024), e.g. `500K` or `2M`. Shared across all connections of the download. |
 
 Run `rdm --help` for the full, generated help, and `rdm --version` for the
 version.
@@ -87,9 +96,28 @@ To add a download, click **Add download**, drag a link (or the address bar's
 URL) from your browser onto the window, or press Ctrl/Cmd+V with an `http(s)`
 URL on the clipboard — the latter two open the Add dialog pre-filled.
 
-The sliders button in the header opens **Display settings**: theme (System —
-follows your OS — Light, or Dark) and row density (Comfortable or Compact).
-These are remembered per machine in the webview's local storage.
+The Add dialog also takes an optional **Speed limit** for that download — bytes
+per second with an optional `K`/`M`/`G` suffix (×1024), e.g. `500K` or `2M`;
+blank is unlimited. A limited download shows its cap on its row.
+
+The sliders button in the header opens **Settings**:
+
+- **Display** — theme (System — follows your OS — Light, or Dark) and row
+  density (Comfortable or Compact). Remembered per machine in the webview's
+  local storage.
+- **Downloads** — stored with your download list in `~/.rdm/state.json`:
+  - *Max concurrent downloads* (default 3): more downloads than this wait as
+    **Queued** ("Waiting for a free slot") and start in the order added as running
+    ones finish or are paused. Lowering it never interrupts a running download.
+    A queued download can be paused or cancelled.
+  - *Global speed limit*: a cap on all downloads combined, in the same format
+    as above (blank = unlimited); applies live, alongside any per-download
+    limit (the lower one wins).
+  - *Connections per download* (1–16, default 4): applies the next time a
+    download starts.
+
+Values are applied when you press Enter or leave the field; an invalid value
+shows an error under it.
 
 Prerequisites: [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/), and the
 [Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) for your
@@ -121,8 +149,9 @@ Add dialog's default destination.
 real app through [tauri-driver](https://v2.tauri.app/develop/tests/webdriver/):
 adding a download through the Add dialog (and seeing its `Content-Disposition`
 name), pause/resume to completion with the bytes checked on disk, a paused
-download surviving an app restart, display settings, and paste/drop URL
-intake. It downloads only from the repo's own fixture server
+download surviving an app restart, display settings, paste/drop URL intake, and
+the download queue (a cap of 1 queues a second download until the first is
+paused). It downloads only from the repo's own fixture server
 (`cargo run --example fixture_server`) on loopback, and keeps all app state in
 a throwaway temp dir via `RDM_HOME`/`RDM_DOWNLOAD_DIR`. It is a separate pnpm
 package and not part of `cargo test` or `pnpm test`; CI runs it on Linux.
