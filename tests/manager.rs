@@ -6,7 +6,6 @@
 
 mod common;
 
-use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
@@ -792,19 +791,10 @@ async fn global_limit_caps_aggregate_throughput() {
         .map(|_| mgr.add(server.url("/seg"), dir.path(), None, None))
         .collect();
 
-    // Overlap: every download streams before any completes.
-    let mut streamed = HashSet::new();
-    let deadline = Instant::now() + 3 * T;
-    while streamed.len() < ids.len() {
-        let snap = mgr.snapshot();
-        assert!(
-            snap.iter().all(|s| s.status != Status::Completed),
-            "one completed before all three were streaming"
-        );
-        streamed.extend(snap.iter().filter(|s| s.downloaded > 0).map(|s| s.id));
-        assert!(Instant::now() < deadline, "downloads never overlapped");
-        tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    // All three run at once (cap 3) with no per-download limit, so only the
+    // shared global bucket can be throttling them. Progress is reported after
+    // each chunk's throttle wait, so "has bytes" isn't a reliable overlap probe.
+    assert_eq!(ids_in(&mgr, Status::Downloading), ids, "not all concurrent");
 
     for &id in &ids {
         let snap = wait_for(&mgr, id, 3 * T, |s| s.status == Status::Completed)
