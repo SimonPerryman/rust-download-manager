@@ -1,4 +1,4 @@
-import { DownloadMark } from "./icons";
+import { DownloadMark } from "./icons/DownloadMark";
 
 // Drop-target hint shown while a URL is dragged over the window. Purely
 // visual: pointer-events are off so the window keeps receiving the drag.
