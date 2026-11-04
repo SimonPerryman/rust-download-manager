@@ -34,6 +34,9 @@ left in at M0. See [[roadmap]]. Depends on M1; benefits from M3 if present.
 - [x] Per-download throttle wired into the engine chunk loop.
 - [x] Global rate limiter shared across active downloads (token-bucket style).
 - [x] Surface queue state + limits to the frontend(s).
+- [x] (Follow-up to PR A) GUI row control to view/change/clear a download's
+      own limit live, with one number + unit rate input shared by the row,
+      the Add dialog and Settings.
 - [ ] (PR B) Throughput-driven connection ramping for multi-segment downloads: add
       connections while aggregate speed keeps rising, shed them when it
       doesn't (deferred from M3).

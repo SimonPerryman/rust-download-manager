@@ -3,30 +3,12 @@ import {
   dirtyPatches,
   draftsFrom,
   fieldPatch,
-  formatRate,
+  isDirty,
   mergeApplied,
   parseCount,
 } from "./settings";
+import { NO_LIMIT, ZERO_RATE } from "./rate";
 import type { Settings } from "./types";
-
-describe("formatRate", () => {
-  it("is blank for unlimited", () => {
-    expect(formatRate(null)).toBe("");
-    expect(formatRate(0)).toBe("");
-  });
-
-  it("uses the largest exact binary unit", () => {
-    expect(formatRate(2 * 1024 * 1024)).toBe("2M");
-    expect(formatRate(500 * 1024)).toBe("500K");
-    expect(formatRate(1536 * 1024)).toBe("1536K");
-    expect(formatRate(3 * 1024 ** 3)).toBe("3G");
-  });
-
-  it("falls back to plain bytes", () => {
-    expect(formatRate(1000)).toBe("1000");
-    expect(formatRate(1)).toBe("1");
-  });
-});
 
 describe("parseCount", () => {
   it("parses whole numbers, trimming whitespace", () => {
@@ -48,30 +30,62 @@ describe("parseCount", () => {
 
 const saved: Settings = { max_concurrent: 3, global_limit: null, max_connections: 4 };
 
+const MIB = 1024 * 1024;
+const drafts = draftsFrom(saved);
+
 describe("fieldPatch", () => {
   it("sends only the edited field", () => {
-    expect(fieldPatch("concurrent", "1")).toEqual({ maxConcurrent: 1 });
-    expect(fieldPatch("limit", " 2M ")).toEqual({ globalLimit: "2M" });
-    expect(fieldPatch("connections", "99")).toEqual({ maxConnections: 16 });
+    expect(fieldPatch("concurrent", { ...drafts, concurrent: "1" })).toEqual({
+      patch: { maxConcurrent: 1 },
+    });
+    expect(fieldPatch("limit", { ...drafts, limit: { amount: "2", unit: "M" } })).toEqual({
+      patch: { globalLimit: "2M" },
+    });
+    expect(fieldPatch("connections", { ...drafts, connections: "99" })).toEqual({
+      patch: { maxConnections: 16 },
+    });
   });
 
-  it("sends a blank limit as unlimited", () => {
-    expect(fieldPatch("limit", "")).toEqual({ globalLimit: "" });
+  it("sends an empty limit as unlimited", () => {
+    expect(fieldPatch("limit", { ...drafts, limit: NO_LIMIT })).toEqual({
+      patch: { globalLimit: "" },
+    });
   });
 
-  it("rejects a count that isn't a whole number", () => {
-    expect(fieldPatch("concurrent", "two")).toBeNull();
+  it("explains a draft it can't send", () => {
+    expect(fieldPatch("concurrent", { ...drafts, concurrent: "two" })).toEqual({
+      error: "Enter a whole number.",
+    });
+    expect(fieldPatch("limit", { ...drafts, limit: { amount: "0", unit: "K" } })).toEqual({
+      error: ZERO_RATE,
+    });
+  });
+});
+
+describe("isDirty", () => {
+  it("ignores the unit of an empty limit", () => {
+    expect(isDirty("limit", { ...drafts, limit: { amount: "", unit: "M" } }, saved)).toBe(false);
+  });
+
+  it("sees a changed unit on a set limit", () => {
+    const limited = { ...saved, global_limit: 2 * MIB };
+    const edited = { ...draftsFrom(limited), limit: { amount: "2", unit: "K" as const } };
+    expect(isDirty("limit", edited, limited)).toBe(true);
   });
 });
 
 describe("dirtyPatches", () => {
   it("is empty when nothing changed", () => {
-    expect(dirtyPatches(draftsFrom(saved), saved)).toEqual([]);
+    expect(dirtyPatches(drafts, saved)).toEqual([]);
   });
 
   it("sends every dirty field as its own update", () => {
-    const drafts = { concurrent: "1", limit: "2M", connections: "8" };
-    expect(dirtyPatches(drafts, saved)).toEqual([
+    const edited = {
+      concurrent: "1",
+      limit: { amount: "2", unit: "M" as const },
+      connections: "8",
+    };
+    expect(dirtyPatches(edited, saved)).toEqual([
       { maxConcurrent: 1 },
       { globalLimit: "2M" },
       { maxConnections: 8 },
@@ -79,21 +93,25 @@ describe("dirtyPatches", () => {
   });
 
   it("keeps a rate the engine will reject apart from valid edits", () => {
-    // "0" passes any local shape check but the engine rejects it; bundled
-    // with the cap edit, that rejection would drop the cap too.
-    const drafts = { ...draftsFrom(saved), concurrent: "5", limit: "0" };
-    expect(dirtyPatches(drafts, saved)).toEqual([{ maxConcurrent: 5 }, { globalLimit: "0" }]);
+    // 0.0001 KB/s passes the local zero check but rounds to 0 bytes/s, which
+    // the engine rejects; bundled with the cap edit, that would drop the cap too.
+    const edited = { ...drafts, concurrent: "5", limit: { amount: "0.0001", unit: "K" as const } };
+    expect(dirtyPatches(edited, saved)).toEqual([{ maxConcurrent: 5 }, { globalLimit: "0.0001K" }]);
   });
 
-  it("skips a count that isn't a whole number", () => {
-    const drafts = { concurrent: "abc", limit: "", connections: "8" };
-    expect(dirtyPatches(drafts, saved)).toEqual([{ maxConnections: 8 }]);
+  it("skips drafts that can't be sent", () => {
+    const edited = {
+      concurrent: "abc",
+      limit: { amount: "0", unit: "K" as const },
+      connections: "8",
+    };
+    expect(dirtyPatches(edited, saved)).toEqual([{ maxConnections: 8 }]);
   });
 
   it("flushes clearing the limit back to unlimited", () => {
-    const limited = { ...saved, global_limit: 2 * 1024 * 1024 };
-    const drafts = { ...draftsFrom(limited), limit: "" };
-    expect(dirtyPatches(drafts, limited)).toEqual([{ globalLimit: "" }]);
+    const limited = { ...saved, global_limit: 2 * MIB };
+    const edited = { ...draftsFrom(limited), limit: NO_LIMIT };
+    expect(dirtyPatches(edited, limited)).toEqual([{ globalLimit: "" }]);
   });
 });
 
