@@ -277,6 +277,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// `on_progress` is invoked before the first byte and as bytes land (coalesced
 /// across parallel connections), so a frontend can render a live readout. `control` steers the in-flight
 /// download (cancel/pause).
+// Error level so the identity survives any filter that still shows errors.
+#[tracing::instrument(name = "download", level = "error", skip_all, fields(url = %req.url))]
 pub async fn download(
     req: &DownloadRequest,
     control: &Control,
@@ -300,7 +302,7 @@ pub async fn download(
     // single-connection.
     let mut force_single = false;
 
-    tracing::info!(url = %req.url, "download started");
+    tracing::info!("download started");
     let mut attempt: u32 = 0;
     let mut single_attempts: u32 = 0;
     // Segmented attempts only count against the budget while they make no
@@ -358,10 +360,16 @@ pub async fn download(
         };
         let delay = delay.map(|d| d.max(throttle.unwrap_or_default()));
         let Some(delay) = delay else {
-            if matches!(e, Error::Cancelled) {
-                discard_partial(&known_target).await;
+            match e {
+                Error::Paused => tracing::info!("download paused"),
+                Error::Cancelled => {
+                    discard_partial(&known_target).await;
+                    tracing::info!("download cancelled")
+                }
+                _ => {
+                    tracing::error!(attempts = attempt, error = %error_detail(&e), "download failed")
+                }
             }
-            tracing::error!(attempts = attempt, error = %error_detail(&e), "download failed");
             return Err(e);
         };
         tracing::warn!(

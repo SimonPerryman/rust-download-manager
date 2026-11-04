@@ -121,7 +121,7 @@ export const config: WebdriverIO.Config = {
     await waitForPort(DRIVER_PORT);
   },
 
-  // A failed run keeps its temp root (state.json, rdm.log, downloads) to inspect.
+  // A failed run keeps its temp root (state.json, rdm.*.log, downloads) to inspect.
   onComplete: (exitCode: number) => {
     tauriDriver?.kill();
     fixture?.kill();

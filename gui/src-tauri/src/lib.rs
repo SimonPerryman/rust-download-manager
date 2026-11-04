@@ -210,30 +210,50 @@ fn default_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 }
 
 /// Install the tracing subscriber: human-readable logs to stderr (visible when
-/// run via `tauri dev`) and appended to `<dir>/rdm.log`. The engine emits the
-/// events (download start, each retry with its reason, failures); the default
-/// level is `info`, overridable with `RUST_LOG`. Best-effort: logging must
-/// never stop the app from starting.
+/// run via `tauri dev`) and to `<dir>/rdm.<date>.log`, rotated daily (UTC) with
+/// the last 7 files kept. The engine emits the events (download start, each
+/// retry with its reason, failures), each tagged with its download's id; the
+/// default level is `info`, overridable with `RUST_LOG`. Best-effort: logging
+/// must never stop the app from starting.
 fn init_logging(dir: &std::path::Path) {
-    use tracing_subscriber::prelude::*;
-
-    let file_appender = tracing_appender::rolling::never(dir, "rdm.log");
-    let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
-    // Keep the non-blocking writer's flush worker alive for the whole process.
-    Box::leak(Box::new(guard));
-
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    install_logging(dir, filter);
+}
+
+/// [`init_logging`] with an explicit filter.
+fn install_logging(dir: &std::path::Path, filter: tracing_subscriber::EnvFilter) {
+    use tracing_appender::rolling::{Builder, Rotation};
+    use tracing_subscriber::prelude::*;
+
+    let appender = Builder::new()
+        .rotation(Rotation::DAILY)
+        .filename_prefix("rdm")
+        .filename_suffix("log")
+        .max_log_files(7)
+        .build(dir);
+    let (file_writer, file_error) = match appender {
+        Ok(appender) => {
+            let (writer, guard) = tracing_appender::non_blocking(appender);
+            // Keep the non-blocking writer's flush worker alive for the whole process.
+            Box::leak(Box::new(guard));
+            (Some(writer), None)
+        }
+        Err(e) => (None, Some(e)),
+    };
 
     let _ = tracing_subscriber::registry()
         .with(filter)
         .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
-        .with(
+        .with(file_writer.map(|writer| {
             tracing_subscriber::fmt::layer()
                 .with_ansi(false)
-                .with_writer(file_writer),
-        )
+                .with_writer(writer)
+        }))
         .try_init();
+    if let Some(e) = file_error {
+        tracing::warn!(dir = %dir.display(), error = %e, "file logging disabled");
+    }
 }
 
 /// Build the `Manager` over `~/.rdm/state.json` (or `$RDM_HOME/state.json`) and
@@ -328,4 +348,44 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running rdm GUI");
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    /// The log goes to a dated `rdm.YYYY-MM-DD.log` (daily rotation), not one
+    /// ever-growing `rdm.log`.
+    #[test]
+    fn logs_to_a_daily_file() {
+        let dir = std::env::temp_dir().join(format!("rdm-gui-log-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // An explicit filter: an ambient `RUST_LOG=error` would hide the probe.
+        super::install_logging(&dir, tracing_subscriber::EnvFilter::new("info"));
+        tracing::warn!("daily rotation probe");
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let logged = loop {
+            let found = std::fs::read_dir(&dir).unwrap().flatten().find(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                let date = name
+                    .strip_prefix("rdm.")
+                    .and_then(|n| n.strip_suffix(".log"));
+                date.is_some_and(|d| d.len() == 10 && d.as_bytes()[4] == b'-')
+                    && std::fs::read_to_string(e.path())
+                        .is_ok_and(|s| s.contains("daily rotation probe"))
+            });
+            if found.is_some() || Instant::now() >= deadline {
+                break found.is_some();
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        let names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(logged, "no dated log with the probe line in {names:?}");
+    }
 }

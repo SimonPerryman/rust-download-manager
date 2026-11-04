@@ -21,7 +21,8 @@ pub enum Algo {
 }
 
 impl Algo {
-    fn name(self) -> &'static str {
+    /// The lowercase name used in `<algo>:<hex>`, e.g. `sha256`.
+    pub fn name(self) -> &'static str {
         match self {
             Algo::Sha256 => "sha256",
         }

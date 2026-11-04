@@ -63,8 +63,6 @@ the parallel-download speed feature; M4 is the day-to-day queue/throttle layer.
 Known gaps left deliberately out of a milestone's scope. Each is small enough
 to be a single PR; promote one into a ticket when it's picked up.
 
-- **Pause/cancel log level** (M2): a user pause or cancel is logged at ERROR
-  in the engine; it's expected control flow and belongs at INFO/DEBUG.
 - **Mid-download connection shedding** (M4): ramping only grows then settles
   once; drop a connection when aggregate throughput falls later on.
 - **Re-probe after a settle** (M4): once settled (or frozen by a speed limit
