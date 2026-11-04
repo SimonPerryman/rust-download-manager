@@ -58,6 +58,25 @@ the parallel-download speed feature; M4 is the day-to-day queue/throttle layer.
   drag-and-drop / clipboard-URL add. M2 ships one clean slick design; these are
   deliberately deferred.
 
+## Follow-ups (small, from shipped milestones)
+
+Known gaps left deliberately out of a milestone's scope. Each is small enough
+to be a single PR; promote one into a ticket when it's picked up.
+
+- **Single-connection read timeout** (M1/M3): the single-connection path has
+  no read timeout, so a server that stops sending mid-body can hang it.
+- **Pause/cancel log level** (M2): a user pause or cancel is logged at ERROR
+  in the engine; it's expected control flow and belongs at INFO/DEBUG.
+- **Mid-download connection shedding** (M4): ramping only grows then settles
+  once; drop a connection when aggregate throughput falls later on.
+- **Re-probe after a settle** (M4): once settled (or frozen by a speed limit
+  that is later lifted), ramping never tries again for that attempt.
+- **Slow connection setup** (M4): a new connection is only treated as
+  "warming up" for the window it joins in; on high-latency hosts its setup
+  can spill into the next, judged window and stop ramping early.
+- **Ramp window tuning** (M4): with the 1 s window a download needs ~7 s to
+  reach 4 connections; a live smoke run decides whether it should shrink.
+
 ## Candidate crates
 
 `reqwest` (HTTP), `tokio` (async), `futures` (concurrency), `clap` (CLI),
