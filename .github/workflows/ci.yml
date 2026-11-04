@@ -100,7 +100,7 @@ jobs:
         working-directory: gui
         run: pnpm install --frozen-lockfile
 
-      - name: Lint frontend (oxlint)
+      - name: Lint frontend (oxlint + e2e WebKit guard)
         working-directory: gui
         run: pnpm lint
 
