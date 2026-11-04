@@ -31,6 +31,11 @@ jobs:
 
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@v2
+        # Only main saves: branch caches (~640 MB each on Windows) would
+        # otherwise evict main's from GitHub's 10 GB cache limit. Branches
+        # still restore main's cache.
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Format check
         run: cargo fmt --all --check
@@ -59,6 +64,8 @@ jobs:
 
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Tauri's Linux webview/build system deps. No-op on Windows, which ships
       # WebView2. ubuntu-latest (24.04) provides webkit2gtk-4.1 / soup3 for
@@ -131,6 +138,8 @@ jobs:
       # on a warm cache.
       - name: Cache cargo registry, build and tools
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Tauri's webview build deps (as in the gui job), plus WebKitWebDriver
       # (the native driver tauri-driver fronts on Linux) and a virtual display.
@@ -186,5 +195,7 @@ jobs:
       - name: Install Rust (pinned by rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Run ignored live smoke test
         run: cargo test -- --ignored

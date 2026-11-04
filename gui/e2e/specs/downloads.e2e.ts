@@ -5,6 +5,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { $, browser, expect } from "@wdio/globals";
+import { waitForGone } from "../helpers";
 
 const baseUrl = process.env.RDM_E2E_BASE_URL!;
 const downloadDir = process.env.RDM_DOWNLOAD_DIR!;
@@ -12,8 +13,12 @@ const downloadDir = process.env.RDM_DOWNLOAD_DIR!;
 /** The fixture's deterministic payload (mirrors `payload()` in tests/common). */
 const PAYLOAD = Buffer.from(Array.from({ length: 99_991 }, (_, i) => i % 251));
 
-const row = (filename: string) => $(`li[data-testid="download-row"][data-filename="${filename}"]`);
-const addDialog = () => $('[role="dialog"][aria-label="Add download"]');
+const rowSelector = (filename: string) =>
+  `li[data-testid="download-row"][data-filename="${filename}"]`;
+const ADD_DIALOG = '[role="dialog"][aria-label="Add download"]';
+
+const row = (filename: string) => $(rowSelector(filename));
+const addDialog = () => $(ADD_DIALOG);
 
 async function waitForStatus(filename: string, status: string): Promise<void> {
   await browser.waitUntil(
@@ -47,7 +52,7 @@ async function addThroughDialog(url: string): Promise<void> {
   await expect(dialog.$('input[aria-label="Destination folder"]')).toHaveValue(downloadDir);
   await dialog.$('input[aria-label="URL"]').setValue(url);
   await dialog.$("button=Add download").click();
-  await dialog.waitForExist({ reverse: true });
+  await waitForGone(ADD_DIALOG);
 }
 
 /** Asserts a paused download really stopped mid-stream: a partial `.part` that isn't growing. */
@@ -117,7 +122,7 @@ describe("rdm GUI", () => {
     expect(existsSync(target)).toBe(false);
 
     await clickRowAction(name, "Remove");
-    await row(name).waitForExist({ reverse: true });
+    await waitForGone(rowSelector(name));
     await $("button*=Active").click();
   });
 
@@ -157,7 +162,7 @@ describe("rdm GUI", () => {
     await dialog.waitForDisplayed();
     await expect(dialog.$('input[aria-label="URL"]')).toHaveValue(url);
     await dialog.$("button=Cancel").click();
-    await dialog.waitForExist({ reverse: true });
+    await waitForGone(ADD_DIALOG);
   });
 
   it("opens the Add dialog pre-filled when a URL is dropped", async () => {
@@ -174,6 +179,6 @@ describe("rdm GUI", () => {
     await dialog.waitForDisplayed();
     await expect(dialog.$('input[aria-label="URL"]')).toHaveValue(url);
     await dialog.$("button=Cancel").click();
-    await dialog.waitForExist({ reverse: true });
+    await waitForGone(ADD_DIALOG);
   });
 });
