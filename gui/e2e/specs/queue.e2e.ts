@@ -38,7 +38,9 @@ async function retype(input: ReturnType<typeof $>, text: string): Promise<void> 
   // without an input event gets undone on the next render.
   await input.click();
   await browser.keys([Key.Ctrl, "a"]);
-  await browser.keys(text === "" ? [Key.Backspace, Key.Enter] : [text, Key.Enter]);
+  await browser.keys(Key.Backspace);
+  if (text !== "") await input.addValue(text);
+  await browser.keys(Key.Enter);
 }
 
 async function waitForStatus(id: string, status: string): Promise<void> {

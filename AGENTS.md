@@ -39,6 +39,12 @@ instruction sheet for any agent (and human) working in this repo.
   on Manager status or a fixture-controlled gate (`/gated`), not on progress
   bytes.** Why: progress is reported after each chunk's throttle wait, so
   "has bytes yet" lags reality and flakes on slow CI runners.
+- **When an e2e spec types text, `browser.keys()` gets only `Key.*` constants
+  and literals with no repeated consecutive character; type anything else
+  (`"0.0001"`, any variable) with element send-keys (`addValue`/`setValue`).**
+  Why: WebKitGTK's driver drops repeated characters sent as key actions —
+  `browser.keys("0.0001")` arrived as `"0.01"` — and only the Linux CI job
+  sees it. Enforced by `gui/scripts/guard-e2e-keys.mjs` (part of `pnpm lint`).
 
 ## Comments & docs
 - Doc-comment (`///`) the public engine API: it's the contract and renders in
