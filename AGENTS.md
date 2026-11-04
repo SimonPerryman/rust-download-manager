@@ -44,7 +44,12 @@ instruction sheet for any agent (and human) working in this repo.
   (`"0.0001"`, any variable) with element send-keys (`addValue`/`setValue`).**
   Why: WebKitGTK's driver drops repeated characters sent as key actions —
   `browser.keys("0.0001")` arrived as `"0.01"` — and only the Linux CI job
-  sees it. Enforced by `gui/scripts/guard-e2e-keys.mjs` (part of `pnpm lint`).
+  sees it. Enforced by `gui/scripts/guard-e2e-webkit.mjs` (part of `pnpm lint`).
+- **When an e2e spec waits for an element to disappear, use `waitForGone()`
+  from `gui/e2e/helpers.ts`, never `waitForExist({ reverse: true })`.** Why:
+  WebKitGTK's driver throws a stale-element error when the element detaches
+  mid-check, so reverse waits flake on the Linux CI job. Enforced by the same
+  guard, `gui/scripts/guard-e2e-webkit.mjs`.
 
 ## Comments & docs
 - Doc-comment (`///`) the public engine API: it's the contract and renders in
