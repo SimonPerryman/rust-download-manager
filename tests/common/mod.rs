@@ -55,6 +55,9 @@
 //! - `GET /seg-signed?sig=<n>` — `/seg`, but each `sig` is good for
 //!   [`SIGNED_URL_USES`] requests, then 403 (counted in
 //!   [`RouteStats::refused`]), like an expiring signed URL.
+//! - `GET /seg-ramp`   — [`SEG_RAMP_CHUNK`]s paced by deadline (no burst) at
+//!   [`SEG_RAMP_RATE`] per connection and [`SEG_RAMP_CAP`] across all of
+//!   them, like a host whose link saturates at four connections.
 //!
 //! Aborting bodies wait [`ABORT_GRACE`] after their prefix before erroring, so
 //! the prefix really reaches the client. Every `/seg*` route, `/liar-etag`,
@@ -135,6 +138,15 @@ pub const SEG_CAP: usize = 2;
 
 /// `/seg-signed`: requests each minted `sig` serves before it "expires".
 pub const SIGNED_URL_USES: usize = 2;
+
+/// `/seg-ramp`: bytes per paced chunk.
+pub const SEG_RAMP_CHUNK: usize = 8 * 1024;
+
+/// `/seg-ramp`: the most one connection is served, in bytes/s.
+pub const SEG_RAMP_RATE: u64 = 256 * 1024;
+
+/// `/seg-ramp`: the most all connections together are served, in bytes/s.
+pub const SEG_RAMP_CAP: u64 = 4 * SEG_RAMP_RATE;
 
 /// How long an aborting body waits after its prefix before erroring.
 pub const ABORT_GRACE: Duration = Duration::from_millis(25);
@@ -329,6 +341,7 @@ const COUNTED_ROUTES: &[&str] = &[
     "/seg-identity",
     "/seg-expiring",
     "/seg-signed",
+    "/seg-ramp",
     "/norange",
     "/liar",
     "/gated",
@@ -423,6 +436,8 @@ struct AppState {
     sig_uses: Mutex<HashMap<u64, usize>>,
     /// `/gated`: which held requests may finish.
     gate: Arc<Gate>,
+    /// `/seg-ramp`: when the shared link can send its next chunk.
+    ramp_next_free: Arc<Mutex<tokio::time::Instant>>,
     stats: HashMap<&'static str, Arc<RouteStats>>,
 }
 
@@ -438,6 +453,7 @@ impl AppState {
             next_sig: AtomicU64::new(0),
             sig_uses: Mutex::new(HashMap::new()),
             gate: Arc::default(),
+            ramp_next_free: Arc::new(Mutex::new(tokio::time::Instant::now())),
             stats: COUNTED_ROUTES
                 .iter()
                 .map(|route| (*route, Arc::new(RouteStats::default())))
@@ -798,6 +814,7 @@ enum Seg {
     LiarEtag,
     Identity,
     Signed,
+    Ramp,
 }
 
 impl Seg {
@@ -817,6 +834,7 @@ impl Seg {
             Seg::LiarEtag => "/liar-etag",
             Seg::Identity => "/seg-identity",
             Seg::Signed => "/seg-signed",
+            Seg::Ramp => "/seg-ramp",
         }
     }
 }
@@ -928,15 +946,56 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg) -> Response {
             format!("bytes {start}-{}/{total}", end - 1),
         );
     }
-    builder
-        .body(seg_stream(
+    let body = if kind == Seg::Ramp {
+        paced_stream(data.slice(start..end), state.ramp_next_free.clone(), guard)
+    } else {
+        seg_stream(
             data.slice(start..end),
             delay,
             abort_after,
             abort_alone,
             guard,
-        ))
-        .unwrap()
+        )
+    };
+    builder.body(body).unwrap()
+}
+
+/// Stream `data` in [`SEG_RAMP_CHUNK`]s, the `n`th no earlier than `n` chunk
+/// times at [`SEG_RAMP_RATE`] after the response started, and each in its own
+/// slot of the link shared through `next_free` (one chunk per
+/// [`SEG_RAMP_CAP`] chunk time). Deadlines, not sleeps, so a late timer
+/// (Windows' ~15.6 ms tick) only jitters the pace and never banks a burst.
+fn paced_stream(data: Bytes, next_free: Arc<Mutex<tokio::time::Instant>>, guard: InFlight) -> Body {
+    let own_gap = Duration::from_secs_f64(SEG_RAMP_CHUNK as f64 / SEG_RAMP_RATE as f64);
+    let link_gap = Duration::from_secs_f64(SEG_RAMP_CHUNK as f64 / SEG_RAMP_CAP as f64);
+    let started = tokio::time::Instant::now();
+    let s = futures_util::stream::unfold(
+        (data, 0usize, 1u32, guard),
+        move |(data, offset, n, guard)| {
+            let next_free = next_free.clone();
+            async move {
+                if offset >= data.len() {
+                    return None;
+                }
+                tokio::time::sleep_until(started + own_gap * n).await;
+                let slot = {
+                    let mut next = next_free.lock().unwrap();
+                    let slot = (*next).max(tokio::time::Instant::now());
+                    *next = slot + link_gap;
+                    slot
+                };
+                tokio::time::sleep_until(slot).await;
+                let end = (offset + SEG_RAMP_CHUNK).min(data.len());
+                let chunk = data.slice(offset..end);
+                guard
+                    .0
+                    .body_bytes
+                    .fetch_add(chunk.len() as u64, Ordering::SeqCst);
+                Some((Ok::<_, std::io::Error>(chunk), (data, end, n + 1, guard)))
+            }
+        },
+    );
+    Body::from_stream(s)
 }
 
 /// Stream `data` in [`SEG_CHUNK`]s, sleeping `delay` before each; with
@@ -1082,13 +1141,8 @@ pub async fn spawn_with(cfg: FixtureConfig) -> TestServer {
     }
 }
 
-/// Serve the fixture routes on `listener` until the task is dropped, streaming
-/// `/slow`, `/named-slow` and `/crawl` with `slow_chunk_delay` between chunks.
-pub async fn serve(listener: TcpListener, slow_chunk_delay: Duration) {
-    let cfg = FixtureConfig {
-        slow_chunk_delay,
-        ..FixtureConfig::default()
-    };
+/// Serve the fixture routes on `listener` with `cfg` until the task is dropped.
+pub async fn serve(listener: TcpListener, cfg: FixtureConfig) {
     serve_state(listener, Arc::new(AppState::new(cfg))).await;
 }
 
@@ -1125,6 +1179,7 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/seg-identity", seg_route(Seg::Identity))
         .route("/seg-expiring", get(seg_expiring_handler))
         .route("/seg-signed", get(seg_signed_handler))
+        .route("/seg-ramp", seg_route(Seg::Ramp))
         .with_state(state);
     axum::serve(listener, app).await.expect("serve");
 }

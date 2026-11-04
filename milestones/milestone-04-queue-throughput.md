@@ -1,7 +1,7 @@
 ---
 id: M4
 title: Queue & throughput management
-status: in-progress
+status: done
 depends-on: [M1]
 tags: [engine, perf]
 ---
@@ -37,9 +37,10 @@ left in at M0. See [[roadmap]]. Depends on M1; benefits from M3 if present.
 - [x] (Follow-up to PR A) GUI row control to view/change/clear a download's
       own limit live, with one number + unit rate input shared by the row,
       the Add dialog and Settings.
-- [ ] (PR B) Throughput-driven connection ramping for multi-segment downloads: add
-      connections while aggregate speed keeps rising, shed them when it
-      doesn't (deferred from M3).
+- [x] (PR B) Throughput-driven connection ramping for multi-segment downloads
+      (deferred from M3): start at 1, add while aggregate speed keeps rising,
+      close the trial connection and stop ramping when it doesn't; freeze
+      while rate-limited. General mid-download shedding is a follow-up.
 - [x] Fixture/tests measuring effective rate against configured limits.
 
 ## Acceptance criteria
@@ -52,3 +53,8 @@ apply here without being restated._
 - [x] A global speed limit caps aggregate throughput across active downloads
       within tolerance.
 - [x] Removing/pausing a queued item reschedules correctly.
+- [x] Against a fixture that caps each connection at R and the total at 4R, a
+      download with max 8 settles at 4 connections; with a binding speed limit
+      it never ramps above 1.
+      (`tests/ramping.rs::settles_at_the_fixture_aggregate_cap`,
+      `tests/ramping.rs::binding_speed_limit_never_ramps`)

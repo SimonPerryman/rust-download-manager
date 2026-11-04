@@ -17,6 +17,9 @@ pub struct Progress {
     pub bytes_per_sec: f64,
     /// Estimated time remaining, when both total and speed are known.
     pub eta: Option<Duration>,
+    /// Connections open, including ones still connecting (they ramp up on a
+    /// multi-segment download); 1 on the single-connection path.
+    pub connections: u8,
 }
 
 /// Sliding-window throughput estimator.

@@ -146,12 +146,13 @@ async fn cli_rejects_out_of_range_connections() {
     }
 }
 
-/// `-c` reaches the engine: `-c 1` sends no ranged requests, `-c 2` never has
-/// more than two responses in flight.
+/// `-c` reaches the engine: `-c 1` sends no ranged requests, and `-c 2` ramps
+/// to exactly two responses in flight on a download long enough to ramp past it.
 #[tokio::test]
 async fn cli_connections_flag_reaches_engine() {
     let server = common::spawn_with(FixtureConfig {
-        seg_chunk_delay: Duration::from_millis(2),
+        seg_len: 8 * 1024 * 1024,
+        seg_chunk_delay: Duration::from_millis(40),
         ..FixtureConfig::default()
     })
     .await;
@@ -189,7 +190,7 @@ async fn cli_connections_flag_reaches_engine() {
         .expect("spawn rdm");
     assert!(status.success(), "rdm exited with {status}");
     assert!(!stats.ranges().is_empty(), "never went multi-segment");
-    assert!(stats.max_in_flight() <= 2, "max {}", stats.max_in_flight());
+    assert_eq!(stats.max_in_flight(), 2);
     assert_eq!(std::fs::read(&double).unwrap(), server.seg_payload());
 }
 

@@ -812,23 +812,58 @@ async fn global_limit_caps_aggregate_throughput() {
     );
 }
 
-/// M4: the max-connections setting bounds each download's parallel requests.
-#[tokio::test]
-async fn max_connections_setting_bounds_parallel_requests() {
-    let server = common::spawn_with(FixtureConfig {
-        seg_chunk_delay: Duration::from_millis(10),
+/// A fixture whose `/seg` outlasts several one-second ramp windows on one
+/// connection (8 MiB at ~800 KiB/s), so the default ramp gets to add one.
+async fn ramping_seg_server() -> common::TestServer {
+    common::spawn_with(FixtureConfig {
+        seg_len: 8 * MIB as usize,
+        seg_chunk_delay: Duration::from_millis(40),
         ..FixtureConfig::default()
     })
-    .await;
+    .await
+}
+
+/// M4: the max-connections setting bounds each download's parallel requests,
+/// while the ramp still opens more than one.
+#[tokio::test]
+async fn max_connections_setting_bounds_parallel_requests() {
+    let server = ramping_seg_server().await;
     let dir = tempfile::tempdir().unwrap();
     let mgr = manager_in(dir.path());
     mgr.set_max_connections(2);
 
     let id = mgr.add(server.url("/seg"), dir.path(), None, None);
-    completed(&mgr, id).await;
+    wait_for(&mgr, id, 3 * T, |s| s.status == Status::Completed)
+        .await
+        .expect("never completed");
     let max = server.stats("/seg").max_in_flight();
     assert!(max <= 2, "{max} connections, setting is 2");
-    assert!(max > 1, "never went multi-segment");
+    assert!(max > 1, "never ramped past one connection");
+}
+
+/// M4: a snapshot shows the live connection count while a download ramps,
+/// and zero once it is paused.
+#[tokio::test]
+async fn snapshot_reports_live_connections() {
+    let server = ramping_seg_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+
+    let id = mgr.add(server.url("/seg"), dir.path(), None, None);
+    let ramped = wait_for(&mgr, id, 3 * T, |s| s.connections >= 2)
+        .await
+        .expect("never reported a second connection");
+    assert_eq!(ramped.status, Status::Downloading);
+    assert!(
+        ramped.connections <= 4,
+        "{} connections",
+        ramped.connections
+    );
+
+    mgr.pause(id);
+    assert!(wait_status(&mgr, id, Status::Paused, T).await);
+    let paused = mgr.snapshot().into_iter().find(|s| s.id == id).unwrap();
+    assert_eq!(paused.connections, 0);
 }
 
 /// M4: settings and per-download limits persist across a restart, and the

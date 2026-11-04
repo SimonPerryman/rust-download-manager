@@ -29,6 +29,9 @@ const rdmHome = path.join(e2eRoot, "home");
 const DRIVER_PORT = 4444;
 // Slow enough that a click lands mid-stream (~100 KB in 4 KB chunks ≈ 5 s).
 const SLOW_DELAY_MS = 200;
+// Slows each /seg connection (4 MiB in 32 KiB chunks ≈ 13 s on one) so a
+// download outlasts the engine's ramp-up windows and visibly adds connections.
+const SEG_DELAY_MS = 100;
 
 let fixture: ChildProcess | undefined;
 let tauriDriver: ChildProcess | undefined;
@@ -36,9 +39,15 @@ let tauriDriver: ChildProcess | undefined;
 /** Start the fixture server on a free port and resolve its base URL. */
 function startFixture(): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(fixtureBinary, ["--port", "0", "--slow-delay-ms", String(SLOW_DELAY_MS)], {
-      stdio: ["ignore", "pipe", "inherit"],
-    });
+    const args = [
+      "--port",
+      "0",
+      "--slow-delay-ms",
+      String(SLOW_DELAY_MS),
+      "--seg-delay-ms",
+      String(SEG_DELAY_MS),
+    ];
+    const child = spawn(fixtureBinary, args, { stdio: ["ignore", "pipe", "inherit"] });
     fixture = child;
     child.once("error", reject);
     child.once("exit", (code) => reject(new Error(`fixture server exited (${code})`)));
