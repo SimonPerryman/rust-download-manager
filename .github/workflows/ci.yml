@@ -26,10 +26,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust (stable + rustfmt + clippy)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
 
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@v2
@@ -56,10 +54,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust (stable + clippy)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
 
       - name: Cache cargo registry and build
         uses: Swatinem/rust-cache@v2
@@ -128,8 +124,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
 
       # Also caches ~/.cargo/bin, so the tauri-driver install below is a no-op
       # on a warm cache.
@@ -187,7 +183,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - name: Run ignored live smoke test
         run: cargo test -- --ignored
