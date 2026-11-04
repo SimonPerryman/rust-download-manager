@@ -1,5 +1,5 @@
 import { RATE_UNITS, sanitizeAmount, type RateDraft, type RateUnit } from "../lib/rate";
-import { X } from "./icons";
+import { X } from "./icons/X";
 
 type Props = {
   value: RateDraft;

@@ -4,20 +4,18 @@ import { formatBytes, formatSpeed, formatDuration, formatAgo, percent, host } fr
 import * as api from "../lib/api";
 import { NO_LIMIT, composeRate, exceeds, rateDraft, sameRate, type RateDraft } from "../lib/rate";
 import { RateInput } from "./RateInput";
-import {
-  FileIcon,
-  Gauge,
-  Pause,
-  Play,
-  X,
-  Retry,
-  Trash,
-  Clock,
-  Check,
-  AlertTriangle,
-  ExternalLink,
-  Folder,
-} from "./icons";
+import { FileIcon } from "./icons/FileIcon";
+import { Gauge } from "./icons/Gauge";
+import { Pause } from "./icons/Pause";
+import { Play } from "./icons/Play";
+import { X } from "./icons/X";
+import { Retry } from "./icons/Retry";
+import { Trash } from "./icons/Trash";
+import { Clock } from "./icons/Clock";
+import { Check } from "./icons/Check";
+import { AlertTriangle } from "./icons/AlertTriangle";
+import { ExternalLink } from "./icons/ExternalLink";
+import { Folder } from "./icons/Folder";
 
 // Renders one download row, dispatching on `status`. Every control is a direct
 // call to the typed api wrappers (which are thin wrappers over the engine's

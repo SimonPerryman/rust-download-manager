@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import type { Density, ThemePref } from "../lib/prefs";
 import { usePrefs } from "../lib/usePrefs";
 import { DownloadSettings } from "./DownloadSettings";
-import { Monitor, Moon, Sliders, Sun } from "./icons";
+import { Monitor } from "./icons/Monitor";
+import { Moon } from "./icons/Moon";
+import { Sliders } from "./icons/Sliders";
+import { Sun } from "./icons/Sun";
 
 const THEME_OPTIONS: { value: ThemePref; label: string; icon: React.ReactNode }[] = [
   { value: "system", label: "System", icon: <Monitor size={14} /> },

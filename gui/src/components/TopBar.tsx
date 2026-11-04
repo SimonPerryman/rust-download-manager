@@ -1,4 +1,6 @@
-import { DownloadMark, Pause, Plus } from "./icons";
+import { DownloadMark } from "./icons/DownloadMark";
+import { Pause } from "./icons/Pause";
+import { Plus } from "./icons/Plus";
 import { SettingsMenu } from "./SettingsMenu";
 
 type Props = {

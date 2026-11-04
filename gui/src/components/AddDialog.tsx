@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import * as api from "../lib/api";
 import { formatSpeed } from "../lib/format";
 import { NO_LIMIT, composeRate, exceeds, type RateDraft } from "../lib/rate";
-import { Folder } from "./icons";
+import { Folder } from "./icons/Folder";
 import { RateInput } from "./RateInput";
 
 type Props = {
