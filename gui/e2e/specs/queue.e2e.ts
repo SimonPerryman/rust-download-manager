@@ -263,9 +263,10 @@ describe("rdm GUI download queue", () => {
     // its draft stays dirty. The cap is typed last and never blurred, so only
     // the close-time flush can save either. 0.0001 KB/s gets past the GUI's own
     // checks and is rejected by the engine, in its own update.
-    await globalLimitInput().click();
-    await browser.keys([Key.Ctrl, "a"]);
-    await browser.keys("0.0001");
+    // Typed with element send-keys: WebKitGTK's driver drops repeated characters
+    // sent as key actions (`browser.keys("0.0001")` arrives as "0.01"). The
+    // field is empty here (the previous test cleared it).
+    await globalLimitInput().addValue("0.0001");
     await concurrencyInput().click();
     await browser.keys([Key.Ctrl, "a"]);
     await browser.keys("2");
