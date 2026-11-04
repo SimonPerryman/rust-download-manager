@@ -113,11 +113,11 @@ export function DownloadSettings() {
         />
       </SettingRow>
       <SettingRow
-        label="Connections per download"
+        label="Max connections per download"
         hint="Applies when a download next starts"
         error={errors.connections}
       >
-        {input("connections", "Connections per download")}
+        {input("connections", "Max connections per download")}
       </SettingRow>
     </div>
   );

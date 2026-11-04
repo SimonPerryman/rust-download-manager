@@ -6,11 +6,17 @@
 //! sidecar so a killed download re-fetches only the missing ranges. An idle
 //! worker steals the back half of the largest remaining segment.
 //!
+//! The pool starts on one worker and ramps (see [`ramp`](super::ramp)): each
+//! measurement window the coordinator may add a worker, or retire the last
+//! trial one, which leaves at its next chunk boundary and hands its segment
+//! back.
+//!
 //! Workers are futures polled by the coordinator inside the caller's task (no
 //! spawned tasks), so the whole [`download`](crate::download) future stays
 //! `Send` and every worker is drained before the coordinator returns.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -23,6 +29,7 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
 
+use crate::engine::ramp::{Decision, Ramp, Ramping, Window};
 use crate::engine::{
     is_transient, progress, Control, DownloadState, Error, Flow, Progress, SpeedMeter,
 };
@@ -161,6 +168,7 @@ pub(crate) struct Job<'a> {
     pub state: DownloadState,
     pub workers: usize,
     pub min_segment_size: u64,
+    pub ramp: Ramping,
     pub first: Option<reqwest::Response>,
 }
 
@@ -200,6 +208,95 @@ impl Table {
     }
 }
 
+/// Live-worker accounting: how many workers run, how many the ramp wants, and
+/// whether the pool changed since the last ramp window.
+struct Pool {
+    live: AtomicU8,
+    target: AtomicU8,
+    changed: AtomicBool,
+}
+
+impl Pool {
+    fn new(target: u8) -> Self {
+        Self {
+            live: AtomicU8::new(0),
+            target: AtomicU8::new(target),
+            // The first window holds the initial spawn.
+            changed: AtomicBool::new(true),
+        }
+    }
+
+    /// Count a new worker in; it is counted out when the slot drops.
+    fn join(&self) -> Slot<'_> {
+        self.live.fetch_add(1, Ordering::SeqCst);
+        self.changed.store(true, Ordering::SeqCst);
+        Slot {
+            pool: self,
+            held: true,
+        }
+    }
+
+    fn live(&self) -> u8 {
+        self.live.load(Ordering::SeqCst)
+    }
+
+    fn target(&self) -> u8 {
+        self.target.load(Ordering::SeqCst)
+    }
+
+    fn set_target(&self, n: u8) {
+        self.target.store(n, Ordering::SeqCst);
+    }
+
+    fn take_changed(&self) -> bool {
+        self.changed.swap(false, Ordering::SeqCst)
+    }
+}
+
+/// One worker's place in the [`Pool`].
+struct Slot<'a> {
+    pool: &'a Pool,
+    held: bool,
+}
+
+impl Slot<'_> {
+    /// Leave the pool if it is over target. The check and the decrement are
+    /// one CAS, so a pending retire lapses if the pool shrank some other way.
+    fn try_retire(&mut self) -> bool {
+        let pool = self.pool;
+        let left = pool
+            .live
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |live| {
+                (live > pool.target()).then(|| live - 1)
+            })
+            .is_ok();
+        if left {
+            self.held = false;
+            pool.changed.store(true, Ordering::SeqCst);
+        }
+        left
+    }
+}
+
+impl Drop for Slot<'_> {
+    fn drop(&mut self) {
+        if self.held {
+            self.pool.live.fetch_sub(1, Ordering::SeqCst);
+            self.pool.changed.store(true, Ordering::SeqCst);
+        }
+    }
+}
+
+/// How a worker's fetch of one segment ended (short of failing).
+enum Outcome {
+    /// The segment is fully written.
+    Done,
+    /// The stop signal was raised.
+    Stopped,
+    /// The worker left the pool mid-segment; the segment needs a new owner.
+    Retired,
+}
+
 /// State shared by the coordinator and its workers (borrowed, never spawned).
 struct Shared<'a> {
     client: &'a reqwest::Client,
@@ -213,6 +310,9 @@ struct Shared<'a> {
     table: Mutex<Table>,
     progressed: Notify,
     stop: watch::Sender<bool>,
+    pool: Pool,
+    /// Nanoseconds workers have spent waiting on rate limits.
+    waited: AtomicU64,
 }
 
 impl Shared<'_> {
@@ -247,6 +347,13 @@ pub(crate) async fn run(
     if job.first.is_some() {
         owned[0] = true;
     }
+    let ceiling = u8::try_from(job.workers)
+        .unwrap_or(MAX_CONNECTIONS)
+        .clamp(1, MAX_CONNECTIONS);
+    let (mut ramp, window) = match job.ramp {
+        Ramping::Window(w) => (Ramp::new(ceiling), Some(w.max(Duration::from_millis(1)))),
+        Ramping::Off => (Ramp::fixed(ceiling), None),
+    };
     let (stop, _) = watch::channel(false);
     let shared = Shared {
         client: job.client,
@@ -260,6 +367,8 @@ pub(crate) async fn run(
         table: Mutex::new(Table { segments, owned }),
         progressed: Notify::new(),
         stop,
+        pool: Pool::new(ramp.target()),
+        waited: AtomicU64::new(0),
     };
 
     let mut meter = SpeedMeter::new();
@@ -272,18 +381,24 @@ pub(crate) async fn run(
             total: Some(total),
             bytes_per_sec,
             eta: progress::eta(downloaded, Some(total), bytes_per_sec),
+            connections: shared.pool.live(),
         });
     };
-    report(&mut meter, on_progress);
 
     let mut first = job.first;
-    let pool = job.workers.max(1);
     let mut workers = FuturesUnordered::new();
-    for _ in 0..pool {
-        workers.push(worker(&shared, first.take()));
+    for _ in 0..ramp.target() {
+        workers.push(worker(&shared, first.take(), shared.pool.join()));
     }
+    report(&mut meter, on_progress);
     // Bounded so a server that keeps failing still ends the attempt.
-    let mut replacements_left = 2 * pool;
+    let mut replacements_left = 2 * usize::from(ceiling);
+
+    let ramp_period = window.unwrap_or(CONTROL_POLL_INTERVAL);
+    let mut ramp_tick =
+        tokio::time::interval_at(tokio::time::Instant::now() + ramp_period, ramp_period);
+    ramp_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut window_start = (Instant::now(), shared.downloaded(), 0u64);
 
     let mut control_tick = tokio::time::interval(CONTROL_POLL_INTERVAL);
     control_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -305,14 +420,20 @@ pub(crate) async fn run(
                     match failure {
                         Failure::Engine(ref e) if is_transient(e) => {
                             tracing::debug!(error = %crate::engine::error_detail(e), "segment worker failed; segment re-queued");
+                            // The host says it won't take more connections.
+                            if matches!(e, Error::Status(429 | 503)) {
+                                ramp.settle_at(shared.pool.live());
+                                shared.pool.set_target(ramp.target());
+                            }
                             transient = Some(failure);
                             // Live workers only re-claim once their own segment
                             // is done; if none are left, the handed-back
                             // segment needs a fresh connection.
                             let orphaned = shared.table.lock().unwrap().has_unowned_work();
-                            if orphaned && workers.len() < pool && replacements_left > 0 && !shared.is_stopping() {
+                            let wanted = usize::from(shared.pool.target());
+                            if orphaned && workers.len() < wanted && replacements_left > 0 && !shared.is_stopping() {
                                 replacements_left -= 1;
-                                workers.push(worker(&shared, None));
+                                workers.push(worker(&shared, None, shared.pool.join()));
                             }
                         }
                         other => {
@@ -326,6 +447,30 @@ pub(crate) async fn run(
             _ = control_tick.tick() => {
                 if job.control.poll() != Flow::Continue {
                     shared.raise_stop();
+                }
+            }
+            _ = ramp_tick.tick(), if window.is_some() => {
+                let now = Instant::now();
+                let (started_at, downloaded_then, waited_then) = window_start;
+                let downloaded = shared.downloaded();
+                let waited = shared.waited.load(Ordering::Relaxed);
+                window_start = (now, downloaded, waited);
+                let secs = now.duration_since(started_at).as_secs_f64();
+                let live = f64::from(shared.pool.live().max(1));
+                let measured = Window {
+                    bytes_per_sec: downloaded.saturating_sub(downloaded_then) as f64 / secs,
+                    waited_fraction: waited.saturating_sub(waited_then) as f64 / 1e9 / (secs * live),
+                    pool_changed: shared.pool.take_changed(),
+                };
+                let decision = ramp.observe(measured);
+                shared.pool.set_target(ramp.target());
+                tracing::debug!(?measured, ?decision, target = ramp.target(), "ramp window");
+                match decision {
+                    Decision::Add if !shared.is_stopping() && job.control.poll() == Flow::Continue => {
+                        workers.push(worker(&shared, None, shared.pool.join()));
+                        report(&mut meter, on_progress);
+                    }
+                    Decision::Add | Decision::Hold | Decision::Retire => {}
                 }
             }
             joined = async { checkpoint.as_mut().expect("guarded by precondition").await }, if checkpoint_running => {
@@ -400,9 +545,14 @@ pub(crate) async fn run(
 }
 
 /// A worker: repeatedly claim a segment (queued, else stolen) and fetch it,
-/// until there is no work left or the stop signal is raised. A failed segment
-/// is handed back to the queue for the remaining workers.
-async fn worker(shared: &Shared<'_>, first: Option<reqwest::Response>) -> Result<(), Failure> {
+/// until there is no work left, the stop signal is raised, or the pool is over
+/// target. A failed or retired-from segment is handed back to the queue for
+/// the remaining workers.
+async fn worker(
+    shared: &Shared<'_>,
+    first: Option<reqwest::Response>,
+    mut slot: Slot<'_>,
+) -> Result<(), Failure> {
     let mut stop = shared.stop.subscribe();
     let mut file = tokio::fs::OpenOptions::new()
         .write(true)
@@ -416,6 +566,9 @@ async fn worker(shared: &Shared<'_>, first: Option<reqwest::Response>) -> Result
         let (idx, resp) = match first.take() {
             Some((idx, resp)) => (idx, Some(resp)),
             None => {
+                if slot.try_retire() {
+                    return Ok(());
+                }
                 let claimed = shared.table.lock().unwrap().claim(shared.min);
                 match claimed {
                     Some(idx) => (idx, None),
@@ -423,23 +576,32 @@ async fn worker(shared: &Shared<'_>, first: Option<reqwest::Response>) -> Result
                 }
             }
         };
-        if let Err(failure) = fetch_segment(shared, &mut file, idx, resp, &mut stop).await {
-            shared.table.lock().unwrap().owned[idx] = false;
-            return Err(failure);
+        match fetch_segment(shared, &mut file, idx, resp, &mut stop, &mut slot).await {
+            Ok(Outcome::Done) => {}
+            Ok(Outcome::Stopped) => return Ok(()),
+            Ok(Outcome::Retired) => {
+                shared.table.lock().unwrap().owned[idx] = false;
+                return Ok(());
+            }
+            Err(failure) => {
+                shared.table.lock().unwrap().owned[idx] = false;
+                return Err(failure);
+            }
         }
     }
 }
 
-/// Fetch segment `idx` until complete (or stopped). A response that ends early
-/// after making progress is re-requested in place; one that made none is
-/// [`Error::Incomplete`].
+/// Fetch segment `idx` until complete, stopped or retired. A response that
+/// ends early after making progress is re-requested in place; one that made
+/// none is [`Error::Incomplete`].
 async fn fetch_segment(
     shared: &Shared<'_>,
     file: &mut tokio::fs::File,
     idx: usize,
     mut first: Option<reqwest::Response>,
     stop: &mut watch::Receiver<bool>,
-) -> Result<(), Failure> {
+    slot: &mut Slot<'_>,
+) -> Result<Outcome, Failure> {
     loop {
         let (pos, end) = {
             let table = shared.table.lock().unwrap();
@@ -447,13 +609,13 @@ async fn fetch_segment(
             (seg.start + seg.done, seg.end)
         };
         if pos >= end {
-            return Ok(());
+            return Ok(Outcome::Done);
         }
         let resp = match first.take() {
             Some(resp) => resp,
             None => {
                 if shared.is_stopping() {
-                    return Ok(());
+                    return Ok(Outcome::Stopped);
                 }
                 let mut request = shared
                     .client
@@ -464,7 +626,7 @@ async fn fetch_segment(
                 }
                 let resp = tokio::select! {
                     resp = request.send() => resp?,
-                    _ = stop.wait_for(|stopped| *stopped) => return Ok(()),
+                    _ = stop.wait_for(|stopped| *stopped) => return Ok(Outcome::Stopped),
                 };
                 check_ranged(&resp, pos, end, shared.total, shared.redirected)?;
                 resp
@@ -477,7 +639,7 @@ async fn fetch_segment(
         loop {
             let next = tokio::select! {
                 next = body.next() => next,
-                _ = stop.wait_for(|stopped| *stopped) => return Ok(()),
+                _ = stop.wait_for(|stopped| *stopped) => return Ok(Outcome::Stopped),
             };
             let Some(chunk) = next else { break };
             let chunk = chunk?;
@@ -485,7 +647,7 @@ async fn fetch_segment(
             // Control point: honoured once per chunk, before the write.
             if shared.control.poll() != Flow::Continue {
                 shared.raise_stop();
-                return Ok(());
+                return Ok(Outcome::Stopped);
             }
             // The tail may have been stolen since the request was sent.
             let room = {
@@ -508,12 +670,23 @@ async fn fetch_segment(
             // Throttle point: sleeps off rate-limit debt. A sibling's failure
             // raises `stop` without touching `Control`, so watch it too.
             let stopped = tokio::select! {
-                _ = shared.control.throttle(n as usize) => false,
+                _ = shared.control.throttle(n as usize, Some(&shared.waited)) => false,
                 _ = stop.wait_for(|stopped| *stopped) => true,
             };
+            // Retire point: only after the chunk is written and `done`
+            // advanced, so the handed-back segment resumes exactly there.
+            let outcome = if stopped {
+                Some(Outcome::Stopped)
+            } else if complete {
+                Some(Outcome::Done)
+            } else if slot.try_retire() {
+                Some(Outcome::Retired)
+            } else {
+                None
+            };
             shared.progressed.notify_one();
-            if complete || stopped {
-                return Ok(());
+            if let Some(outcome) = outcome {
+                return Ok(outcome);
             }
         }
         if !progressed {
@@ -732,6 +905,34 @@ mod tests {
         assert_eq!(table.claim(10), Some(3));
         assert_eq!(table.segments[0], seg(0, 50, 0));
         assert_eq!(table.owned, vec![true, false, true, true]);
+    }
+
+    #[test]
+    fn retire_leaves_only_while_over_target_and_counts_once() {
+        let pool = Pool::new(3);
+        assert!(pool.take_changed(), "the initial spawn is a pool change");
+        let mut slots: Vec<_> = (0..3).map(|_| pool.join()).collect();
+        assert_eq!(pool.live(), 3);
+        assert!(pool.take_changed());
+        assert!(!slots[0].try_retire(), "at target: nobody leaves");
+
+        pool.set_target(2);
+        assert!(slots[0].try_retire());
+        assert!(!slots[1].try_retire(), "only one leaves per step");
+        assert_eq!(pool.live(), pool.target());
+        assert!(pool.take_changed());
+
+        // The retired slot was already counted out when it left.
+        slots.remove(0);
+        assert_eq!(pool.live(), 2);
+        assert!(!pool.take_changed());
+
+        // A pending retire lapses if the pool shrinks some other way.
+        pool.set_target(1);
+        slots.remove(0);
+        assert!(!slots[0].try_retire());
+        drop(slots);
+        assert_eq!(pool.live(), 0);
     }
 
     #[test]

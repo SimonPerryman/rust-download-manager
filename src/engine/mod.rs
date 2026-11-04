@@ -9,7 +9,8 @@
 //!
 //! A large file on a range-capable server with a stable validator is fetched as
 //! several parallel byte ranges (see [`DownloadRequest::connections`]) written
-//! into a pre-allocated `.part`. A single-connection download resumes from the
+//! into a pre-allocated `.part`, starting on one connection and adding more
+//! while the measured speed keeps rising. A single-connection download resumes from the
 //! `.part` size (v1 sidecar); a multi-segment one from the per-segment progress
 //! checkpointed in its v2 sidecar, re-fetching only the missing ranges.
 
@@ -19,6 +20,7 @@ pub mod integrity;
 pub mod limit;
 pub mod manager;
 pub mod progress;
+mod ramp;
 pub mod retry;
 mod segment;
 pub mod state;
@@ -29,6 +31,8 @@ pub use integrity::{Algo, Checksum};
 pub use limit::{parse_rate, RateLimiter};
 pub use manager::{AddOptions, DownloadSnapshot, Manager};
 pub use progress::{Progress, SpeedMeter};
+#[doc(hidden)]
+pub use ramp::Ramping;
 pub use retry::RetryPolicy;
 pub use segment::Segment;
 pub use state::DownloadState;
@@ -66,12 +70,13 @@ pub struct DownloadRequest {
     /// Optional hook to claim the derived target before anything is written;
     /// ignored when `out` is set.
     pub claim_target: Option<ClaimTarget>,
-    /// Max parallel connections; 1 forces single-connection. Default 4;
-    /// clamped to 1..=16 at use.
+    /// Max parallel connections, added one at a time while speed keeps
+    /// rising; 1 forces single-connection. Default 4; clamped to 1..=16 at use.
     pub connections: u8,
     /// Smallest segment worth its own connection (files under 2× this stay
     /// single). Default 1 MiB; a tuning knob, mainly for tests.
     pub min_segment_size: u64,
+    ramp: Ramping,
 }
 
 /// Default for [`DownloadRequest::connections`].
@@ -117,6 +122,7 @@ impl DownloadRequest {
             claim_target: None,
             connections: DEFAULT_CONNECTIONS,
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
+            ramp: Ramping::default(),
         }
     }
 
@@ -132,6 +138,7 @@ impl DownloadRequest {
             claim_target: None,
             connections: DEFAULT_CONNECTIONS,
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
+            ramp: Ramping::default(),
         }
     }
 
@@ -166,6 +173,13 @@ impl DownloadRequest {
     /// Set the smallest segment worth its own connection (builder).
     pub fn with_min_segment_size(mut self, bytes: u64) -> Self {
         self.min_segment_size = bytes;
+        self
+    }
+
+    /// Override connection ramping (test seam; frontends never call this).
+    #[doc(hidden)]
+    pub fn with_ramp(mut self, ramp: Ramping) -> Self {
+        self.ramp = ramp;
         self
     }
 
@@ -539,6 +553,7 @@ async fn attempt_once(
                 state: st,
                 workers,
                 min_segment_size: req.min_segment_size,
+                ramp: req.ramp,
                 first: Some(resp),
             };
             let bytes = segment::run(job, on_progress).await?;
@@ -578,6 +593,7 @@ async fn resume_segmented(
         state: st,
         workers: usize::from(req.effective_connections()),
         min_segment_size: req.min_segment_size,
+        ramp: req.ramp,
         first: None,
     };
     let bytes = segment::run(job, on_progress).await?;
@@ -661,6 +677,7 @@ async fn resume(
                         total: Some(total),
                         bytes_per_sec: 0.0,
                         eta: None,
+                        connections: 0,
                     });
                     return Ok((status.as_u16(), part.to_path_buf(), offset));
                 }
@@ -730,6 +747,7 @@ async fn stream_to_part(
         total,
         bytes_per_sec: 0.0,
         eta: None,
+        connections: 1,
     });
 
     let mut stream = resp.bytes_stream();
@@ -755,7 +773,7 @@ async fn stream_to_part(
         downloaded += chunk.len() as u64;
 
         // Throttle point: sleeps off rate-limit debt; pause/cancel cut it short.
-        control.throttle(chunk.len()).await;
+        control.throttle(chunk.len(), None).await;
 
         let bytes_per_sec = meter.observe(start.elapsed(), downloaded);
         on_progress(Progress {
@@ -763,6 +781,7 @@ async fn stream_to_part(
             total,
             bytes_per_sec,
             eta: progress::eta(downloaded, total, bytes_per_sec),
+            connections: 1,
         });
     }
 

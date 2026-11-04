@@ -20,6 +20,8 @@ export interface DownloadSnapshot {
   finished_at: number | null;
   /** Per-download speed cap in bytes/s; null is unlimited. */
   limit: number | null;
+  /** Live connections in use; 0 unless downloading. */
+  connections: number;
 }
 
 /** Mirrors the engine's manager-wide `Settings` (see src/engine/store.rs). */

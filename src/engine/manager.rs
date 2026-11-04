@@ -69,6 +69,9 @@ pub struct DownloadSnapshot {
     pub finished_at: Option<u64>,
     /// Per-download speed cap in bytes/s; `None` is unlimited.
     pub limit: Option<u64>,
+    /// Connections open, including ones still connecting; zero unless
+    /// actively downloading.
+    pub connections: u8,
 }
 
 /// Optional extras for [`Manager::add_with`].
@@ -87,6 +90,7 @@ pub struct AddOptions {
 struct Live {
     bytes_per_sec: f64,
     eta_secs: Option<u64>,
+    connections: u8,
 }
 
 /// One managed download: its persisted record, control handle, rate limiter,
@@ -123,6 +127,7 @@ impl Entry {
             added_at: self.record.added_at,
             finished_at: self.record.finished_at,
             limit: self.record.limit,
+            connections: self.live.connections,
         }
     }
 }
@@ -198,6 +203,7 @@ impl Inner {
             }
             e.live.bytes_per_sec = p.bytes_per_sec;
             e.live.eta_secs = p.eta.map(|d| d.as_secs());
+            e.live.connections = p.connections;
         } else {
             return;
         }
@@ -585,7 +591,7 @@ impl Manager {
         self.update_settings(|s| s.global_limit = limit);
     }
 
-    /// Set the parallel connections per download (clamped to 1..=16). Applies
+    /// Set the max parallel connections per download (clamped to 1..=16). Applies
     /// from each download's next start, not to ones already running.
     pub fn set_max_connections(&self, n: u8) {
         self.update_settings(|s| s.max_connections = n);

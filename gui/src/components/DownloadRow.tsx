@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { DownloadSnapshot } from "../lib/types";
-import { formatBytes, formatSpeed, formatDuration, formatAgo, percent, host } from "../lib/format";
+import {
+  formatBytes,
+  formatSpeed,
+  formatDuration,
+  formatAgo,
+  percent,
+  host,
+  connectionsLabel,
+} from "../lib/format";
 import * as api from "../lib/api";
 import { NO_LIMIT, composeRate, exceeds, rateDraft, sameRate, type RateDraft } from "../lib/rate";
 import { RateInput } from "./RateInput";
@@ -338,6 +346,7 @@ function ProgressBar({ pct, tone }: { pct: number | null; tone: "brand" | "muted
 
 function downloadingRow(d: DownloadSnapshot, limit: LimitEditor) {
   const pct = percent(d);
+  const connections = connectionsLabel(d);
   return (
     <Shell
       d={d}
@@ -365,6 +374,11 @@ function downloadingRow(d: DownloadSnapshot, limit: LimitEditor) {
       <div className="mt-row-stack-sm flex items-center gap-4 text-row-meta text-muted-foreground">
         {d.bytes_per_sec > 0 && (
           <span className="tabular-nums">{formatSpeed(d.bytes_per_sec)}</span>
+        )}
+        {connections && (
+          <span data-testid="row-connections" className="tabular-nums">
+            {connections}
+          </span>
         )}
         {d.eta_secs != null && (
           <span className="tabular-nums">ETA {formatDuration(d.eta_secs)}</span>

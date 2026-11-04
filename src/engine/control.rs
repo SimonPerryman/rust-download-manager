@@ -1,7 +1,7 @@
 //! Control hooks the chunk loop consults each chunk: cancel and pause before
 //! each write, and a rate-limit throttle after it.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -103,8 +103,9 @@ impl Control {
 
     /// Awaited after each chunk is written: charge it to every limiter, then
     /// wait until the most indebted one is repaid. Returns early on
-    /// pause/cancel (the debt stays owed).
-    pub(crate) async fn throttle(&self, chunk_len: usize) {
+    /// pause/cancel (the debt stays owed). Time spent waiting is added to
+    /// `waited` (ns) as it passes, so a ramp window sees in-progress waits.
+    pub(crate) async fn throttle(&self, chunk_len: usize, waited: Option<&AtomicU64>) {
         let limiters = &self.inner.limiters;
         let n = chunk_len as u64;
         // Waiting on the latest deadline (not each in turn) keeps the pace at
@@ -114,10 +115,31 @@ impl Control {
             if self.poll() != Flow::Continue {
                 return;
             }
+            // Accounted on drop, so a slice cut short by a dropped future
+            // (a sibling's stop) still counts what it slept.
+            let _slice = WaitSlice {
+                waited,
+                from: Instant::now(),
+            };
             tokio::time::sleep_until(until.min(Instant::now() + THROTTLE_SLICE)).await;
             // Re-peek rather than trust `until`: a live rate change may have
             // moved it.
             deadline = limiters.iter().filter_map(|l| l.charge(0)).max();
+        }
+    }
+}
+
+/// One throttle sleep, added to its counter when it ends.
+struct WaitSlice<'a> {
+    waited: Option<&'a AtomicU64>,
+    from: Instant,
+}
+
+impl Drop for WaitSlice<'_> {
+    fn drop(&mut self) {
+        if let Some(waited) = self.waited {
+            let ns = u64::try_from(self.from.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            waited.fetch_add(ns, Ordering::Relaxed);
         }
     }
 }
@@ -186,16 +208,16 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn unlimited_throttle_never_sleeps() {
         let start = Instant::now();
-        Control::new().throttle(usize::MAX).await;
+        Control::new().throttle(usize::MAX, None).await;
         let unlimited = Control::new().with_limiters([Arc::new(RateLimiter::new(None))]);
-        unlimited.throttle(100 * MIB as usize).await;
+        unlimited.throttle(100 * MIB as usize, None).await;
         assert_eq!(Instant::now(), start);
     }
 
     #[tokio::test(start_paused = true)]
     async fn throttle_debits_each_limiter_exactly_once() {
         let (control, limiters) = limited(&[MIB, 2 * MIB]);
-        control.throttle(10 * KIB as usize).await;
+        control.throttle(10 * KIB as usize, None).await;
         for l in &limiters {
             assert_eq!(l.balance(), (l.burst() - 10 * KIB) as f64);
         }
@@ -207,7 +229,7 @@ mod tests {
         // 512 KiB/s (burst 128 KiB). Paying in turn would take 1.75 s.
         let (control, _limiters) = limited(&[MIB, 512 * KIB]);
         let start = Instant::now();
-        control.throttle(768 * KIB as usize).await;
+        control.throttle(768 * KIB as usize, None).await;
         let waited = (Instant::now() - start).as_secs_f64();
         assert!((1.25..1.26).contains(&waited), "waited {waited}s");
     }
@@ -217,7 +239,7 @@ mod tests {
         let (control, _limiters) = limited(&[MIB]);
         let throttled = control.clone();
         let task = tokio::spawn(async move {
-            throttled.throttle(10 * MIB as usize).await; // ~10 s of debt
+            throttled.throttle(10 * MIB as usize, None).await; // ~10 s of debt
             Instant::now()
         });
         tokio::time::sleep(Duration::from_millis(120)).await;
@@ -235,7 +257,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(200)).await;
             limiters[0].set_rate(Some(100 * MIB));
         };
-        tokio::join!(control.throttle(10 * MIB as usize), raise);
+        tokio::join!(control.throttle(10 * MIB as usize, None), raise);
         let waited = Instant::now() - start;
         assert!(waited < Duration::from_millis(400), "waited {waited:?}");
 
@@ -246,7 +268,71 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(200)).await;
             limiters[0].set_rate(None);
         };
-        tokio::join!(control.throttle(10 * MIB as usize), lift);
+        tokio::join!(control.throttle(10 * MIB as usize, None), lift);
         assert!(Instant::now() - start <= Duration::from_millis(200) + THROTTLE_SLICE);
+    }
+
+    fn ms(waited: &AtomicU64) -> u64 {
+        waited.load(Ordering::Relaxed) / 1_000_000
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn throttle_accrues_the_time_it_waits() {
+        // 768 KiB at 1 MiB/s with a 256 KiB burst: 0.5 s of debt.
+        let (control, _limiters) = limited(&[MIB]);
+        let waited = AtomicU64::new(0);
+        control.throttle(768 * KIB as usize, Some(&waited)).await;
+        assert_eq!(ms(&waited), 500);
+
+        // Unthrottled chunks add nothing.
+        let free = AtomicU64::new(0);
+        Control::new().throttle(MIB as usize, Some(&free)).await;
+        assert_eq!(ms(&free), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_in_progress_wait_is_visible_before_it_ends() {
+        let (control, _limiters) = limited(&[MIB]);
+        let waited = Arc::new(AtomicU64::new(0));
+        let task = {
+            let (control, waited) = (control.clone(), waited.clone());
+            tokio::spawn(async move { control.throttle(768 * KIB as usize, Some(&waited)).await })
+        };
+        // Two whole slices have passed: a window ending now sees them.
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        assert_eq!(ms(&waited), 100);
+        task.await.unwrap();
+        assert_eq!(ms(&waited), 500, "the rest lands in the next observation");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pause_interrupted_wait_is_still_accounted() {
+        let (control, _limiters) = limited(&[MIB]);
+        let waited = Arc::new(AtomicU64::new(0));
+        let task = {
+            let (control, waited) = (control.clone(), waited.clone());
+            tokio::spawn(async move { control.throttle(10 * MIB as usize, Some(&waited)).await })
+        };
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        control.pause();
+        task.await.unwrap();
+        assert_eq!(
+            ms(&waited),
+            150,
+            "every slice slept before the pause counts"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_dropped_throttle_accounts_its_partial_slice() {
+        let (control, _limiters) = limited(&[MIB]);
+        let waited = AtomicU64::new(0);
+        let cut_short = tokio::time::timeout(
+            Duration::from_millis(120),
+            control.throttle(10 * MIB as usize, Some(&waited)),
+        )
+        .await;
+        assert!(cut_short.is_err());
+        assert_eq!(ms(&waited), 120);
     }
 }

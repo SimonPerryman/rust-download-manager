@@ -112,7 +112,7 @@ pub struct Settings {
     /// Aggregate speed cap across all downloads in bytes/s; `None` is
     /// unlimited.
     pub global_limit: Option<u64>,
-    /// Parallel connections per download, applied when a download (re)starts.
+    /// Max parallel connections per download, applied when a download (re)starts.
     pub max_connections: u8,
 }
 

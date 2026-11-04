@@ -6,22 +6,24 @@ line or through a desktop GUI — streaming to disk with a live progress readout
 > **Status: early.** M0 + M1 are a robust single-connection CLI download
 > (pause/resume, resume-after-restart, retry, integrity checking); M2 adds a
 > desktop GUI over the same engine; M3 adds multi-segment parallel downloads;
-> M4 adds a download queue and speed limits (CLI `--limit-rate`, and global +
-> per-download limits in the GUI).
+> M4 adds a download queue, speed limits (CLI `--limit-rate`, and global +
+> per-download limits in the GUI) and throughput-driven connection ramping.
 
 ## Features
 
 - Download over HTTP/HTTPS, streamed to disk chunk-by-chunk (no full buffering).
 - Parallel segments: a large file (≥ 2 MiB) on a server that supports range
   requests, sends a strong `ETag` or a `Last-Modified`, and doesn't set a
-  `Content-Encoding` is split into byte ranges fetched over several connections
-  at once (4 by default, `-c` to change); idle connections take over half of
-  the largest remaining range. Servers without range support fall back to one
-  connection automatically.
+  `Content-Encoding` is split into byte ranges fetched in parallel over up to
+  N connections (4 by default, `-c` to change), added while measured speed
+  keeps rising; idle connections take over half of the largest remaining
+  range. Servers without range support fall back to one connection
+  automatically.
 - Follows redirects and handles common HTTP status codes.
 - Derives the output filename from `Content-Disposition` or the URL, or takes
   an explicit path.
-- Live progress bar with size, speed, and ETA.
+- Live progress bar with size, speed, ETA, and the live connection count
+  (`N conn` while more than one is open).
 - Resumable: data streams to a `<file>.part` with a `<file>.rdm` sidecar;
   re-running the same command continues where an interrupted download left off
   (via HTTP range requests, validated against `ETag`/`Last-Modified`). A
@@ -36,7 +38,8 @@ line or through a desktop GUI — streaming to disk with a live progress readout
 - Download queue (GUI): at most 3 downloads stream at once by default
   (configurable); the rest wait as *Queued* and start in order as slots free.
 - Optional **desktop GUI** (Tauri + React): manage many downloads at once —
-  add/pause/resume/cancel, live progress/speed/ETA, a download queue with a
+  add/pause/resume/cancel, live progress/speed/ETA (plus *N connections* while
+  more than one is open), a download queue with a
   concurrency cap, global and per-download speed limits, and an Active/History
   list that persists across restarts. The GUI is an *additive* frontend; the CLI and
   engine stay fully functional headless (no webview/Node needed).
@@ -66,7 +69,7 @@ rdm https://example.com/big-file.zip -o ~/Downloads/archive.zip
 # Verify the download against a SHA-256 checksum:
 rdm https://example.com/big-file.zip --checksum sha256:<hex>
 
-# Use up to 8 parallel connections (or -c 1 for a single connection):
+# Use up to 8 connections, added while measured speed keeps rising (-c 1 for one):
 rdm https://example.com/big-file.zip -c 8
 
 # Cap the speed at 2 MiB/s:
@@ -80,7 +83,7 @@ rdm https://example.com/big-file.zip --limit-rate 2M
 | `<url>` | The URL to download (required). |
 | `-o, --output <path>` | Output file path. Defaults to a name derived from the URL/headers, saved in the current directory. |
 | `--checksum <algo:hex>` | Verify the finished file against a checksum (e.g. `sha256:…`). |
-| `-c, --connections <n>` | Max parallel connections, 1–16 (default 4). Used only for files ≥ 2 MiB on servers that support range requests; `1` forces a single connection. |
+| `-c, --connections <n>` | Max parallel connections, 1–16 (default 4): starts on one and adds more, up to `n`, while measured speed keeps rising. Used only for files ≥ 2 MiB on servers that support range requests; `1` forces a single connection. |
 | `--limit-rate <rate>` | Cap the download speed in bytes/s, with an optional `K`/`M`/`G` suffix (×1024), e.g. `500K` or `2M`. Shared across all connections of the download. |
 
 Run `rdm --help` for the full, generated help, and `rdm --version` for the
@@ -122,7 +125,7 @@ The sliders button in the header opens **Settings**:
   - *Global speed limit*: a cap on all downloads combined (empty = no
     limit); applies live, alongside any per-download limit (the lower one
     wins).
-  - *Connections per download* (1–16, default 4): applies the next time a
+  - *Max connections per download* (1–16, default 4): applies the next time a
     download starts.
 
 Values are applied when you press Enter or leave the field; an invalid value

@@ -27,8 +27,8 @@ struct Cli {
     #[arg(long = "checksum", value_parser = parse_checksum)]
     checksum: Option<Checksum>,
 
-    /// Max parallel connections for a large file on a range-capable server
-    /// (1 = single connection).
+    /// Max parallel connections for a large file on a range-capable server,
+    /// added while the measured speed keeps rising (1 = single connection).
     #[arg(
         short = 'c',
         long = "connections",
@@ -74,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
     let bar = ProgressBar::new(0);
     bar.set_style(
         ProgressStyle::with_template(
-            "{bar:40.cyan/blue} {bytes}/{total_bytes} ({binary_bytes_per_sec}, eta {eta})",
+            "{bar:40.cyan/blue} {bytes}/{total_bytes} ({binary_bytes_per_sec}, eta {eta}) {msg}",
         )
         .expect("valid template")
         .progress_chars("=>-"),
@@ -87,6 +87,11 @@ async fn main() -> anyhow::Result<()> {
             bar.set_length(total);
         }
         bar.set_position(p.downloaded);
+        bar.set_message(if p.connections > 1 {
+            format!("{} conn", p.connections)
+        } else {
+            String::new()
+        });
     })
     .await
     .with_context(|| format!("failed to download {}", req.url))?;

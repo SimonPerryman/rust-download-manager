@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 
 use common::{FixtureConfig, RouteStats};
 use rdm::engine::state::{self, DownloadState};
-use rdm::engine::Segment;
+use rdm::engine::{Ramping, Segment};
 use rdm::{download, Control, DownloadRequest, Error, Progress, RateLimiter, RetryPolicy};
 
 const KIB: u64 = 1024;
@@ -207,7 +207,8 @@ async fn multi_segment_is_faster_than_single_connection() {
     let multi = download(
         &DownloadRequest::to_path(server.url("/seg"), &multi_out)
             .with_connections(4)
-            .with_min_segment_size(128 * KIB),
+            .with_min_segment_size(128 * KIB)
+            .with_ramp(Ramping::Off),
         &Control::new(),
         |_| {},
     )
@@ -457,7 +458,8 @@ async fn segment_dropped_by_last_worker_is_picked_up() {
     // Default 1 MiB minimum: four 1 MiB segments, none stealable, so the tail
     // worker really is the last one running when its connection drops.
     let req = DownloadRequest::to_path(server.url("/seg-flaky-tail"), &out)
-        .with_retry(RetryPolicy::none());
+        .with_retry(RetryPolicy::none())
+        .with_ramp(Ramping::Off);
     let summary = download(&req, &Control::new(), |_| {}).await.unwrap();
 
     assert_eq!(summary.status, 206);
@@ -539,7 +541,8 @@ async fn connection_capping_host_completes() {
 
     let req = DownloadRequest::to_path(server.url("/seg-capped"), &out)
         .with_connections(4)
-        .with_retry(fast_retry(10));
+        .with_retry(fast_retry(10))
+        .with_ramp(Ramping::Off);
     download(&req, &Control::new(), |_| {}).await.unwrap();
 
     assert!(stats.refused() >= 1, "the cap was never hit");
@@ -584,7 +587,8 @@ async fn resume_spreads_remaining_segment_across_connections() {
     );
     let req = DownloadRequest::to_path(server.url("/seg"), &out)
         .with_connections(4)
-        .with_min_segment_size(256 * KIB);
+        .with_min_segment_size(256 * KIB)
+        .with_ramp(Ramping::Off);
     let summary = download(&req, &Control::new(), |_| {}).await.unwrap();
 
     assert_eq!(summary.status, 206);
@@ -612,7 +616,8 @@ async fn progressing_attempts_do_not_consume_retries() {
 
     let req = DownloadRequest::to_path(server.url("/seg-drop"), &out)
         .with_connections(2)
-        .with_retry(fast_retry(2));
+        .with_retry(fast_retry(2))
+        .with_ramp(Ramping::Off);
     let summary = download(&req, &Control::new(), |_| {}).await.unwrap();
 
     assert_eq!(summary.status, 206);
@@ -674,7 +679,8 @@ async fn idle_worker_steals_from_slow_segment() {
     // 256 KiB minimum: the 1 MiB segment 0 is stealable.
     let req = DownloadRequest::to_path(server.url("/seg-skewed"), &out)
         .with_connections(4)
-        .with_min_segment_size(256 * KIB);
+        .with_min_segment_size(256 * KIB)
+        .with_ramp(Ramping::Off);
     let mut seen = Vec::new();
     download(&req, &Control::new(), |p| seen.push(p))
         .await
@@ -1025,7 +1031,7 @@ async fn pause_is_noticed_while_all_workers_wait_on_the_network() {
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("blocked.bin");
 
-    let req = DownloadRequest::to_path(server.url("/seg"), &out);
+    let req = DownloadRequest::to_path(server.url("/seg"), &out).with_ramp(Ramping::Off);
     let control = Control::new();
     let run = {
         let control = control.clone();
@@ -1068,7 +1074,8 @@ async fn sibling_failure_interrupts_a_throttled_worker() {
 
     let req = DownloadRequest::to_path(server.url("/seg-403"), &out)
         .with_connections(4)
-        .with_retry(fast_retry(1));
+        .with_retry(fast_retry(1))
+        .with_ramp(Ramping::Off);
     let control = Control::new().with_limiters([Arc::new(RateLimiter::new(Some(RATE)))]);
     let started = Instant::now();
     let result = tokio::time::timeout(Duration::from_secs(10), download(&req, &control, |_| {}))

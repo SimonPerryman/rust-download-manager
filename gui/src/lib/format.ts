@@ -46,6 +46,12 @@ export function percent(d: DownloadSnapshot): number | null {
   return Math.min(100, Math.floor((d.downloaded / d.total) * 100));
 }
 
+/** "3 connections" while a download streams over more than one, else null. */
+export function connectionsLabel(d: DownloadSnapshot): string | null {
+  if (d.status !== "downloading" || d.connections <= 1) return null;
+  return `${d.connections} connections`;
+}
+
 /** The URL's host, e.g. `releases.ubuntu.com`, for the source sub-line. */
 export function host(url: string): string {
   try {

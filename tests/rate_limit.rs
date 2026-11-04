@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::FixtureConfig;
+use rdm::engine::Ramping;
 use rdm::{download, Control, DownloadRequest, RateLimiter};
 
 const KIB: u64 = 1024;
@@ -14,7 +15,8 @@ const MIB: u64 = 1024 * KIB;
 const LIMIT: u64 = 512 * KIB;
 
 /// Download `/seg` (1 MiB) with `connections` under a 512 KiB/s limit and
-/// check the time taken. With debt, the last chunk's wait ends only once the
+/// check the time taken (ramping off, so every connection runs from the
+/// start). With debt, the last chunk's wait ends only once the
 /// balance is back to zero, so `elapsed ≥ (size − burst) / rate` however the
 /// bytes were split across connections; slow CI can only lengthen it.
 async fn assert_limited(connections: u8) {
@@ -34,7 +36,8 @@ async fn assert_limited(connections: u8) {
     download(
         &DownloadRequest::to_path(server.url("/seg"), &out)
             .with_connections(connections)
-            .with_min_segment_size(256 * KIB),
+            .with_min_segment_size(256 * KIB)
+            .with_ramp(Ramping::Off),
         &control,
         |_| {},
     )
