@@ -31,7 +31,8 @@ use tokio::task::JoinHandle;
 
 use crate::engine::ramp::{Decision, Ramp, Ramping, Window};
 use crate::engine::{
-    is_transient, progress, Control, DownloadState, Error, Flow, Progress, SpeedMeter,
+    is_transient, progress, status_error, throttle_wait, Control, DownloadState, Error, Flow,
+    Progress, SpeedMeter,
 };
 
 /// Hard cap on parallel connections per download.
@@ -42,7 +43,7 @@ const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(1);
 
 /// How often the coordinator polls [`Control`] itself, so a pause/cancel is
 /// noticed even while every worker is blocked waiting on the network.
-const CONTROL_POLL_INTERVAL: Duration = Duration::from_millis(100);
+pub(crate) const CONTROL_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// One byte range `[start, end)` of a segmented download, of which the first
 /// `done` bytes are written to the `.part`.
@@ -409,7 +410,7 @@ pub(crate) async fn run(
     checkpoint_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut checkpoint: Option<JoinHandle<crate::engine::Result<()>>> = None;
     let mut fatal: Option<Failure> = None;
-    let mut transient: Option<Failure> = None;
+    let mut transient: Option<(Severity, Failure)> = None;
 
     while !workers.is_empty() {
         let checkpoint_running = checkpoint.is_some();
@@ -420,18 +421,41 @@ pub(crate) async fn run(
                     match failure {
                         Failure::Engine(ref e) if is_transient(e) => {
                             tracing::debug!(error = %crate::engine::error_detail(e), "segment worker failed; segment re-queued");
+                            let severity = Severity::of(e, shared.pool.live() > 0);
                             // The host says it won't take more connections.
-                            if matches!(e, Error::Status(429 | 503)) {
-                                ramp.settle_at(shared.pool.live());
-                                shared.pool.set_target(ramp.target());
+                            if severity != Severity::Other {
+                                let live = shared.pool.live();
+                                ramp.settle_at(live);
+                                // A fixed (or already settled) ramp ignores
+                                // `settle_at`; without the clamp each refusal's
+                                // replacement would run straight into the cap.
+                                let target = if severity == Severity::Cap {
+                                    ramp.target().min(live)
+                                } else {
+                                    ramp.target()
+                                };
+                                shared.pool.set_target(target);
                             }
-                            transient = Some(failure);
+                            // The outer backoff keys off the attempt's error,
+                            // so a sibling's later reset mustn't mask a rate limit.
+                            let replace = match &transient {
+                                None => true,
+                                Some((kept, _)) => severity >= *kept,
+                            };
+                            if replace {
+                                transient = Some((severity, failure));
+                            }
+                            let rate_limited = matches!(transient, Some((Severity::RateLimit(_), _)));
                             // Live workers only re-claim once their own segment
                             // is done; if none are left, the handed-back
-                            // segment needs a fresh connection.
+                            // segment needs a fresh connection (the settled
+                            // target already excludes a capped one). Not once
+                            // the host has rate-limited us, though: an instant
+                            // retry is a request flood, so it waits for the
+                            // outer backoff.
                             let orphaned = shared.table.lock().unwrap().has_unowned_work();
                             let wanted = usize::from(shared.pool.target());
-                            if orphaned && workers.len() < wanted && replacements_left > 0 && !shared.is_stopping() {
+                            if !rate_limited && orphaned && workers.len() < wanted && replacements_left > 0 && !shared.is_stopping() {
                                 replacements_left -= 1;
                                 workers.push(worker(&shared, None, shared.pool.join()));
                             }
@@ -538,8 +562,34 @@ pub(crate) async fn run(
             if job.control.is_paused() {
                 return Err(Error::Paused.into());
             }
-            Err(transient
-                .unwrap_or_else(|| Error::Incomplete("segments left unfinished".into()).into()))
+            // A cap's bare 503 must not reach the outer loop, which would
+            // read it as a rate limit and escalate the backoff.
+            Err(match transient {
+                Some((severity, failure)) if severity != Severity::Cap => failure,
+                _ => Error::Incomplete("segments left unfinished".into()).into(),
+            })
+        }
+    }
+}
+
+/// How a transient worker failure bears on the rest of its attempt, least to
+/// most; the attempt reports its most severe one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Severity {
+    /// A bare 503 while other connections are still served: a connection cap.
+    Cap,
+    /// Any other transient failure (a reset, a timeout, a short body).
+    Other,
+    /// A 429, any refusal with `Retry-After`, or a bare 503 to the last live
+    /// connection; the longest wait ranks highest.
+    RateLimit(Duration),
+}
+
+impl Severity {
+    fn of(e: &Error, others_live: bool) -> Self {
+        match e {
+            Error::Status(503) if others_live => Self::Cap,
+            _ => throttle_wait(e).map_or(Self::Other, Self::RateLimit),
         }
     }
 }
@@ -727,7 +777,7 @@ fn check_ranged(
     if redirected && expired {
         return Err(Error::RedirectExpired(status.as_u16()).into());
     }
-    Err(Error::Status(status.as_u16()).into())
+    Err(status_error(resp).into())
 }
 
 /// Start a periodic checkpoint of the current table on the blocking pool.
@@ -933,6 +983,33 @@ mod tests {
         assert!(!slots[0].try_retire());
         drop(slots);
         assert_eq!(pool.live(), 0);
+    }
+
+    #[test]
+    fn rate_limits_outrank_other_failures_and_caps_rank_lowest() {
+        let of = |e: Error, others_live| Severity::of(&e, others_live);
+        let after = |status, secs| Error::Throttled {
+            status,
+            retry_after: Duration::from_secs(secs),
+        };
+        let reset = || Error::Incomplete("reset".into());
+        // A bare 503 alongside live connections is a cap, below anything else.
+        assert_eq!(of(Error::Status(503), true), Severity::Cap);
+        assert!(of(reset(), true) > of(Error::Status(503), true));
+        // ...but to the last live connection it is a rate limit.
+        assert_eq!(
+            of(Error::Status(503), false),
+            Severity::RateLimit(Duration::ZERO)
+        );
+        // A 429 or any Retry-After is a rate limit, live siblings or not.
+        assert!(of(Error::Status(429), true) > of(reset(), true));
+        assert_eq!(
+            of(after(503, 5), true),
+            Severity::RateLimit(Duration::from_secs(5))
+        );
+        // Among rate limits the longest wait wins.
+        assert!(of(after(429, 30), true) > of(after(429, 5), true));
+        assert!(of(after(429, 5), true) > of(Error::Status(429), true));
     }
 
     #[test]

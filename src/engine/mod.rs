@@ -41,7 +41,7 @@ pub use store::{DownloadRecord, JsonStore, Settings, Status, Store, StoreData};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use reqwest::header;
@@ -77,6 +77,7 @@ pub struct DownloadRequest {
     /// single). Default 1 MiB; a tuning knob, mainly for tests.
     pub min_segment_size: u64,
     ramp: Ramping,
+    read_timeout: Duration,
 }
 
 /// Default for [`DownloadRequest::connections`].
@@ -84,6 +85,16 @@ pub(crate) const DEFAULT_CONNECTIONS: u8 = 4;
 
 /// Default for [`DownloadRequest::min_segment_size`].
 const DEFAULT_MIN_SEGMENT_SIZE: u64 = 1024 * 1024;
+
+/// Until the response headers arrive, a deadline from the request's start
+/// (connect, TLS, redirects, time to headers); then, while the body is read, an
+/// idle limit between reads (our own throttle sleeps don't count against it).
+/// Never a total deadline, since downloads run long.
+const READ_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Longest a connect may take; a host dropping our packets (e.g. a firewall
+/// ban) otherwise hangs each attempt for minutes.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// A hook handed the target the engine derived from the first response
 /// (`dir` + server/URL filename); its returned path is used instead. Lets a
@@ -123,6 +134,7 @@ impl DownloadRequest {
             connections: DEFAULT_CONNECTIONS,
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
             ramp: Ramping::default(),
+            read_timeout: READ_TIMEOUT,
         }
     }
 
@@ -139,6 +151,7 @@ impl DownloadRequest {
             connections: DEFAULT_CONNECTIONS,
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
             ramp: Ramping::default(),
+            read_timeout: READ_TIMEOUT,
         }
     }
 
@@ -183,6 +196,13 @@ impl DownloadRequest {
         self
     }
 
+    /// Override the per-read idle timeout (test seam; frontends never call this).
+    #[doc(hidden)]
+    pub fn with_read_timeout(mut self, timeout: Duration) -> Self {
+        self.read_timeout = timeout;
+        self
+    }
+
     fn effective_connections(&self) -> u8 {
         self.connections.clamp(1, segment::MAX_CONNECTIONS)
     }
@@ -210,6 +230,15 @@ pub enum Error {
     /// The server answered with a non-success status.
     #[error("server returned HTTP {0}")]
     Status(u16),
+    /// The server refused with 429/503 and a `Retry-After` (seconds, capped at
+    /// 60 s); transient, but retried no sooner than that.
+    #[error("server returned HTTP {status} (rate limited; Retry-After {}s)", .retry_after.as_secs())]
+    Throttled {
+        /// The refusing status (429 or 503).
+        status: u16,
+        /// How long the server asked us to wait.
+        retry_after: Duration,
+    },
     /// Writing to disk failed.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
@@ -253,7 +282,11 @@ pub async fn download(
     control: &Control,
     mut on_progress: impl FnMut(Progress),
 ) -> Result<Summary> {
-    let client = reqwest::Client::builder().user_agent(USER_AGENT).build()?;
+    let client = reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(req.read_timeout)
+        .build()?;
 
     // The target may not be known until the first response (derived filename),
     // but when it is known up front we can detect an existing resume. The
@@ -274,20 +307,26 @@ pub async fn download(
     // progress, so a long download over a flaky link isn't capped by
     // `max_attempts` disconnects in total.
     let mut stalled_attempts: u32 = 0;
+    let mut throttled_attempts: u32 = 0;
     loop {
         attempt += 1;
         let before = downloaded_so_far(&known_target);
         let mut segmented = false;
-        let result = attempt_download(
-            &client,
-            req,
-            control,
-            &mut known_target,
-            &mut force_single,
-            &mut segmented,
-            &mut on_progress,
-        )
-        .await;
+        let result = match interruption(control) {
+            Some(e) => Err(e),
+            None => {
+                attempt_download(
+                    &client,
+                    req,
+                    control,
+                    &mut known_target,
+                    &mut force_single,
+                    &mut segmented,
+                    &mut on_progress,
+                )
+                .await
+            }
+        };
         let e = match result {
             Ok((status, final_path, bytes)) => {
                 return finalize(req, &final_path, bytes, status).await;
@@ -295,21 +334,33 @@ pub async fn download(
             Err(e) => e,
         };
         let max_attempts = req.retry.max_attempts;
+        let throttle = throttle_wait(&e);
         let delay = if !is_transient(&e) || max_attempts <= 1 {
             None
         } else if segmented {
             if downloaded_so_far(&known_target) > before {
                 stalled_attempts = 0;
-                Some(req.retry.delay_for(1))
             } else {
                 stalled_attempts += 1;
-                (stalled_attempts < max_attempts).then(|| req.retry.delay_for(stalled_attempts))
             }
+            // Progress doesn't reset a rate limit's backoff, or the limit
+            // turns into a request flood (and an IP ban).
+            throttled_attempts = if throttle.is_some() {
+                throttled_attempts + 1
+            } else {
+                0
+            };
+            let step = stalled_attempts.max(throttled_attempts).max(1);
+            (stalled_attempts < max_attempts).then(|| req.retry.delay_for(step))
         } else {
             single_attempts += 1;
             (single_attempts < max_attempts).then(|| req.retry.delay_for(single_attempts))
         };
+        let delay = delay.map(|d| d.max(throttle.unwrap_or_default()));
         let Some(delay) = delay else {
+            if matches!(e, Error::Cancelled) {
+                discard_partial(&known_target).await;
+            }
             tracing::error!(attempts = attempt, error = %error_detail(&e), "download failed");
             return Err(e);
         };
@@ -321,7 +372,8 @@ pub async fn download(
             error = %error_detail(&e),
             "download attempt failed; retrying"
         );
-        tokio::time::sleep(delay).await;
+        // A pause/cancel cuts this short; the next iteration reports it.
+        backoff(control, delay).await;
     }
 }
 
@@ -469,10 +521,10 @@ async fn attempt_once(
 
     // FRESH: issue a plain GET so we can learn the (post-redirect) URL and the
     // derived filename before committing to a target path.
-    let resp = client.get(&req.url).send().await?;
+    let resp = send(control, client.get(&req.url)).await?;
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Status(status.as_u16()).into());
+        return Err(status_error(&resp).into());
     }
 
     let final_url = resp.url().clone();
@@ -626,7 +678,7 @@ async fn resume(
     if let Some(validator) = st.if_range() {
         builder = builder.header(header::IF_RANGE, validator);
     }
-    let resp = builder.send().await?;
+    let resp = send(control, builder).await?;
     let status = resp.status();
 
     match status {
@@ -685,7 +737,7 @@ async fn resume(
             tokio::fs::File::create(part).await?; // truncate
             restart(client, req, control, target, part, sidecar, on_progress).await
         }
-        other => Err(Error::Status(other.as_u16())),
+        _ => Err(status_error(&resp)),
     }
 }
 
@@ -705,10 +757,10 @@ async fn restart(
         let st = DownloadState::load(sidecar)?;
         st.url
     };
-    let resp = client.get(&url).send().await?;
+    let resp = send(control, client.get(&url)).await?;
     let status = resp.status();
     if !status.is_success() {
-        return Err(Error::Status(status.as_u16()));
+        return Err(status_error(&resp));
     }
     let total = resp.content_length();
     let etag = header_str(resp.headers(), header::ETAG);
@@ -853,12 +905,97 @@ fn is_transient(err: &Error) -> bool {
             e.is_timeout() || e.is_connect() || e.is_request() || e.is_body() || e.is_decode()
         }
         Error::Status(code) => *code >= 500 || *code == 408 || *code == 429,
+        Error::Throttled { .. } => true,
         Error::Incomplete(_) | Error::RedirectExpired(_) => true,
         Error::Io(_)
         | Error::Cancelled
         | Error::Paused
         | Error::Integrity(_)
         | Error::UnsupportedState(_) => false,
+    }
+}
+
+/// Longest `Retry-After` honoured, so a confused host can't park a download.
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(60);
+
+/// The error for a non-success response; see [`status_error_for`].
+pub(crate) fn status_error(resp: &reqwest::Response) -> Error {
+    status_error_for(resp.status().as_u16(), resp.headers())
+}
+
+/// [`Error::Throttled`] for a 429/503 with a non-zero `Retry-After` in seconds
+/// (capped at [`MAX_RETRY_AFTER`]; the HTTP-date form is ignored), else
+/// [`Error::Status`].
+fn status_error_for(status: u16, headers: &header::HeaderMap) -> Error {
+    let retry_after = header_str(headers, header::RETRY_AFTER)
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|&secs| secs > 0)
+        .map(|secs| Duration::from_secs(secs).min(MAX_RETRY_AFTER));
+    match retry_after {
+        Some(retry_after) if matches!(status, 429 | 503) => Error::Throttled {
+            status,
+            retry_after,
+        },
+        _ => Error::Status(status),
+    }
+}
+
+/// Pause/cancel as the error the engine returns for it, if one is pending.
+fn interruption(control: &Control) -> Option<Error> {
+    match control.poll() {
+        Flow::Cancel => Some(Error::Cancelled),
+        Flow::Pause => Some(Error::Paused),
+        Flow::Continue => None,
+    }
+}
+
+/// Send a request, cut short by pause/cancel: a host that never answers would
+/// otherwise hold the download until the read timeout.
+async fn send(control: &Control, request: reqwest::RequestBuilder) -> Result<reqwest::Response> {
+    let response = request.send();
+    tokio::pin!(response);
+    let mut poll = tokio::time::interval(segment::CONTROL_POLL_INTERVAL);
+    loop {
+        tokio::select! {
+            resp = &mut response => return Ok(resp?),
+            _ = poll.tick() => {
+                if let Some(e) = interruption(control) {
+                    return Err(e);
+                }
+            }
+        }
+    }
+}
+
+/// Sleep off a retry delay, waking early on pause/cancel.
+async fn backoff(control: &Control, delay: Duration) {
+    let until = tokio::time::Instant::now() + delay;
+    while control.poll() == Flow::Continue {
+        let now = tokio::time::Instant::now();
+        if now >= until {
+            break;
+        }
+        tokio::time::sleep_until(until.min(now + segment::CONTROL_POLL_INTERVAL)).await;
+    }
+}
+
+/// Remove a cancelled download's `.part`, sidecar and temps, once its target
+/// is known.
+async fn discard_partial(known_target: &Option<PathBuf>) {
+    if let Some(target) = known_target {
+        let sidecar = state::sidecar_path(target);
+        let _ = tokio::fs::remove_file(state::part_path(target)).await;
+        let _ = tokio::fs::remove_file(&sidecar).await;
+        state::remove_stale_temps(&sidecar);
+    }
+}
+
+/// For a 429/503 (the host is shedding load), how long it asked us to wait.
+pub(crate) fn throttle_wait(err: &Error) -> Option<Duration> {
+    match err {
+        Error::Status(429 | 503) => Some(Duration::ZERO),
+        Error::Throttled { retry_after, .. } => Some(*retry_after),
+        _ => None,
     }
 }
 
@@ -896,6 +1033,10 @@ mod tests {
         assert!(is_transient(&Error::Status(503)));
         assert!(is_transient(&Error::Status(429)));
         assert!(is_transient(&Error::Status(408)));
+        assert!(is_transient(&Error::Throttled {
+            status: 429,
+            retry_after: Duration::ZERO,
+        }));
         assert!(is_transient(&Error::Incomplete("x".into())));
         assert!(is_transient(&Error::RedirectExpired(403)));
         assert!(!is_transient(&Error::Status(404)));
@@ -903,6 +1044,38 @@ mod tests {
         assert!(!is_transient(&Error::Paused));
         assert!(!is_transient(&Error::Integrity("x".into())));
         assert!(!is_transient(&Error::UnsupportedState(3)));
+    }
+
+    #[test]
+    fn retry_after_seconds_are_honoured_and_capped() {
+        let with = |status, retry_after: &str| {
+            let mut headers = header::HeaderMap::new();
+            headers.insert(header::RETRY_AFTER, retry_after.parse().unwrap());
+            status_error_for(status, &headers)
+        };
+        let throttled = |secs| Error::Throttled {
+            status: 503,
+            retry_after: Duration::from_secs(secs),
+        };
+        assert_eq!(with(503, "5").to_string(), throttled(5).to_string());
+        assert!(matches!(
+            with(429, "3600"),
+            Error::Throttled { status: 429, retry_after } if retry_after == MAX_RETRY_AFTER
+        ));
+        assert!(matches!(
+            with(429, "Wed, 21 Oct 2015 07:28:00 GMT"),
+            Error::Status(429)
+        ));
+        assert!(matches!(with(429, "0"), Error::Status(429)));
+        assert!(matches!(with(404, "5"), Error::Status(404)));
+        assert!(matches!(
+            status_error_for(503, &header::HeaderMap::new()),
+            Error::Status(503)
+        ));
+        assert_eq!(
+            throttled(60).to_string(),
+            "server returned HTTP 503 (rate limited; Retry-After 60s)"
+        );
     }
 
     #[test]

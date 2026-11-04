@@ -1,7 +1,8 @@
 //! Exponential-backoff retry policy for transient download failures.
 //!
 //! The schedule is deterministic (no jitter) so it is unit-testable, and the
-//! delay is capped. Resume and retry share one mechanism: each attempt resumes
+//! delay is capped at `max_delay` (a server's `Retry-After`, up to 60 s, can
+//! exceed it). Resume and retry share one mechanism: each attempt resumes
 //! from the on-disk state (the `.part` size, or a multi-segment download's
 //! checkpointed segments) with `Range` requests, so a mid-stream disconnect
 //! simply continues where it stopped.
@@ -10,10 +11,15 @@
 //! that made **no progress**: an attempt that got more bytes on disk resets the
 //! count and the backoff to `base_delay`. A long download over a flaky link is
 //! therefore bounded by progress, not by its total number of disconnects.
+//! An attempt that ended rate-limited (a 429, any `Retry-After`, or a 503 to its
+//! last connection; a 503 while others are served is a connection cap, not a
+//! rate limit) keeps escalating the backoff even if it made progress, and a `Retry-After` (up to 60 s) sets a floor on
+//! the delay.
 //! With `max_attempts <= 1` (e.g. [`RetryPolicy::none`]) there are no outer
 //! retries; a multi-segment attempt still hands failed segments to its other
 //! connections (or to a replacement connection, at most twice the connection
-//! count per attempt) and re-requests short responses within the attempt.
+//! count per attempt, none once rate-limited) and re-requests short responses
+//! within the attempt.
 
 use std::time::Duration;
 
@@ -27,7 +33,8 @@ pub struct RetryPolicy {
     pub base_delay: Duration,
     /// Multiplier applied to the delay after each attempt.
     pub factor: f64,
-    /// Upper bound on any single delay.
+    /// Upper bound on any backoff delay; a server's `Retry-After` (up to 60 s)
+    /// may exceed it.
     pub max_delay: Duration,
 }
 

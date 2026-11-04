@@ -67,6 +67,45 @@ async fn rate_limit_holds_across_parallel_connections() {
     assert_limited(4).await;
 }
 
+/// The read timeout is an idle limit on the server, not a total deadline: our
+/// own throttle sleeping past it between reads doesn't fail the download.
+#[tokio::test(flavor = "multi_thread")]
+async fn throttle_sleeps_longer_than_read_timeout_still_complete() {
+    // The burst passes 64 KiB; the 12 KiB left at 4 KiB/s sleeps ~3 s.
+    let server = common::spawn_with(FixtureConfig {
+        seg_len: 76 * KIB as usize,
+        ..FixtureConfig::default()
+    })
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("slow.bin");
+    let read_timeout = Duration::from_secs(1);
+    let control = Control::new().with_limiters([Arc::new(RateLimiter::new(Some(4 * KIB)))]);
+
+    let mut reported = Vec::new();
+    download(
+        &DownloadRequest::to_path(server.url("/seg"), &out)
+            .with_connections(1)
+            .with_retry(rdm::RetryPolicy::none())
+            .with_read_timeout(read_timeout),
+        &control,
+        |_| reported.push(Instant::now()),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+    let longest = reported
+        .windows(2)
+        .map(|w| w[1] - w[0])
+        .max()
+        .unwrap_or_default();
+    assert!(
+        longest > read_timeout,
+        "no throttle sleep outlasted the read timeout ({longest:?})"
+    );
+}
+
 /// AC (R2): the limit holds on the single-connection path.
 #[tokio::test]
 async fn rate_limit_holds_on_a_single_connection() {

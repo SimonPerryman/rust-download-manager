@@ -63,8 +63,6 @@ the parallel-download speed feature; M4 is the day-to-day queue/throttle layer.
 Known gaps left deliberately out of a milestone's scope. Each is small enough
 to be a single PR; promote one into a ticket when it's picked up.
 
-- **Single-connection read timeout** (M1/M3): the single-connection path has
-  no read timeout, so a server that stops sending mid-body can hang it.
 - **Pause/cancel log level** (M2): a user pause or cancel is logged at ERROR
   in the engine; it's expected control flow and belongs at INFO/DEBUG.
 - **Mid-download connection shedding** (M4): ramping only grows then settles
