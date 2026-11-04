@@ -35,7 +35,7 @@ instruction sheet for any agent (and human) working in this repo.
   dedicated CI job — keeps the default gate fast and reliable.
 - Every feature ships with a test. Acceptance criteria must be runnable, not
   "looked fine".
-- **When a test asserts ordering or overlap ("A was running while B�"), assert
+- **When a test asserts ordering or overlap ("A was running while B…"), assert
   on Manager status or a fixture-controlled gate (`/gated`), not on progress
   bytes.** Why: progress is reported after each chunk's throttle wait, so
   "has bytes yet" lags reality and flakes on slow CI runners.
