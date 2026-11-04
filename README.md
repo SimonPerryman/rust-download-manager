@@ -30,8 +30,9 @@ line or through a desktop GUI — streaming to disk with a live progress readout
   exponential backoff.
 - Verifies the finished file's size, and an optional `--checksum sha256:<hex>`,
   before moving it into place; never clobbers an existing file (`name (1).ext`).
-- Speed limits: `--limit-rate` on the CLI; in the GUI, a global limit (applied
-  live) and an optional per-download limit set when adding.
+- Speed limits: `--limit-rate` on the CLI; in the GUI, a global limit and an
+  optional per-download limit, set when adding or changed from the download's
+  row (both applied live).
 - Download queue (GUI): at most 3 downloads stream at once by default
   (configurable); the rest wait as *Queued* and start in order as slots free.
 - Optional **desktop GUI** (Tauri + React): manage many downloads at once —
@@ -96,9 +97,17 @@ To add a download, click **Add download**, drag a link (or the address bar's
 URL) from your browser onto the window, or press Ctrl/Cmd+V with an `http(s)`
 URL on the clipboard — the latter two open the Add dialog pre-filled.
 
-The Add dialog also takes an optional **Speed limit** for that download — bytes
-per second with an optional `K`/`M`/`G` suffix (×1024), e.g. `500K` or `2M`;
-blank is unlimited. A limited download shows its cap on its row.
+Speed limits in the GUI are a number plus a unit picker (KB/s or MB/s, ×1024);
+an empty box means no limit, and 0 is rejected. Under **More options**, the Add
+dialog takes a checksum and a **Speed limit** for that download.
+
+A limited download shows its cap on its row (`limit 500.0 KB/s`). To set,
+change or remove a download's limit while it's downloading, paused or queued,
+click that text or the row's speedometer button, then press Enter or click
+away. The change applies at once, without restarting the download, and is
+kept across restarts. Escape discards the edit, and ✕ removes the limit. A
+download's own limit can be higher than the global one, but the lower limit
+wins, and the editor says so.
 
 The sliders button in the header opens **Settings**:
 
@@ -110,9 +119,9 @@ The sliders button in the header opens **Settings**:
     **Queued** ("Waiting for a free slot") and start in the order added as running
     ones finish or are paused. Lowering it never interrupts a running download.
     A queued download can be paused or cancelled.
-  - *Global speed limit*: a cap on all downloads combined, in the same format
-    as above (blank = unlimited); applies live, alongside any per-download
-    limit (the lower one wins).
+  - *Global speed limit*: a cap on all downloads combined (empty = no
+    limit); applies live, alongside any per-download limit (the lower one
+    wins).
   - *Connections per download* (1–16, default 4): applies the next time a
     download starts.
 

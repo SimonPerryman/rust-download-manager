@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import * as api from "../lib/api";
+import { formatSpeed } from "../lib/format";
+import { NO_LIMIT, composeRate, exceeds, type RateDraft } from "../lib/rate";
 import { Folder } from "./icons";
+import { RateInput } from "./RateInput";
 
 type Props = {
   open: boolean;
@@ -9,13 +12,16 @@ type Props = {
 };
 
 // The Add-download modal. Destination defaults to the OS download dir; Browse
-// opens a native folder picker; Add calls `add_download` then closes. The
-// backend owns everything after that — this dialog is just a form.
+// opens a native folder picker; checksum and speed limit sit behind "More
+// options". Add calls `add_download` then closes. The backend owns everything
+// after that — this dialog is just a form.
 export function AddDialog({ open, initialUrl = "", onClose }: Props) {
   const [url, setUrl] = useState("");
   const [dest, setDest] = useState("");
   const [checksum, setChecksum] = useState("");
-  const [limit, setLimit] = useState("");
+  const [limit, setLimit] = useState<RateDraft>(NO_LIMIT);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [globalLimit, setGlobalLimit] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -26,11 +32,17 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
     setError(null);
     setUrl(initialUrl);
     setChecksum("");
-    setLimit("");
+    setLimit(NO_LIMIT);
+    setMoreOpen(false);
     api
       .defaultDownloadDir()
       .then(setDest)
       .catch(() => setDest(""));
+    // Only for the "global limit caps this" note; no note if it can't be read.
+    api
+      .getSettings()
+      .then((s) => setGlobalLimit(s.global_limit))
+      .catch(() => setGlobalLimit(null));
   }, [open, initialUrl]);
 
   useEffect(() => {
@@ -53,6 +65,16 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
       setError("Enter a URL.");
       return;
     }
+    // An error about a field under "More options" must not be hidden there.
+    const fail = (message: string) => {
+      setError(message);
+      if (checksum.trim() || limit.amount) setMoreOpen(true);
+    };
+    const rate = composeRate(limit);
+    if (!rate.ok) {
+      fail(rate.error);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -60,11 +82,11 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
         url.trim(),
         dest.trim() || null,
         checksum.trim() || null,
-        limit.trim() || null,
+        rate.rate || null,
       );
       onClose();
     } catch (e) {
-      setError(String(e));
+      fail(String(e));
     } finally {
       setBusy(false);
     }
@@ -85,9 +107,7 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
         <div className="rounded-lg border border-border bg-card text-card-foreground shadow-lg">
           <div className="flex flex-col space-y-1.5 px-6 pb-4 pt-6">
             <h2 className="text-lg font-semibold leading-none tracking-tight">Add download</h2>
-            <p className="text-sm text-muted-foreground">
-              Paste a URL. Everything else is optional.
-            </p>
+            <p className="text-sm text-muted-foreground">Paste a URL to start.</p>
           </div>
 
           <div className="space-y-4 px-6 pb-2">
@@ -104,7 +124,7 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
               />
             </Field>
 
-            <Field label="Destination folder" optional>
+            <Field label="Destination folder">
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -123,31 +143,47 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
               </div>
             </Field>
 
-            <Field label="SHA-256 checksum" optional>
-              <input
-                type="text"
-                aria-label="SHA-256 checksum"
-                value={checksum}
-                onChange={(e) => setChecksum(e.target.value)}
-                placeholder="e3b0c44298fc1c149afbf4c8996fb924…"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-[13px] shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-              <p className="text-xs text-muted-foreground">
-                If provided, the file is verified after download and discarded on mismatch.
-              </p>
-            </Field>
+            <button
+              type="button"
+              aria-expanded={moreOpen}
+              aria-controls="add-more-options"
+              onClick={() => setMoreOpen((o) => !o)}
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <span
+                aria-hidden
+                className={`inline-block transition-transform ${moreOpen ? "rotate-90" : ""}`}
+              >
+                ▸
+              </span>
+              More options
+            </button>
 
-            <Field label="Speed limit" optional>
-              <input
-                type="text"
-                aria-label="Speed limit"
-                value={limit}
-                onChange={(e) => setLimit(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submit()}
-                placeholder="Unlimited — e.g. 500K or 2M"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-            </Field>
+            {/* Always rendered (just hidden) so `aria-controls` resolves and drafts survive collapsing. */}
+            <div id="add-more-options" hidden={!moreOpen} className="space-y-4">
+              <Field label="SHA-256 checksum">
+                <input
+                  type="text"
+                  aria-label="SHA-256 checksum"
+                  value={checksum}
+                  onChange={(e) => setChecksum(e.target.value)}
+                  placeholder="e3b0c44298fc1c149afbf4c8996fb924…"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-[13px] shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+                <p className="text-xs text-muted-foreground">
+                  If provided, the file is verified after download and discarded on mismatch.
+                </p>
+              </Field>
+
+              <Field label="Speed limit">
+                <RateInput label="Speed limit" value={limit} onChange={setLimit} onEnter={submit} />
+                <p className="text-xs text-muted-foreground">
+                  {globalLimit != null && exceeds(limit, globalLimit)
+                    ? `The global limit is ${formatSpeed(globalLimit)} for all downloads combined, so this one won't go faster than that.`
+                    : "Empty = no limit."}
+                </p>
+              </Field>
+            </div>
 
             {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
           </div>
@@ -173,20 +209,10 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
   );
 }
 
-function Field({
-  label,
-  optional,
-  children,
-}: {
-  label: string;
-  optional?: boolean;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium leading-none">
-        {label} {optional && <span className="font-normal text-muted-foreground">(optional)</span>}
-      </label>
+      <label className="text-sm font-medium leading-none">{label}</label>
       {children}
     </div>
   );

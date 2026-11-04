@@ -1,27 +1,10 @@
-// Pure helpers for the engine-backed Downloads settings form: render a stored
-// rate back into the text the engine's `parse_rate` accepts, read the
-// whole-number fields, and turn edited fields into a partial settings update.
-// Validation of rates themselves stays in the engine.
+// Pure helpers for the engine-backed Downloads settings form: read the
+// whole-number fields, show the stored global limit as a rate draft, and turn
+// edited fields into a partial settings update. Beyond refusing what the rate
+// box can't mean (see `composeRate`), validating rates stays in the engine.
 
+import { composeRate, rateDraft, sameRate, type RateDraft } from "./rate";
 import type { Settings } from "./types";
-
-const UNITS: [suffix: string, bytes: number][] = [
-  ["G", 1024 ** 3],
-  ["M", 1024 ** 2],
-  ["K", 1024],
-];
-
-/**
- * A bytes/s rate as editable text in the largest exact `K`/`M`/`G` unit
- * (`2097152` → `"2M"`), plain bytes otherwise; `null` (unlimited) → `""`.
- */
-export function formatRate(bytesPerSec: number | null): string {
-  if (bytesPerSec == null || bytesPerSec <= 0) return "";
-  for (const [suffix, size] of UNITS) {
-    if (bytesPerSec % size === 0) return `${bytesPerSec / size}${suffix}`;
-  }
-  return String(bytesPerSec);
-}
 
 /** A whole number typed into a count field, clamped to `[min, max]`; null if not a number. */
 export function parseCount(text: string, min: number, max: number): number | null {
@@ -30,9 +13,13 @@ export function parseCount(text: string, min: number, max: number): number | nul
   return Math.min(max, Math.max(min, Number(trimmed)));
 }
 
-/** The form's editable fields, each a text draft. */
+/** The form's editable fields: two counts and the global limit. */
 export type SettingsField = "concurrent" | "limit" | "connections";
-export type SettingsDrafts = Record<SettingsField, string>;
+export interface SettingsDrafts {
+  concurrent: string;
+  limit: RateDraft;
+  connections: string;
+}
 
 /** A partial `set_settings` update: omitted fields are left unchanged. */
 export interface SettingsPatch {
@@ -42,10 +29,15 @@ export interface SettingsPatch {
   maxConnections?: number;
 }
 
+/** One field's update, or why its draft can't be sent. */
+export type FieldPatch = { patch: SettingsPatch } | { error: string };
+
 // Mirrors the engine's clamp for connections; the concurrency ceiling is only
 // a sanity bound for the text field (the engine just requires at least 1).
 export const MAX_CONCURRENT = 99;
 export const MAX_CONNECTIONS = 16;
+
+const NOT_A_COUNT = "Enter a whole number.";
 
 const SETTINGS_KEY = {
   concurrent: "max_concurrent",
@@ -53,45 +45,56 @@ const SETTINGS_KEY = {
   connections: "max_connections",
 } as const satisfies Record<SettingsField, keyof Settings>;
 
-/** The text each field shows for `s`. */
+/** What each field shows for `s`. */
 export function draftsFrom(s: Settings): SettingsDrafts {
   return {
     concurrent: String(s.max_concurrent),
-    limit: formatRate(s.global_limit),
+    limit: rateDraft(s.global_limit),
     connections: String(s.max_connections),
   };
 }
 
-/**
- * The update for one field's draft, or null if a count field isn't a whole
- * number. Rates are passed through for the engine to validate.
- */
-export function fieldPatch(field: SettingsField, text: string): SettingsPatch | null {
-  switch (field) {
-    case "concurrent": {
-      const n = parseCount(text, 1, MAX_CONCURRENT);
-      return n == null ? null : { maxConcurrent: n };
-    }
-    case "connections": {
-      const n = parseCount(text, 1, MAX_CONNECTIONS);
-      return n == null ? null : { maxConnections: n };
-    }
-    case "limit":
-      return { globalLimit: text.trim() };
-  }
+/** Whether `field`'s draft differs from what `saved` shows. */
+export function isDirty(field: SettingsField, drafts: SettingsDrafts, saved: Settings): boolean {
+  const current = draftsFrom(saved);
+  return field === "limit"
+    ? !sameRate(drafts.limit, current.limit)
+    : drafts[field] !== current[field];
 }
 
 /**
- * A separate update per field whose draft differs from `saved`, skipping
- * counts that aren't whole numbers. Separate so the engine rejecting one
- * (e.g. a bad rate) can't sink the others.
+ * The update for one field's draft. Counts must be whole numbers; a rate
+ * draft is refused only for 0 or a lone "." and otherwise left to the engine.
+ */
+export function fieldPatch(field: SettingsField, drafts: SettingsDrafts): FieldPatch {
+  switch (field) {
+    case "concurrent": {
+      const n = parseCount(drafts.concurrent, 1, MAX_CONCURRENT);
+      return n == null ? { error: NOT_A_COUNT } : { patch: { maxConcurrent: n } };
+    }
+    case "connections": {
+      const n = parseCount(drafts.connections, 1, MAX_CONNECTIONS);
+      return n == null ? { error: NOT_A_COUNT } : { patch: { maxConnections: n } };
+    }
+    case "limit": {
+      const r = composeRate(drafts.limit);
+      return r.ok ? { patch: { globalLimit: r.rate } } : { error: r.error };
+    }
+  }
+}
+
+const FIELDS: SettingsField[] = ["concurrent", "limit", "connections"];
+
+/**
+ * A separate update per dirty field, skipping drafts that can't be sent.
+ * Separate so the engine rejecting one (e.g. a bad rate) can't sink the
+ * others.
  */
 export function dirtyPatches(drafts: SettingsDrafts, saved: Settings): SettingsPatch[] {
-  const current = draftsFrom(saved);
-  return (Object.keys(drafts) as SettingsField[])
-    .filter((field) => drafts[field] !== current[field])
-    .map((field) => fieldPatch(field, drafts[field]))
-    .filter((patch) => patch != null);
+  return FIELDS.filter((field) => isDirty(field, drafts, saved)).flatMap((field) => {
+    const r = fieldPatch(field, drafts);
+    return "patch" in r ? [r.patch] : [];
+  });
 }
 
 /**

@@ -161,6 +161,15 @@ export const Monitor = (p: Props) =>
     p,
   );
 
+export const Gauge = (p: Props) =>
+  svg(
+    <>
+      <path d="m12 14 4-4" />
+      <path d="M3.34 19a10 10 0 1 1 17.32 0" />
+    </>,
+    p,
+  );
+
 export const Sliders = (p: Props) =>
   svg(
     <>

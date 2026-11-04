@@ -94,6 +94,26 @@ fn set_settings(
     Ok(state.manager.settings())
 }
 
+/// Cap one download's speed; `limit` is a rate string (blank or absent =
+/// unlimited). Applies live and persists. Returns the limit as the engine
+/// stored it.
+#[tauri::command]
+fn set_limit(
+    state: State<'_, AppState>,
+    id: u64,
+    limit: Option<String>,
+) -> Result<Option<u64>, String> {
+    let limit = parse_limit(limit)?;
+    state.manager.set_limit(id, limit);
+    state
+        .manager
+        .snapshot()
+        .into_iter()
+        .find(|d| d.id == id)
+        .map(|d| d.limit)
+        .ok_or_else(|| format!("no download with id {id}"))
+}
+
 /// Pause a running download.
 #[tauri::command]
 fn pause(state: State<'_, AppState>, id: u64) {
@@ -295,6 +315,7 @@ pub fn run() {
             add_download,
             get_settings,
             set_settings,
+            set_limit,
             pause,
             resume,
             cancel,

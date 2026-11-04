@@ -878,6 +878,28 @@ async fn settings_and_limits_survive_restart() {
     assert_eq!(limit_of(unlimited), None);
 }
 
+/// M4: a limit changed with `set_limit` on an unfinished download (the GUI's
+/// row editor) persists across a restart, and so does clearing it.
+#[tokio::test]
+async fn set_limit_survives_restart() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let limit_of = |mgr: &Manager, id| mgr.snapshot().iter().find(|s| s.id == id).unwrap().limit;
+
+    let id = {
+        let mgr = manager_in(dir.path());
+        let id = mgr.add(server.url("/gated"), dir.path(), None, None);
+        mgr.set_limit(id, Some(128 * KIB));
+        id
+    };
+    let mgr = manager_in(dir.path());
+    assert_eq!(limit_of(&mgr, id), Some(128 * KIB));
+
+    mgr.set_limit(id, None);
+    drop(mgr);
+    assert_eq!(limit_of(&manager_in(dir.path()), id), None);
+}
+
 /// M4: a per-download limit changes live: lifting it mid-download lets one
 /// that would take a minute finish at once.
 #[tokio::test]

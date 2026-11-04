@@ -1,7 +1,8 @@
 // End-to-end: the download queue and speed limits. With the concurrency cap
 // lowered to 1 in the Settings popover, a second download waits as Queued and
 // is promoted as soon as the first one stops streaming; a queued download can
-// be paused and carries its speed limit; bad rates are rejected in place.
+// be paused and carries its speed limit; a running download's own limit is
+// set, rejected and cleared from its row; bad rates are rejected in place.
 // Shares the app state dir with the other specs (see wdio.conf.ts), so it
 // restores the cap and removes its downloads when done.
 
@@ -14,6 +15,7 @@ const Key = {
   Ctrl: String.fromCharCode(0xe009),
   Enter: String.fromCharCode(0xe007),
   Backspace: String.fromCharCode(0xe003),
+  Tab: String.fromCharCode(0xe004),
   Escape: String.fromCharCode(0xe00c),
 };
 
@@ -72,13 +74,53 @@ async function setMaxConcurrent(n: number): Promise<void> {
   await settingsButton().click();
 }
 
+/**
+ * Switches list tab. Scrolls to the top first: with a long list, WebDriver
+ * scrolls the tab to the window's top edge, under the sticky header.
+ */
+async function showTab(name: "Active" | "History"): Promise<void> {
+  await browser.execute(() => window.scrollTo(0, 0));
+  await $(`button*=${name}`).click();
+}
+
+/** Sets the global speed limit (an amount in KB/s; "" = none) through the Settings popover. */
+async function setGlobalLimit(amount: string): Promise<void> {
+  await settingsButton().click();
+  const input = globalLimitInput();
+  await expect(input).toBeEnabled();
+  await retype(input, amount);
+  await settingsButton().click();
+  await input.waitForExist({ reverse: true });
+}
+
+/** Calls a backend command directly, without touching the page (so focus stays put). */
+async function invoke(cmd: string, args: Record<string, unknown>): Promise<void> {
+  await browser.execute(
+    (cmd, args) =>
+      (
+        window as unknown as {
+          __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> };
+        }
+      ).__TAURI_INTERNALS__.invoke(cmd, args),
+    cmd,
+    args,
+  );
+}
+
+/** A speed limit as typed: an amount and the unit picked beside it. */
+type Rate = { amount: string; unit: "K" | "M" };
+
 /** Opens the Add dialog and submits `url` (and an optional speed limit). */
-async function submitAddDialog(url: string, limit?: string): Promise<void> {
+async function submitAddDialog(url: string, limit?: Rate): Promise<void> {
   await $("button=Add download").click();
   const dialog = addDialog();
   await dialog.waitForDisplayed();
   await dialog.$('input[aria-label="URL"]').setValue(url);
-  if (limit) await dialog.$('input[aria-label="Speed limit"]').setValue(limit);
+  if (limit) {
+    await dialog.$('button[aria-controls="add-more-options"]').click();
+    await dialog.$('input[aria-label="Speed limit"]').setValue(limit.amount);
+    await dialog.$('select[aria-label="Speed limit unit"]').selectByAttribute("value", limit.unit);
+  }
   await dialog.$("button=Add download").click();
 }
 
@@ -95,7 +137,7 @@ describe("rdm GUI download queue", () => {
   const ids: string[] = [];
 
   /** Adds a download through the dialog and returns its id. */
-  async function add(url: string, limit?: string): Promise<string> {
+  async function add(url: string, limit?: Rate): Promise<string> {
     const before = await rowIds();
     await submitAddDialog(url, limit);
     await addDialog().waitForExist({ reverse: true });
@@ -122,20 +164,21 @@ describe("rdm GUI download queue", () => {
         await settingsButton().click();
       }
       await setMaxConcurrent(3);
+      await setGlobalLimit("");
     } finally {
-      await $("button*=Active").click();
+      await showTab("Active");
       for (const id of ids) {
         if (await rowById(id).isExisting()) {
           await rowById(id).$('button[aria-label="Cancel"]').click();
         }
       }
-      await $("button*=History").click();
+      await showTab("History");
       for (const id of ids) {
         await rowById(id).waitForExist({ timeoutMsg: `download ${id} never reached History` });
         await rowById(id).$('button[aria-label="Remove"]').click();
         await waitForGone(id);
       }
-      await $("button*=Active").click();
+      await showTab("Active");
     }
   });
 
@@ -158,7 +201,7 @@ describe("rdm GUI download queue", () => {
   });
 
   it("shows a queued download's limit and pauses it without touching the runner", async () => {
-    const limited = await add(`${baseUrl}/crawl`, "64K");
+    const limited = await add(`${baseUrl}/crawl`, { amount: "64", unit: "K" });
     await expect(rowById(limited)).toHaveAttribute("data-status", "queued");
     await expect(rowById(limited).$('[data-testid="row-limit"]')).toHaveText("64.0 KB/s", {
       containing: true,
@@ -169,23 +212,38 @@ describe("rdm GUI download queue", () => {
     await expect(rowById(running)).toHaveAttribute("data-status", "downloading");
   });
 
-  it("rejects a malformed speed limit in the Add dialog", async () => {
-    await submitAddDialog(`${baseUrl}/crawl`, "5X");
+  it("keeps the Add dialog's speed limit numeric and rejects zero", async () => {
+    await submitAddDialog(`${baseUrl}/crawl`, { amount: "0", unit: "K" });
     const dialog = addDialog();
-    await expect(dialog).toHaveText("invalid rate", { containing: true });
+    await expect(dialog).toHaveText("Enter a speed above 0", { containing: true });
     await expect(dialog).toBeDisplayed();
+
+    // A rejected field under a collapsed "More options" reopens it, so the error has context.
+    const more = dialog.$('button[aria-controls="add-more-options"]');
+    await more.click();
+    await expect(more).toHaveAttribute("aria-expanded", "false");
+    await dialog.$("button=Add download").click();
+    await expect(more).toHaveAttribute("aria-expanded", "true");
+    await expect(dialog).toHaveText("Enter a speed above 0", { containing: true });
+
+    // Letters never reach the box.
+    const amount = dialog.$('input[aria-label="Speed limit"]');
+    await amount.click();
+    await browser.keys([Key.Ctrl, "a"]);
+    await browser.keys("5X");
+    await expect(amount).toHaveValue("5");
     await dialog.$("button=Cancel").click();
     await dialog.waitForExist({ reverse: true });
   });
 
-  it("rejects a malformed global speed limit, then clears it", async () => {
+  it("rejects a zero global speed limit, then clears it", async () => {
     await settingsButton().click();
     const input = globalLimitInput();
     await expect(input).toBeEnabled();
 
-    await retype(input, "5X");
+    await retype(input, "0");
     await expect(input).toHaveAttribute("aria-invalid", "true");
-    await expect($('[data-testid="download-settings"]')).toHaveText("invalid rate", {
+    await expect($('[data-testid="download-settings"]')).toHaveText("Enter a speed above 0", {
       containing: true,
     });
 
@@ -203,10 +261,11 @@ describe("rdm GUI download queue", () => {
 
     // The bad limit first: moving focus to the cap blurs (and rejects) it, but
     // its draft stays dirty. The cap is typed last and never blurred, so only
-    // the close-time flush can save either.
+    // the close-time flush can save either. 0.0001 KB/s gets past the GUI's own
+    // checks and is rejected by the engine, in its own update.
     await globalLimitInput().click();
     await browser.keys([Key.Ctrl, "a"]);
-    await browser.keys("5X");
+    await browser.keys("0.0001");
     await concurrencyInput().click();
     await browser.keys([Key.Ctrl, "a"]);
     await browser.keys("2");
@@ -220,5 +279,81 @@ describe("rdm GUI download queue", () => {
     await expect(globalLimitInput()).toHaveValue("");
     await settingsButton().click();
     await concurrencyInput().waitForExist({ reverse: true });
+  });
+
+  it("sets, rejects and clears a running download's own limit from its row", async () => {
+    // Its own download (the cap is 2 by now): `running` may finish before this spec ends.
+    const own = await add(`${baseUrl}/crawl`);
+    await waitForStatus(own, "downloading");
+    const row = rowById(own);
+    await expect(row).toHaveAttribute("data-limit", "");
+    await expect(row.$('[data-testid="row-limit"]')).not.toBeExisting();
+
+    // Set: the gauge action opens the inline editor; the engine applies it live.
+    // Above the global limit is allowed, and the editor says the global one wins.
+    await setGlobalLimit("16");
+    await row.$('button[aria-label="Speed limit"]').click();
+    const amount = row.$('input[aria-label="Speed limit"]');
+    await expect(amount).toBeFocused();
+    await expect(row).toHaveText("Empty = no limit.", { containing: true });
+    await browser.keys("48");
+    await expect(row).toHaveText("The global limit is 16.0 KB/s", { containing: true });
+    await browser.keys(Key.Enter);
+    await expect(row).toHaveAttribute("data-limit", String(48 * 1024));
+    await expect(row.$('[data-testid="row-limit"]')).toHaveText("48.0 KB/s", { containing: true });
+    await expect(row).toHaveAttribute("data-status", "downloading");
+
+    // Reject: zero is refused in place and nothing is applied; Escape drops the edit.
+    await row.$('[data-testid="row-limit"]').click();
+    await retype(row.$('input[aria-label="Speed limit"]'), "0");
+    await expect(row.$('input[aria-label="Speed limit"]')).toHaveAttribute("aria-invalid", "true");
+    await expect(row).toHaveText("Enter a speed above 0", { containing: true });
+    await browser.keys(Key.Escape);
+    await row.$('input[aria-label="Speed limit"]').waitForExist({ reverse: true });
+    await expect(row).toHaveAttribute("data-limit", String(48 * 1024));
+    await expect(row.$('button[aria-label="Speed limit"]')).toBeFocused();
+
+    // Clear: "Remove limit" lifts it, from the keyboard too (Enter on it isn't a commit).
+    await row.$('[data-testid="row-limit"]').click();
+    await expect(row.$('input[aria-label="Speed limit"]')).toBeFocused();
+    await browser.keys(Key.Tab); // the unit picker
+    await browser.keys(Key.Tab);
+    await expect(row.$('button[aria-label="Remove limit"]')).toBeFocused();
+    await browser.keys(Key.Enter);
+    await expect(row).toHaveAttribute("data-limit", "");
+    await expect(row.$('[data-testid="row-limit"]')).not.toBeExisting();
+    await expect(row).toHaveAttribute("data-status", "downloading");
+    await setGlobalLimit("");
+  });
+
+  it("keeps a queued row's open editor through its promotion, then commits on click-away", async () => {
+    // A fresh runner under cap 1, so nothing earlier can take the freed slot.
+    await setMaxConcurrent(1);
+    for (const id of ids) await invoke("pause", { id: Number(id) });
+    const runner = await add(`${baseUrl}/crawl`);
+    await waitForStatus(runner, "downloading");
+    const queued = await add(`${baseUrl}/crawl`);
+    const row = rowById(queued);
+    await expect(row).toHaveAttribute("data-status", "queued");
+
+    await row.$('button[aria-label="Speed limit"]').click();
+    const amount = row.$('input[aria-label="Speed limit"]');
+    await expect(amount).toBeFocused();
+    await browser.keys("32");
+    // Tag this exact element: a remount would replace it with an untagged one.
+    await browser.execute((el) => el.setAttribute("data-probe", "1"), await amount);
+
+    // Free the slot without touching the page, so the editor keeps focus.
+    await invoke("pause", { id: Number(runner) });
+    await waitForStatus(queued, "downloading");
+    const probed = row.$('input[aria-label="Speed limit"][data-probe="1"]');
+    await expect(probed).toBeFocused();
+    await expect(probed).toHaveValue("32");
+    await expect(row).toHaveAttribute("data-limit", "");
+
+    // Focus leaving the editor (no Enter) commits it.
+    await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+    await expect(row).toHaveAttribute("data-limit", String(32 * 1024));
+    await expect(row.$('[data-testid="row-limit"]')).toHaveText("32.0 KB/s", { containing: true });
   });
 });

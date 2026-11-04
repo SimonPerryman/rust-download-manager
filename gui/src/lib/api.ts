@@ -42,6 +42,13 @@ export const setSettings = (patch: SettingsPatch) =>
     maxConnections: patch.maxConnections ?? null,
   });
 
+/**
+ * Cap one download's speed (`limit` is a rate like `"500K"`; null or blank =
+ * unlimited). Applies live. Resolves with the limit the engine stored.
+ */
+export const setLimit = (id: number, limit: string | null) =>
+  invoke<number | null>("set_limit", { id, limit });
+
 export const pause = (id: number) => invoke<void>("pause", { id });
 export const resume = (id: number) => invoke<void>("resume", { id });
 export const cancel = (id: number) => invoke<void>("cancel", { id });
