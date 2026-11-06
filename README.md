@@ -29,7 +29,11 @@ line or through a desktop GUI — streaming to disk with a live progress readout
   (via HTTP range requests, validated against `ETag`/`Last-Modified`). A
   multi-segment download re-fetches only the ranges that were still missing.
 - Retries transient failures (timeouts, dropped connections, 5xx/408/429) with
-  exponential backoff.
+  exponential backoff. A rate-limited host (429/503) is backed off from, never
+  hammered with new connections, and its `Retry-After` (up to 60 s) is
+  honoured. A request that can't connect within 20 s, gets no response within
+  30 s, or whose download goes 30 s without receiving data is dropped and
+  retried; time spent under your own speed limit doesn't count.
 - Verifies the finished file's size, and an optional `--checksum sha256:<hex>`,
   before moving it into place; never clobbers an existing file (`name (1).ext`).
 - Speed limits: `--limit-rate` on the CLI; in the GUI, a global limit and an

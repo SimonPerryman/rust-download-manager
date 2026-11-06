@@ -4,8 +4,88 @@ mod common;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use rdm::{download, Control, DownloadRequest, Error};
+
+/// A body that stalls mid-stream times out and is retried instead of hanging.
+#[tokio::test]
+async fn stalled_body_times_out_and_retries() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+
+    let req = DownloadRequest::to_path(server.url("/stall"), dir.path().join("stall.bin"))
+        .with_retry(rdm::RetryPolicy {
+            max_attempts: 2,
+            ..rdm::RetryPolicy::none()
+        })
+        .with_read_timeout(Duration::from_millis(200));
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        download(&req, &Control::new(), |_| {}),
+    )
+    .await
+    .expect("a stalled body must not hang the download");
+
+    match result {
+        Err(Error::Http(e)) => assert!(e.is_timeout(), "{e:?}"),
+        other => panic!("expected a timeout, got {other:?}"),
+    }
+    assert_eq!(server.stats("/stall").requests(), 2, "retried once");
+}
+
+/// On a single connection too, a 429's `Retry-After` is waited out even when
+/// the retry policy itself never waits.
+#[tokio::test]
+async fn single_connection_honours_retry_after() {
+    let server = common::spawn_with(common::FixtureConfig {
+        seg_retry_after: Some(1),
+        ..common::FixtureConfig::default()
+    })
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("limited.bin");
+
+    let req =
+        DownloadRequest::to_path(server.url("/limited-once"), &out).with_retry(rdm::RetryPolicy {
+            max_attempts: 3,
+            ..rdm::RetryPolicy::none()
+        });
+    download(&req, &Control::new(), |_| {}).await.unwrap();
+
+    let arrived = server.stats("/limited-once").arrived_at();
+    assert_eq!(arrived.len(), 2);
+    let wait = arrived[1] - arrived[0];
+    assert!(wait >= Duration::from_secs(1), "retried after {wait:?}");
+    assert_eq!(std::fs::read(&out).unwrap(), common::payload());
+}
+
+/// A pause while the server has yet to answer is honoured promptly, not
+/// after the request finally times out.
+#[tokio::test]
+async fn pause_while_awaiting_response_is_prompt() {
+    let server = common::spawn().await;
+    let stats = server.stats("/hang");
+    let dir = tempfile::tempdir().unwrap();
+    let req = DownloadRequest::to_path(server.url("/hang"), dir.path().join("hang.bin"));
+    let control = Control::new();
+    let handle = {
+        let control = control.clone();
+        tokio::spawn(async move { download(&req, &control, |_| {}).await })
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while stats.requests() == 0 && std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_eq!(stats.requests(), 1, "the request never arrived");
+
+    control.pause();
+    let result = tokio::time::timeout(Duration::from_secs(5), handle)
+        .await
+        .expect("a pause must not wait for the response")
+        .unwrap();
+    assert!(matches!(result, Err(Error::Paused)), "{result:?}");
+}
 
 /// The engine writes the served bytes to disk, byte-for-byte, and reports them.
 #[tokio::test]

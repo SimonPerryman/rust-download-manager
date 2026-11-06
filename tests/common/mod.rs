@@ -45,6 +45,11 @@
 //! - `GET /seg-weak-etag` — weak ETag + `Last-Modified`.
 //! - `GET /seg-capped` — 503 for any request beyond 2 in flight (counted in
 //!   [`RouteStats::refused`]).
+//! - `GET /seg-capped-flaky` — `/seg-capped`, and the first ranged response it
+//!   lets in aborts mid-body; an unranged response holds after its first chunk
+//!   until released through [`TestServer::gate`].
+//! - `GET /seg-capped-drop` — `/seg-capped`, and every ranged response it lets
+//!   in aborts after [`FixtureConfig::seg_abort_after`] chunks.
 //! - `GET /seg-drop`   — every ranged response aborts after
 //!   [`FixtureConfig::seg_abort_after`] chunks.
 //! - `GET /seg-503`    — every ranged request gets 503.
@@ -58,11 +63,26 @@
 //! - `GET /seg-ramp`   — [`SEG_RAMP_CHUNK`]s paced by deadline (no burst) at
 //!   [`SEG_RAMP_RATE`] per connection and [`SEG_RAMP_CAP`] across all of
 //!   them, like a host whose link saturates at four connections.
+//! - `GET /seg-429`    — the first [`FixtureConfig::seg_refusals`] ranged
+//!   requests get 429 (with `Retry-After` from
+//!   [`FixtureConfig::seg_retry_after`]), like a per-IP rate limit.
+//! - `GET /seg-429-drop` — ranged requests alternate: the even ones abort after
+//!   [`FixtureConfig::seg_abort_after`] chunks, the odd ones get 429, so every
+//!   attempt makes progress and then is rate-limited.
+//! - `GET /seg-429-then-drop` — the first ranged request gets 429 (with
+//!   `Retry-After` from [`FixtureConfig::seg_retry_after`]), the second aborts
+//!   after [`FixtureConfig::seg_abort_after`] chunks, the rest are served.
+//! - `GET /limited-once` — [`payload`], but the first request gets 429 (with
+//!   `Retry-After` from [`FixtureConfig::seg_retry_after`]).
+//! - `GET /stall`      — no length: one 1 KiB chunk, then the body stalls
+//!   forever (a connection whose packets are dropped).
+//! - `GET /hang`       — never answers, not even with headers.
 //!
 //! Aborting bodies wait [`ABORT_GRACE`] after their prefix before erroring, so
 //! the prefix really reaches the client. Every `/seg*` route, `/liar-etag`,
-//! `/norange`, `/liar` and `/gated` keeps [`RouteStats`] (see
-//! [`TestServer::stats`]).
+//! `/norange`, `/liar`, `/gated` and `/stall` keeps [`RouteStats`] (see
+//! [`TestServer::stats`]); arrivals and refusals are timestamped in
+//! [`RouteStats::arrived_at`] and [`RouteStats::refused_at`].
 //!
 //! The same routes back the GUI's webview E2E suite through the
 //! `fixture_server` example, which serves them on a fixed port with a slower
@@ -73,7 +93,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::{
     body::{Body, Bytes},
@@ -187,8 +207,13 @@ pub struct FixtureConfig {
     pub seg_len: usize,
     /// `/seg` (and most `/seg*` routes): delay before each 32 KiB chunk.
     pub seg_chunk_delay: Duration,
-    /// `/seg-drop`: chunks served before each ranged response aborts.
+    /// `/seg-drop`, `/seg-429-drop`: chunks served before a ranged response
+    /// aborts.
     pub seg_abort_after: usize,
+    /// `/seg-429`: how many leading ranged requests are refused.
+    pub seg_refusals: usize,
+    /// `/seg-429`: the `Retry-After` seconds sent with a refusal, if any.
+    pub seg_retry_after: Option<u64>,
 }
 
 impl Default for FixtureConfig {
@@ -198,6 +223,8 @@ impl Default for FixtureConfig {
             seg_len: SEG_LEN,
             seg_chunk_delay: Duration::ZERO,
             seg_abort_after: 1,
+            seg_refusals: 3,
+            seg_retry_after: None,
         }
     }
 }
@@ -213,6 +240,9 @@ pub struct RouteStats {
     in_flight: AtomicUsize,
     max_in_flight: AtomicUsize,
     refused: AtomicUsize,
+    refused_at: Mutex<Vec<Instant>>,
+    arrived_at: Mutex<Vec<Instant>>,
+    alongside: Mutex<Vec<usize>>,
 }
 
 impl RouteStats {
@@ -274,9 +304,27 @@ impl RouteStats {
         self.refused.load(Ordering::SeqCst)
     }
 
+    /// When each [`refused`](Self::refused) request arrived, in order.
+    pub fn refused_at(&self) -> Vec<Instant> {
+        self.refused_at.lock().unwrap().clone()
+    }
+
+    /// For each response let in, how many others were streaming as it arrived.
+    pub fn alongside(&self) -> Vec<usize> {
+        self.alongside.lock().unwrap().clone()
+    }
+
+    /// When each request arrived, in order.
+    pub fn arrived_at(&self) -> Vec<Instant> {
+        self.arrived_at.lock().unwrap().clone()
+    }
+
     /// Zero the counters (the in-flight gauge itself is live, not reset).
     pub fn reset(&self) {
         self.refused.store(0, Ordering::SeqCst);
+        self.refused_at.lock().unwrap().clear();
+        self.arrived_at.lock().unwrap().clear();
+        self.alongside.lock().unwrap().clear();
         self.requests.store(0, Ordering::SeqCst);
         self.unranged.store(0, Ordering::SeqCst);
         self.ranges.lock().unwrap().clear();
@@ -285,17 +333,31 @@ impl RouteStats {
         self.max_in_flight.store(self.in_flight(), Ordering::SeqCst);
     }
 
-    fn record(&self, headers: &HeaderMap) {
+    /// Count a request in; returns its 0-based arrival index among the ranged
+    /// ones, if it is ranged.
+    fn record(&self, headers: &HeaderMap) -> Option<usize> {
         self.requests.fetch_add(1, Ordering::SeqCst);
-        match headers.get(header::RANGE).and_then(|v| v.to_str().ok()) {
-            Some(range) => self.ranges.lock().unwrap().push(range.to_string()),
+        self.arrived_at.lock().unwrap().push(Instant::now());
+        let ranged = match headers.get(header::RANGE).and_then(|v| v.to_str().ok()) {
+            Some(range) => {
+                let mut ranges = self.ranges.lock().unwrap();
+                ranges.push(range.to_string());
+                Some(ranges.len() - 1)
+            }
             None => {
                 self.unranged.fetch_add(1, Ordering::SeqCst);
+                None
             }
-        }
+        };
         if let Some(v) = headers.get(header::IF_RANGE).and_then(|v| v.to_str().ok()) {
             self.if_ranges.lock().unwrap().push(v.to_string());
         }
+        ranged
+    }
+
+    fn refuse(&self) {
+        self.refused_at.lock().unwrap().push(Instant::now());
+        self.refused.fetch_add(1, Ordering::SeqCst);
     }
 }
 
@@ -309,10 +371,11 @@ impl InFlight {
         let prev = stats.in_flight.fetch_add(1, Ordering::SeqCst);
         if cap.is_some_and(|cap| prev >= cap) {
             stats.in_flight.fetch_sub(1, Ordering::SeqCst);
-            stats.refused.fetch_add(1, Ordering::SeqCst);
+            stats.refuse();
             return None;
         }
         stats.max_in_flight.fetch_max(prev + 1, Ordering::SeqCst);
+        stats.alongside.lock().unwrap().push(prev);
         Some(Self(stats.clone()))
     }
 }
@@ -334,6 +397,8 @@ const COUNTED_ROUTES: &[&str] = &[
     "/seg-redirect",
     "/seg-weak-etag",
     "/seg-capped",
+    "/seg-capped-flaky",
+    "/seg-capped-drop",
     "/seg-drop",
     "/seg-503",
     "/seg-403",
@@ -342,9 +407,15 @@ const COUNTED_ROUTES: &[&str] = &[
     "/seg-expiring",
     "/seg-signed",
     "/seg-ramp",
+    "/seg-429",
+    "/seg-429-drop",
+    "/seg-429-then-drop",
+    "/limited-once",
     "/norange",
     "/liar",
     "/gated",
+    "/stall",
+    "/hang",
 ];
 
 /// The `/gated` hold: each request gets an arrival sequence number and
@@ -709,6 +780,49 @@ async fn gated_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         .unwrap()
 }
 
+/// A 429, with `Retry-After: <secs>` if given.
+fn too_many_requests(retry_after: Option<u64>) -> Response {
+    let mut resp = StatusCode::TOO_MANY_REQUESTS.into_response();
+    if let Some(secs) = retry_after {
+        resp.headers_mut()
+            .insert(header::RETRY_AFTER, secs.to_string().parse().unwrap());
+    }
+    resp
+}
+
+/// `/limited-once`: 429 for the first request, then [`payload`].
+async fn limited_once_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    let stats = state.stats("/limited-once");
+    stats.record(&headers);
+    if stats.requests() == 1 {
+        stats.refuse();
+        return too_many_requests(state.cfg.seg_retry_after);
+    }
+    file_handler().await.into_response()
+}
+
+/// `/hang`: never answers, not even with headers.
+async fn hang_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    state.stats("/hang").record(&headers);
+    std::future::pending().await
+}
+
+/// `/stall`: one chunk, then a body that never yields again.
+async fn stall_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    state.stats("/stall").record(&headers);
+    let first = futures_util::stream::once(async {
+        Ok::<_, std::io::Error>(Bytes::from(vec![0x53; GATED_CHUNK]))
+    });
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .body(Body::from_stream(futures_util::StreamExt::chain(
+            first,
+            futures_util::stream::pending(),
+        )))
+        .unwrap()
+}
+
 /// `/flaky`: supports ranges, but aborts the connection mid-body for the first
 /// `FLAKY_FAILURES` requests; the next request serves the requested range to
 /// completion. Each retry resumes from the current `.part` offset.
@@ -808,6 +922,8 @@ enum Seg {
     Skewed,
     WeakEtag,
     Capped,
+    CappedFlaky,
+    CappedDrop,
     Drop,
     Unavailable,
     Forbidden,
@@ -815,6 +931,9 @@ enum Seg {
     Identity,
     Signed,
     Ramp,
+    RateLimited,
+    RateLimitedDrop,
+    RateLimitedThenDrop,
 }
 
 impl Seg {
@@ -828,6 +947,8 @@ impl Seg {
             Seg::Skewed => "/seg-skewed",
             Seg::WeakEtag => "/seg-weak-etag",
             Seg::Capped => "/seg-capped",
+            Seg::CappedFlaky => "/seg-capped-flaky",
+            Seg::CappedDrop => "/seg-capped-drop",
             Seg::Drop => "/seg-drop",
             Seg::Unavailable => "/seg-503",
             Seg::Forbidden => "/seg-403",
@@ -835,6 +956,9 @@ impl Seg {
             Seg::Identity => "/seg-identity",
             Seg::Signed => "/seg-signed",
             Seg::Ramp => "/seg-ramp",
+            Seg::RateLimited => "/seg-429",
+            Seg::RateLimitedDrop => "/seg-429-drop",
+            Seg::RateLimitedThenDrop => "/seg-429-then-drop",
         }
     }
 }
@@ -865,8 +989,22 @@ fn parse_range(headers: &HeaderMap) -> Option<(usize, Option<usize>)> {
 
 fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg) -> Response {
     let stats = state.stats(kind.route());
-    stats.record(headers);
-    let cap = (kind == Seg::Capped).then_some(SEG_CAP);
+    let ranged_index = stats.record(headers);
+    let rate_limited = match (kind, ranged_index) {
+        (Seg::RateLimited, Some(i)) => i < state.cfg.seg_refusals,
+        (Seg::RateLimitedDrop, Some(i)) => i % 2 == 1,
+        (Seg::RateLimitedThenDrop, Some(i)) => i == 0,
+        _ => false,
+    };
+    if rate_limited {
+        stats.refuse();
+        let retry_after = state
+            .cfg
+            .seg_retry_after
+            .filter(|_| kind != Seg::RateLimitedDrop);
+        return too_many_requests(retry_after);
+    }
+    let cap = matches!(kind, Seg::Capped | Seg::CappedFlaky | Seg::CappedDrop).then_some(SEG_CAP);
     let Some(guard) = InFlight::enter(stats, cap) else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
@@ -913,8 +1051,14 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg) -> Response {
         _ => state.cfg.seg_chunk_delay,
     };
     let abort_after = match kind {
-        Seg::Drop if ranged => Some(state.cfg.seg_abort_after),
-        Seg::Flaky if ranged && !state.seg_flaky_tripped.swap(true, Ordering::SeqCst) => Some(2),
+        Seg::Drop | Seg::RateLimitedDrop if ranged => Some(state.cfg.seg_abort_after),
+        Seg::RateLimitedThenDrop if ranged_index == Some(1) => Some(state.cfg.seg_abort_after),
+        Seg::Flaky | Seg::CappedFlaky
+            if ranged && !state.seg_flaky_tripped.swap(true, Ordering::SeqCst) =>
+        {
+            Some(2)
+        }
+        Seg::CappedDrop if ranged => Some(state.cfg.seg_abort_after),
         Seg::FlakyTail
             if ranged
                 && end == total
@@ -925,6 +1069,7 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg) -> Response {
         _ => None,
     };
     let abort_alone = kind == Seg::FlakyTail;
+    let hold = (kind == Seg::CappedFlaky && !ranged).then(|| state.gate.enter());
 
     let mut builder = Response::builder()
         .status(status)
@@ -954,6 +1099,7 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg) -> Response {
             delay,
             abort_after,
             abort_alone,
+            hold,
             guard,
         )
     };
@@ -1000,19 +1146,28 @@ fn paced_stream(data: Bytes, next_free: Arc<Mutex<tokio::time::Instant>>, guard:
 
 /// Stream `data` in [`SEG_CHUNK`]s, sleeping `delay` before each; with
 /// `abort_after`, error out after that many chunks (following [`ABORT_GRACE`],
-/// and with `abort_alone` only once no other response on the route streams).
+/// and with `abort_alone` only once no other response on the route streams);
+/// with `hold`, pause after the first chunk until that ticket is released.
 /// Counts yielded bytes and holds the in-flight slot until dropped.
 fn seg_stream(
     data: Bytes,
     delay: Duration,
     abort_after: Option<usize>,
     abort_alone: bool,
+    hold: Option<GateTicket>,
     guard: InFlight,
 ) -> Body {
     let s = futures_util::stream::unfold(
-        (data, 0usize, 0usize, Some(guard)),
-        move |(data, offset, sent, guard)| async move {
+        (data, 0usize, 0usize, Some(guard), hold),
+        move |(data, offset, sent, guard, mut hold)| async move {
             let guard = guard?;
+            if sent >= 1 {
+                if let Some(ticket) = hold.take() {
+                    while !ticket.released() {
+                        tokio::time::sleep(GATED_TRICKLE).await;
+                    }
+                }
+            }
             if abort_after.is_some_and(|limit| sent >= limit) && offset < data.len() {
                 if abort_alone {
                     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
@@ -1025,7 +1180,7 @@ fn seg_stream(
                     std::io::ErrorKind::ConnectionReset,
                     "simulated mid-segment disconnect",
                 );
-                return Some((Err(err), (data, offset, sent, None)));
+                return Some((Err(err), (data, offset, sent, None, None)));
             }
             if offset >= data.len() {
                 return None;
@@ -1039,7 +1194,7 @@ fn seg_stream(
                 .0
                 .body_bytes
                 .fetch_add(chunk.len() as u64, Ordering::SeqCst);
-            Some((Ok(chunk), (data, end, sent + 1, Some(guard))))
+            Some((Ok(chunk), (data, end, sent + 1, Some(guard), hold)))
         },
     );
     Body::from_stream(s)
@@ -1077,7 +1232,7 @@ async fn seg_signed_handler(
     if !live {
         let stats = state.stats("/seg-signed");
         stats.record(&headers);
-        stats.refused.fetch_add(1, Ordering::SeqCst);
+        stats.refuse();
         return StatusCode::FORBIDDEN.into_response();
     }
     seg_response(&state, &headers, Seg::Signed)
@@ -1172,6 +1327,8 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/seg-redirect", get(seg_redirect_handler))
         .route("/seg-weak-etag", seg_route(Seg::WeakEtag))
         .route("/seg-capped", seg_route(Seg::Capped))
+        .route("/seg-capped-flaky", seg_route(Seg::CappedFlaky))
+        .route("/seg-capped-drop", seg_route(Seg::CappedDrop))
         .route("/seg-drop", seg_route(Seg::Drop))
         .route("/seg-503", seg_route(Seg::Unavailable))
         .route("/seg-403", seg_route(Seg::Forbidden))
@@ -1180,6 +1337,12 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/seg-expiring", get(seg_expiring_handler))
         .route("/seg-signed", get(seg_signed_handler))
         .route("/seg-ramp", seg_route(Seg::Ramp))
+        .route("/seg-429", seg_route(Seg::RateLimited))
+        .route("/seg-429-drop", seg_route(Seg::RateLimitedDrop))
+        .route("/seg-429-then-drop", seg_route(Seg::RateLimitedThenDrop))
+        .route("/limited-once", get(limited_once_handler))
+        .route("/stall", get(stall_handler))
+        .route("/hang", get(hang_handler))
         .with_state(state);
     axum::serve(listener, app).await.expect("serve");
 }

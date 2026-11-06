@@ -553,6 +553,310 @@ async fn connection_capping_host_completes() {
     assert_eq!(std::fs::read(&out).unwrap(), common::seg_payload());
 }
 
+/// A connection cap's bare 503 isn't a rate limit: when a live connection then
+/// drops, a replacement still restores the two the host accepts.
+#[tokio::test]
+async fn capped_host_still_replaces_a_dropped_connection() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_chunk_delay: Duration::from_millis(20),
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-capped-flaky");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("capped-flaky.bin");
+
+    let req = DownloadRequest::to_path(server.url("/seg-capped-flaky"), &out)
+        .with_connections(3)
+        .with_retry(fast_retry(5))
+        .with_ramp(Ramping::Off);
+    let handle = tokio::spawn(async move { download(&req, &Control::new(), |_| {}).await });
+
+    // The probe is held mid-segment, so it can't re-claim the dropped range
+    // itself: only a replacement worker can be let in after the drop.
+    // Admitted so far: the probe, then the ranged response that drops.
+    let replaced = wait_until(Duration::from_secs(5), || stats.alongside().len() >= 3).await;
+    server.gate().release_all();
+    assert!(stats.refused() >= 1, "the cap was never hit");
+    assert!(
+        replaced,
+        "no replacement while the probe was held: {:?}",
+        stats.alongside()
+    );
+
+    tokio::time::timeout(Duration::from_secs(10), handle)
+        .await
+        .expect("the download finishes once the probe is released")
+        .unwrap()
+        .unwrap();
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+}
+
+/// Attempts that hit a connection cap but end on an ordinary drop don't
+/// escalate the backoff: with a 100× factor, escalation would take > 30 s.
+#[tokio::test]
+async fn capped_host_does_not_escalate_backoff() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_len: 2 * MIB as usize,
+        seg_chunk_delay: Duration::from_millis(5),
+        seg_abort_after: 2,
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-capped-drop");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("capped-drop.bin");
+
+    let req = DownloadRequest::to_path(server.url("/seg-capped-drop"), &out)
+        .with_connections(3)
+        .with_min_segment_size(256 * KIB)
+        .with_retry(RetryPolicy {
+            max_attempts: 3,
+            base_delay: Duration::from_millis(10),
+            factor: 100.0,
+            max_delay: Duration::from_secs(30),
+        })
+        .with_ramp(Ramping::Off);
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        download(&req, &Control::new(), |_| {}),
+    )
+    .await
+    .expect("backoff escalated on a connection cap")
+    .unwrap();
+
+    assert!(stats.refused() >= 1, "the cap was never hit");
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+}
+
+/// Seed a v2 resume of the seg payload with only its last `tail` bytes
+/// missing, so (under the default 1 MiB minimum) one worker has work.
+fn seed_tail(server: &common::TestServer, route: &str, out: &Path, tail: u64) {
+    let payload = server.seg_payload();
+    let total = payload.len() as u64;
+    let segments = vec![
+        Segment {
+            start: 0,
+            end: total - tail,
+            done: total - tail,
+        },
+        Segment {
+            start: total - tail,
+            end: total,
+            done: 0,
+        },
+    ];
+    seed_v2(out, &server.url(route), &payload, segments);
+}
+
+/// Gaps between consecutive instants.
+fn gaps(at: &[Instant]) -> Vec<Duration> {
+    at.windows(2).map(|w| w[1] - w[0]).collect()
+}
+
+/// A 429 isn't answered with a burst of replacement connections: each refused
+/// request is followed by the retry backoff before the next one.
+#[tokio::test]
+async fn rate_limited_segment_backs_off_instead_of_bursting() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_refusals: 3,
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-429");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("limited.bin");
+    seed_tail(&server, "/seg-429", &out, MIB);
+
+    let base_delay = Duration::from_millis(50);
+    let req = DownloadRequest::to_path(server.url("/seg-429"), &out)
+        .with_connections(4)
+        .with_retry(RetryPolicy {
+            max_attempts: 10,
+            base_delay,
+            factor: 1.0,
+            max_delay: base_delay,
+        })
+        .with_ramp(Ramping::Off);
+    download(&req, &Control::new(), |_| {}).await.unwrap();
+
+    assert_eq!(stats.refused(), 3);
+    assert_eq!(stats.ranges().len(), 4, "{:?}", stats.ranges());
+    let gaps = gaps(&stats.refused_at());
+    assert!(gaps.iter().all(|&g| g >= base_delay), "{gaps:?}");
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+}
+
+/// A `Retry-After` is waited out even when the retry policy itself never
+/// waits.
+#[tokio::test]
+async fn retry_after_is_honoured() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_refusals: 2,
+        seg_retry_after: Some(1),
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-429");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("retry-after.bin");
+    seed_tail(&server, "/seg-429", &out, MIB);
+
+    let req = DownloadRequest::to_path(server.url("/seg-429"), &out)
+        .with_connections(4)
+        .with_retry(fast_retry(5))
+        .with_ramp(Ramping::Off);
+    download(&req, &Control::new(), |_| {}).await.unwrap();
+
+    assert_eq!(stats.refused(), 2);
+    let gaps = gaps(&stats.refused_at());
+    assert!(gaps[0] >= Duration::from_secs(1), "{gaps:?}");
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+}
+
+/// A sibling's later failure doesn't mask a rate limit: with two workers, one
+/// gets a 429 + `Retry-After` and the other then drops, and the next attempt
+/// still waits the `Retry-After` out.
+#[tokio::test]
+async fn later_failure_does_not_mask_a_rate_limit() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_retry_after: Some(1),
+        seg_abort_after: 2,
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-429-then-drop");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("masked.bin");
+    let payload = server.seg_payload();
+    // Two 1 MiB segments left: one per worker, neither stealable.
+    let segments = vec![
+        Segment {
+            start: 0,
+            end: 2 * MIB,
+            done: 2 * MIB,
+        },
+        Segment {
+            start: 2 * MIB,
+            end: 3 * MIB,
+            done: 0,
+        },
+        Segment {
+            start: 3 * MIB,
+            end: 4 * MIB,
+            done: 0,
+        },
+    ];
+    seed_v2(&out, &server.url("/seg-429-then-drop"), &payload, segments);
+
+    let req = DownloadRequest::to_path(server.url("/seg-429-then-drop"), &out)
+        .with_connections(2)
+        .with_retry(fast_retry(5))
+        .with_ramp(Ramping::Off);
+    download(&req, &Control::new(), |_| {}).await.unwrap();
+
+    let refused = stats.refused_at();
+    let arrived = stats.arrived_at();
+    assert_eq!(refused.len(), 1);
+    assert!(arrived.len() >= 3, "{} requests", arrived.len());
+    let wait = arrived[2] - refused[0];
+    assert!(wait >= Duration::from_secs(1), "retried after {wait:?}");
+    assert_eq!(std::fs::read(&out).unwrap(), payload);
+}
+
+/// Pause or cancel during a long `Retry-After` backoff is honoured promptly,
+/// keeping (pause) or discarding (cancel) the partial download.
+async fn interrupt_backoff(cancel: bool) {
+    let server = common::spawn_with(FixtureConfig {
+        seg_refusals: usize::MAX,
+        seg_retry_after: Some(60),
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-429");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("interrupted.bin");
+    seed_tail(&server, "/seg-429", &out, MIB);
+
+    let req = DownloadRequest::to_path(server.url("/seg-429"), &out)
+        .with_connections(4)
+        .with_retry(fast_retry(5))
+        .with_ramp(Ramping::Off);
+    let control = Control::new();
+    let handle = {
+        let control = control.clone();
+        tokio::spawn(async move { download(&req, &control, |_| {}).await })
+    };
+    assert!(wait_until(Duration::from_secs(10), || stats.refused() >= 1).await);
+    // Let the attempt wind down into its backoff.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    if cancel {
+        control.cancel();
+    } else {
+        control.pause();
+    }
+    let result = tokio::time::timeout(Duration::from_secs(10), handle)
+        .await
+        .expect("the backoff must not outlast a pause/cancel")
+        .unwrap();
+
+    assert_eq!(stats.refused(), 1, "no retry after the interrupt");
+    if cancel {
+        assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
+        assert_no_partial_state(&out);
+    } else {
+        assert!(matches!(result, Err(Error::Paused)), "{result:?}");
+        assert!(state::part_path(&out).exists());
+        assert!(state::sidecar_path(&out).exists());
+    }
+}
+
+#[tokio::test]
+async fn pause_interrupts_retry_backoff() {
+    interrupt_backoff(false).await;
+}
+
+#[tokio::test]
+async fn cancel_interrupts_retry_backoff() {
+    interrupt_backoff(true).await;
+}
+
+/// An attempt that made progress but ended rate-limited doesn't reset the
+/// backoff (nor, having progressed, consume the retry budget).
+#[tokio::test]
+async fn rate_limit_backoff_escalates_despite_progress() {
+    // Every attempt: one 64 KiB response that drops, then a 429.
+    let server = common::spawn_with(FixtureConfig {
+        seg_abort_after: 2,
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-429-drop");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("escalating.bin");
+    seed_tail(&server, "/seg-429-drop", &out, 6 * 64 * KIB);
+
+    let policy = RetryPolicy {
+        max_attempts: 3,
+        base_delay: Duration::from_millis(20),
+        factor: 2.0,
+        max_delay: Duration::from_secs(1),
+    };
+    let req = DownloadRequest::to_path(server.url("/seg-429-drop"), &out)
+        .with_connections(4)
+        .with_retry(policy)
+        .with_ramp(Ramping::Off);
+    download(&req, &Control::new(), |_| {}).await.unwrap();
+
+    assert_eq!(stats.refused(), 5, "one refusal per progressing attempt");
+    let gaps = gaps(&stats.refused_at());
+    for (i, &gap) in gaps.iter().enumerate() {
+        let floor = policy.delay_for(i as u32 + 1);
+        assert!(gap >= floor, "gap {i} under {floor:?}: {gaps:?}");
+    }
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+}
+
 /// Resume uses every connection even when few segments remain: idle workers
 /// steal from the one big remaining segment.
 #[tokio::test]
@@ -654,15 +958,15 @@ async fn stalled_resume_gives_up_after_max_attempts() {
     ];
     seed_v2(&out, &server.url("/seg-503"), &payload, segments.clone());
 
-    // One connection: per attempt, one ranged request plus its two bounded
-    // replacement connections.
+    // One connection: one ranged request per attempt, since a refused one is
+    // never replaced within the attempt.
     let req = DownloadRequest::to_path(server.url("/seg-503"), &out)
         .with_connections(1)
         .with_retry(fast_retry(3));
     let err = download(&req, &Control::new(), |_| {}).await.unwrap_err();
 
     assert!(matches!(err, Error::Status(503)), "got {err:?}");
-    assert_eq!(stats.ranges().len(), 3 * 3);
+    assert_eq!(stats.ranges().len(), 3);
     let st = DownloadState::load(&state::sidecar_path(&out)).unwrap();
     assert_eq!(st.segments, Some(segments), "no progress, no truncation");
 }
