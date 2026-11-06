@@ -1,8 +1,9 @@
 name: CI
 
 on:
+  # PRs run once (pull_request); main runs again after merge.
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -22,7 +23,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # Windows minutes bill at 2x, and the local gate already runs on
+        # Windows before each push, so PRs run Linux only.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,19 +46,15 @@ jobs:
       - name: Clippy (deny warnings)
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: Build
-        run: cargo build --all-targets
-
       - name: Test (offline, deterministic)
         run: cargo test
 
+  # The Linux GUI checks run in the e2e job, which builds the same app anyway.
   gui:
-    name: gui build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+    name: gui build (windows-latest)
+    runs-on: windows-latest
+    # Windows-only and 2x billed: main and manual runs, not PRs.
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v4
 
@@ -66,21 +65,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Tauri's Linux webview/build system deps. No-op on Windows, which ships
-      # WebView2. ubuntu-latest (24.04) provides webkit2gtk-4.1 / soup3 for
-      # Tauri v2.
-      - name: Install Linux webview dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libxdo-dev \
-            libssl-dev \
-            patchelf
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -131,7 +115,7 @@ jobs:
         run: cargo test -p rdm-gui
 
   e2e:
-    name: gui e2e (webview, ubuntu)
+    name: gui checks + e2e (webview, ubuntu)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -146,7 +130,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # Tauri's webview build deps (as in the gui job), plus WebKitWebDriver
+      # Tauri's webview build deps, plus WebKitWebDriver
       # (the native driver tauri-driver fronts on Linux) and a virtual display.
       - name: Install Linux webview, driver and display dependencies
         run: |
@@ -175,15 +159,35 @@ jobs:
           pnpm --dir gui install --frozen-lockfile
           pnpm --dir gui/e2e install --frozen-lockfile
 
+      - name: Lint frontend (oxlint + e2e WebKit guard)
+        working-directory: gui
+        run: pnpm lint
+
+      - name: Check frontend formatting (oxfmt)
+        working-directory: gui
+        run: pnpm format:check
+
+      - name: Unit-test frontend (vitest)
+        working-directory: gui
+        run: pnpm test
+
       - name: Typecheck e2e suite
         working-directory: gui/e2e
         run: pnpm typecheck
 
-      # The debug app with the frontend embedded (tauri build), plus the
-      # loopback fixture server the specs download from.
+      # The debug app with the frontend embedded (tauri build, whose
+      # beforeBuildCommand typechecks and builds gui/dist), plus the loopback
+      # fixture server the specs download from.
       - name: Build app and fixture server
         working-directory: gui/e2e
         run: pnpm run build
+
+      # gui/dist exists now, which the GUI crate embeds.
+      - name: Clippy GUI crate (deny warnings)
+        run: cargo clippy -p rdm-gui --all-targets -- -D warnings
+
+      - name: Test GUI crate
+        run: cargo test -p rdm-gui
 
       - name: Run webview E2E (xvfb)
         working-directory: gui/e2e

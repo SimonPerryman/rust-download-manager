@@ -160,9 +160,13 @@ async fn cli_connections_flag_reaches_engine() {
     let dir = tempfile::tempdir().unwrap();
     let exe = env!("CARGO_BIN_EXE_rdm");
 
+    // Only the -c 2 run needs a download long enough to ramp; -c 1 just
+    // mustn't go ranged, so it gets a quick default-sized one.
+    let small = common::spawn().await;
+    let small_stats = small.stats("/seg");
     let single = dir.path().join("single.bin");
     let status = Command::new(exe)
-        .arg(server.url("/seg"))
+        .arg(small.url("/seg"))
         .arg("-o")
         .arg(&single)
         .args(["-c", "1"])
@@ -170,15 +174,14 @@ async fn cli_connections_flag_reaches_engine() {
         .await
         .expect("spawn rdm");
     assert!(status.success(), "rdm exited with {status}");
-    assert!(stats.ranges().is_empty(), "ranged: {:?}", stats.ranges());
-    assert_eq!(stats.unranged(), 1);
-    assert_eq!(std::fs::read(&single).unwrap(), server.seg_payload());
-
     assert!(
-        wait_until(Duration::from_secs(10), || stats.in_flight() == 0).await,
-        "first run's responses never closed"
+        small_stats.ranges().is_empty(),
+        "ranged: {:?}",
+        small_stats.ranges()
     );
-    stats.reset();
+    assert_eq!(small_stats.unranged(), 1);
+    assert_eq!(std::fs::read(&single).unwrap(), small.seg_payload());
+
     let double = dir.path().join("double.bin");
     let status = Command::new(exe)
         .arg(server.url("/seg"))

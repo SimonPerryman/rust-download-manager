@@ -64,7 +64,9 @@ instruction sheet for any agent (and human) working in this repo.
 Standing gates — established in M0, apply to all work, and deliberately NOT
 repeated in each milestone's acceptance criteria:
 - `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` pass.
-- CI is green.
+- CI is green. PR CI is Linux-only (Windows runs on `main`), so run the
+  gate locally on Windows before each push. Why: Windows Actions minutes bill
+  at 2x.
 - New/changed behaviour ships with a runnable test; the engine/CLI split holds.
 
 ## Milestones
