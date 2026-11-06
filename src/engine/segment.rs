@@ -411,6 +411,9 @@ pub(crate) async fn run(
     let mut checkpoint: Option<JoinHandle<crate::engine::Result<()>>> = None;
     let mut fatal: Option<Failure> = None;
     let mut transient: Option<(Severity, Failure)> = None;
+    // The most connections a capping host has accepted this attempt; the
+    // ramp's own target can sit above it once settled.
+    let mut cap: Option<u8> = None;
 
     while !workers.is_empty() {
         let checkpoint_running = checkpoint.is_some();
@@ -429,12 +432,11 @@ pub(crate) async fn run(
                                 // A fixed (or already settled) ramp ignores
                                 // `settle_at`; without the clamp each refusal's
                                 // replacement would run straight into the cap.
-                                let target = if severity == Severity::Cap {
-                                    ramp.target().min(live)
-                                } else {
-                                    ramp.target()
-                                };
-                                shared.pool.set_target(target);
+                                if severity == Severity::Cap {
+                                    let live = live.max(1);
+                                    cap = Some(cap.map_or(live, |c| c.min(live)));
+                                }
+                                shared.pool.set_target(capped(ramp.target(), cap));
                             }
                             // The outer backoff keys off the attempt's error,
                             // so a sibling's later reset mustn't mask a rate limit.
@@ -487,7 +489,7 @@ pub(crate) async fn run(
                     pool_changed: shared.pool.take_changed(),
                 };
                 let decision = ramp.observe(measured);
-                shared.pool.set_target(ramp.target());
+                shared.pool.set_target(capped(ramp.target(), cap));
                 tracing::debug!(?measured, ?decision, target = ramp.target(), "ramp window");
                 match decision {
                     Decision::Add if !shared.is_stopping() && job.control.poll() == Flow::Continue => {
@@ -592,6 +594,10 @@ impl Severity {
             _ => throttle_wait(e).map_or(Self::Other, Self::RateLimit),
         }
     }
+}
+
+fn capped(target: u8, cap: Option<u8>) -> u8 {
+    cap.map_or(target, |c| target.min(c))
 }
 
 /// A worker: repeatedly claim a segment (queued, else stolen) and fetch it,
