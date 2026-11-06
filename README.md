@@ -82,6 +82,17 @@ rdm https://example.com/big-file.zip --limit-rate 2M
 # Interrupted? Re-run the same command to resume from where it stopped.
 ```
 
+Ctrl-C pauses: rdm saves its progress, prints `Paused — run the same command
+again to resume`, and exits with code 130; a second Ctrl-C quits at once. With
+`--checksum`, the final line says the checksum was verified, e.g.
+`Downloaded 1048576 bytes to archive.zip (sha256 verified)`.
+
+Engine warnings (each retry with its reason, a failed progress save) print to
+stderr; `-v` also shows informational events such as a fallback to one
+connection. A failed download is reported once, as `Error: failed to download
+…`. `RUST_LOG` (e.g. `RUST_LOG=debug`) overrides the level and also shows the
+engine's own error lines.
+
 | Argument | Description |
 |---|---|
 | `<url>` | The URL to download (required). |
@@ -89,6 +100,7 @@ rdm https://example.com/big-file.zip --limit-rate 2M
 | `--checksum <algo:hex>` | Verify the finished file against a checksum (e.g. `sha256:…`). |
 | `-c, --connections <n>` | Max parallel connections, 1–16 (default 4): starts on one and adds more, up to `n`, while measured speed keeps rising. Used only for files ≥ 2 MiB on servers that support range requests; `1` forces a single connection. |
 | `--limit-rate <rate>` | Cap the download speed in bytes/s, with an optional `K`/`M`/`G` suffix (×1024), e.g. `500K` or `2M`. Shared across all connections of the download. |
+| `-v, --verbose` | Also log informational engine events (download start, fallbacks) to stderr. |
 
 Run `rdm --help` for the full, generated help, and `rdm --version` for the
 version.
@@ -150,9 +162,11 @@ pnpm format             # format the frontend (oxfmt); pnpm format:check to veri
 pnpm test               # frontend unit tests (vitest)
 ```
 
-Troubleshooting: the GUI logs to stderr and to `~/.rdm/rdm.log` (download
-starts, each retry with its reason, and failures); set `RUST_LOG=debug` for
-more detail.
+Troubleshooting: the GUI logs to stderr and to a daily file in `~/.rdm`
+(`rdm.YYYY-MM-DD.log`, the last 7 kept; dates and rotation are in UTC):
+download starts, each retry with its reason, and failures, each line tagged
+with its download's `id` and file name. Set `RUST_LOG=debug` for more detail.
+An `rdm.log` left by older versions isn't pruned and can be deleted.
 
 Two environment variables relocate the GUI's files, mainly for automated runs:
 `RDM_HOME` replaces `~/.rdm` (state, log, and — except on macOS — the webview's

@@ -26,6 +26,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
+use tracing::Instrument;
 
 use crate::engine::store::{DownloadRecord, Settings, Status, Store, StoreData};
 use crate::engine::{
@@ -646,13 +647,30 @@ fn spawn_task(
     connections: u8,
 ) -> JoinHandle<()> {
     let id = record.id;
-    let req = request_for(&inner, record, &control, connections);
+    // Error level, like the engine's own span, so the tags survive any filter
+    // that still shows errors. A provisional name is only a guess until claimed.
+    let span = tracing::error_span!("task", id, file = tracing::field::Empty);
+    if !record.target_provisional {
+        span.record("file", tracing::field::display(file_name(&record.target)));
+    }
+    let req = request_for(&inner, record, &control, connections, &span);
     let handle = inner.handle.clone();
-    handle.spawn(async move {
-        let progress = inner.clone();
-        let result = download(&req, &control, move |p| progress.on_progress(id, p)).await;
-        inner.finish(id, result);
-    })
+    handle.spawn(
+        async move {
+            let progress = inner.clone();
+            let result = download(&req, &control, move |p| progress.on_progress(id, p)).await;
+            inner.finish(id, result);
+        }
+        .instrument(span),
+    )
+}
+
+/// `path`'s file name, for the task span's `file` field.
+fn file_name(path: &Path) -> String {
+    path.file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Build the engine request for `record`. A provisional target is left for
@@ -663,6 +681,7 @@ fn request_for(
     record: &DownloadRecord,
     control: &Control,
     connections: u8,
+    span: &tracing::Span,
 ) -> DownloadRequest {
     let mut req = if record.target_provisional {
         let dir = record
@@ -671,8 +690,13 @@ fn request_for(
             .map(PathBuf::from)
             .unwrap_or_default();
         let (inner, id, control) = (inner.clone(), record.id, control.clone());
-        DownloadRequest::new(&record.url, dir)
-            .with_claim_target(move |proposed| inner.claim_target(id, proposed, &control))
+        let span = span.clone();
+        DownloadRequest::new(&record.url, dir).with_claim_target(move |proposed| {
+            let target = inner.claim_target(id, proposed, &control);
+            span.record("file", tracing::field::display(file_name(&target)));
+            tracing::debug!(path = %target.display(), "target claimed");
+            target
+        })
     } else {
         DownloadRequest::to_path(&record.url, &record.target)
     };

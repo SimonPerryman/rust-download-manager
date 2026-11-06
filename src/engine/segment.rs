@@ -520,7 +520,10 @@ pub(crate) async fn run(
         let mut st = job.state.clone();
         st.segments = Some(shared.snapshot());
         let (part, sidecar) = (job.part.to_path_buf(), job.sidecar.to_path_buf());
+        // The blocking pool doesn't inherit the download's span; carry it over.
+        let span = tracing::Span::current();
         let blocking = tokio::task::spawn_blocking(move || {
+            let _entered = span.enter();
             if complete {
                 complete_checkpoint_blocking(&part, || {
                     save_unless_removed(&part, &sidecar, &st, || {})

@@ -37,8 +37,8 @@ tears everything down. No dev stack is needed. Runs are isolated via
 
 ## 3. Report
 Quote the spec reporter's summary (`N passing` / failures with their assertion
-messages). On failure the per-run temp root (app state, downloads, `rdm.log`) is
-kept — its path is printed by `wdio.conf.ts`; read `rdm.log` there for the
+messages). On failure the per-run temp root (app state, downloads, `rdm.*.log`) is
+kept — its path is printed by `wdio.conf.ts`; read the `rdm.*.log` there for the
 engine-side cause before diagnosing. Never claim a pass you didn't see.
 
 Note: the run overwrites `target/debug/rdm-gui(.exe)` with an embedded-frontend

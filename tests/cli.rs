@@ -362,3 +362,178 @@ async fn cli_limit_rate_throttles_the_download() {
         "took {elapsed:?}, expected at least ~{ideal:?}"
     );
 }
+
+/// Engine warnings (here, each retry of a dropped connection) reach stderr by
+/// default, so a CLI user sees why a download is slow.
+#[tokio::test]
+async fn cli_prints_engine_warnings_by_default() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("flaky.bin");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .arg(server.url("/flaky"))
+        .arg("-o")
+        .arg(&out)
+        .env_remove("RUST_LOG")
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert!(output.status.success(), "rdm exited with {}", output.status);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(" WARN ") && stderr.contains("retrying"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("download{url="), "untagged: {stderr}");
+    assert_eq!(std::fs::read(&out).unwrap(), common::payload());
+}
+
+/// A clean run logs nothing by default; `-v` and `RUST_LOG` raise the level.
+#[tokio::test]
+async fn cli_is_quiet_by_default_and_verbose_on_request() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let exe = env!("CARGO_BIN_EXE_rdm");
+
+    let run = |name: &str, verbose: bool, rust_log: Option<&str>| {
+        let mut cmd = Command::new(exe);
+        cmd.arg(server.url("/file"))
+            .arg("-o")
+            .arg(dir.path().join(name))
+            .env_remove("RUST_LOG");
+        if verbose {
+            cmd.arg("-v");
+        }
+        if let Some(level) = rust_log {
+            cmd.env("RUST_LOG", level);
+        }
+        async move { cmd.output().await.expect("spawn rdm") }
+    };
+
+    let quiet = run("quiet.bin", false, None).await;
+    assert!(quiet.status.success());
+    assert_eq!(String::from_utf8_lossy(&quiet.stderr), "");
+
+    for (name, verbose, rust_log) in [("v.bin", true, None), ("env.bin", false, Some("info"))] {
+        let loud = run(name, verbose, rust_log).await;
+        assert!(loud.status.success());
+        let stderr = String::from_utf8_lossy(&loud.stderr);
+        assert!(stderr.contains("download started"), "{name}: {stderr}");
+    }
+}
+
+/// With `--checksum`, the final line says the checksum was verified.
+#[tokio::test]
+async fn cli_reports_verified_checksum() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("checked.bin");
+    let digest = format!("{:x}", Sha256::digest(common::payload()));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .arg(server.url("/file"))
+        .arg("-o")
+        .arg(&out)
+        .arg("--checksum")
+        .arg(format!("sha256:{digest}"))
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert!(output.status.success(), "rdm exited with {}", output.status);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(&format!(
+            "Downloaded {} bytes to {} (sha256 verified)",
+            common::payload().len(),
+            out.display()
+        )),
+        "stdout: {stdout}"
+    );
+}
+
+/// Ctrl-C (SIGINT) pauses: the run says how to resume, exits 130 with the
+/// partial kept, and the same command then finishes the file. Unix-only: a
+/// console Ctrl-C can't be sent to just one child process on Windows.
+#[cfg(unix)]
+#[tokio::test]
+async fn cli_ctrl_c_pauses_then_rerun_resumes() {
+    // ~2.5 s of streaming, so spawning `kill` can't outlast the download.
+    let server = common::spawn_with(FixtureConfig {
+        slow_chunk_delay: Duration::from_millis(100),
+        ..FixtureConfig::default()
+    })
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("interrupted.bin");
+    let part = state::part_path(&out);
+    let total = common::payload().len() as u64;
+    let exe = env!("CARGO_BIN_EXE_rdm");
+
+    let child = Command::new(exe)
+        .arg(server.url("/slow"))
+        .arg("-o")
+        .arg(&out)
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("spawn rdm");
+    let pid = child.id().expect("child pid").to_string();
+    assert!(
+        wait_until(Duration::from_secs(15), || std::fs::metadata(&part)
+            .is_ok_and(|m| m.len() > 0 && m.len() < total))
+        .await,
+        "`.part` never reached a partial size to interrupt at"
+    );
+
+    let sent = Command::new("kill")
+        .args(["-INT", &pid])
+        .status()
+        .await
+        .expect("run kill");
+    assert!(sent.success());
+    let output = child.wait_with_output().await.expect("wait for rdm");
+
+    assert_eq!(output.status.code(), Some(130));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Paused — run the same command again to resume"),
+        "stderr: {stderr}"
+    );
+    assert!(part.exists() && state::sidecar_path(&out).exists());
+    assert!(!out.exists());
+
+    let status = Command::new(exe)
+        .arg(server.url("/slow"))
+        .arg("-o")
+        .arg(&out)
+        .status()
+        .await
+        .expect("spawn rdm (resume)");
+    assert!(status.success(), "resume run exited with {status}");
+    assert_eq!(std::fs::read(&out).unwrap(), common::payload());
+}
+
+/// A failed download reports its error once (the CLI's own message), not again
+/// as an engine ERROR log line.
+#[tokio::test]
+async fn cli_reports_a_failure_once() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .arg(server.url("/missing"))
+        .arg("-o")
+        .arg(dir.path().join("nope.bin"))
+        .env_remove("RUST_LOG")
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(stderr.matches("HTTP 404").count(), 1, "stderr: {stderr}");
+    assert!(stderr.contains("failed to download"), "stderr: {stderr}");
+}

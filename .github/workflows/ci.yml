@@ -125,6 +125,11 @@ jobs:
       - name: Build GUI crate
         run: cargo build -p rdm-gui
 
+      # The root's default-members keep `cargo test` off rdm-gui; its tests
+      # (e.g. log rotation) need gui/dist too, built above.
+      - name: Test GUI crate
+        run: cargo test -p rdm-gui
+
   e2e:
     name: gui e2e (webview, ubuntu)
     runs-on: ubuntu-latest
