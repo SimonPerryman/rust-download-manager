@@ -557,8 +557,6 @@ async fn connection_capping_host_completes() {
 /// drops, a replacement still restores the two the host accepts.
 #[tokio::test]
 async fn capped_host_still_replaces_a_dropped_connection() {
-    // Slow enough that the first response is still streaming when the drop
-    // and its replacement happen.
     let server = common::spawn_with(FixtureConfig {
         seg_chunk_delay: Duration::from_millis(20),
         ..FixtureConfig::default()
@@ -572,16 +570,25 @@ async fn capped_host_still_replaces_a_dropped_connection() {
         .with_connections(3)
         .with_retry(fast_retry(5))
         .with_ramp(Ramping::Off);
-    download(&req, &Control::new(), |_| {}).await.unwrap();
+    let handle = tokio::spawn(async move { download(&req, &Control::new(), |_| {}).await });
 
+    // The probe is held mid-segment, so it can't re-claim the dropped range
+    // itself: only a replacement worker can be let in after the drop.
+    // Admitted so far: the probe, then the ranged response that drops.
+    let replaced = wait_until(Duration::from_secs(5), || stats.alongside().len() >= 3).await;
+    server.gate().release_all();
     assert!(stats.refused() >= 1, "the cap was never hit");
-    // The dropped range and its replacement each joined a streaming response.
-    let alongside = stats.alongside();
-    let joined = alongside.iter().filter(|&&n| n >= 1).count();
     assert!(
-        joined >= 2,
-        "no replacement joined the survivor: {alongside:?}"
+        replaced,
+        "no replacement while the probe was held: {:?}",
+        stats.alongside()
     );
+
+    tokio::time::timeout(Duration::from_secs(10), handle)
+        .await
+        .expect("the download finishes once the probe is released")
+        .unwrap()
+        .unwrap();
     assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
 }
 

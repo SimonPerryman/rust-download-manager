@@ -46,7 +46,8 @@
 //! - `GET /seg-capped` — 503 for any request beyond 2 in flight (counted in
 //!   [`RouteStats::refused`]).
 //! - `GET /seg-capped-flaky` — `/seg-capped`, and the first ranged response it
-//!   lets in aborts mid-body.
+//!   lets in aborts mid-body; an unranged response holds after its first chunk
+//!   until released through [`TestServer::gate`].
 //! - `GET /seg-capped-drop` — `/seg-capped`, and every ranged response it lets
 //!   in aborts after [`FixtureConfig::seg_abort_after`] chunks.
 //! - `GET /seg-drop`   — every ranged response aborts after
@@ -1068,6 +1069,7 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg) -> Response {
         _ => None,
     };
     let abort_alone = kind == Seg::FlakyTail;
+    let hold = (kind == Seg::CappedFlaky && !ranged).then(|| state.gate.enter());
 
     let mut builder = Response::builder()
         .status(status)
@@ -1097,6 +1099,7 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg) -> Response {
             delay,
             abort_after,
             abort_alone,
+            hold,
             guard,
         )
     };
@@ -1143,19 +1146,28 @@ fn paced_stream(data: Bytes, next_free: Arc<Mutex<tokio::time::Instant>>, guard:
 
 /// Stream `data` in [`SEG_CHUNK`]s, sleeping `delay` before each; with
 /// `abort_after`, error out after that many chunks (following [`ABORT_GRACE`],
-/// and with `abort_alone` only once no other response on the route streams).
+/// and with `abort_alone` only once no other response on the route streams);
+/// with `hold`, pause after the first chunk until that ticket is released.
 /// Counts yielded bytes and holds the in-flight slot until dropped.
 fn seg_stream(
     data: Bytes,
     delay: Duration,
     abort_after: Option<usize>,
     abort_alone: bool,
+    hold: Option<GateTicket>,
     guard: InFlight,
 ) -> Body {
     let s = futures_util::stream::unfold(
-        (data, 0usize, 0usize, Some(guard)),
-        move |(data, offset, sent, guard)| async move {
+        (data, 0usize, 0usize, Some(guard), hold),
+        move |(data, offset, sent, guard, mut hold)| async move {
             let guard = guard?;
+            if sent >= 1 {
+                if let Some(ticket) = hold.take() {
+                    while !ticket.released() {
+                        tokio::time::sleep(GATED_TRICKLE).await;
+                    }
+                }
+            }
             if abort_after.is_some_and(|limit| sent >= limit) && offset < data.len() {
                 if abort_alone {
                     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
@@ -1168,7 +1180,7 @@ fn seg_stream(
                     std::io::ErrorKind::ConnectionReset,
                     "simulated mid-segment disconnect",
                 );
-                return Some((Err(err), (data, offset, sent, None)));
+                return Some((Err(err), (data, offset, sent, None, None)));
             }
             if offset >= data.len() {
                 return None;
@@ -1182,7 +1194,7 @@ fn seg_stream(
                 .0
                 .body_bytes
                 .fetch_add(chunk.len() as u64, Ordering::SeqCst);
-            Some((Ok(chunk), (data, end, sent + 1, Some(guard))))
+            Some((Ok(chunk), (data, end, sent + 1, Some(guard), hold)))
         },
     );
     Body::from_stream(s)

@@ -433,8 +433,7 @@ pub(crate) async fn run(
                                 // `settle_at`; without the clamp each refusal's
                                 // replacement would run straight into the cap.
                                 if severity == Severity::Cap {
-                                    let live = live.max(1);
-                                    cap = Some(cap.map_or(live, |c| c.min(live)));
+                                    cap = lower_cap(cap, live);
                                 }
                                 shared.pool.set_target(capped(ramp.target(), cap));
                             }
@@ -598,6 +597,13 @@ impl Severity {
 
 fn capped(target: u8, cap: Option<u8>) -> u8 {
     cap.map_or(target, |c| target.min(c))
+}
+
+/// Record a connection cap hit with `live` connections still served; a cap
+/// only ever tightens within an attempt.
+fn lower_cap(cap: Option<u8>, live: u8) -> Option<u8> {
+    let live = live.max(1);
+    Some(cap.map_or(live, |c| c.min(live)))
 }
 
 /// A worker: repeatedly claim a segment (queued, else stolen) and fetch it,
@@ -1016,6 +1022,17 @@ mod tests {
         // Among rate limits the longest wait wins.
         assert!(of(after(429, 30), true) > of(after(429, 5), true));
         assert!(of(after(429, 5), true) > of(Error::Status(429), true));
+    }
+
+    #[test]
+    fn a_cap_outlasts_later_ramp_targets_and_only_tightens() {
+        assert_eq!(capped(4, None), 4, "no cap leaves the ramp alone");
+        let cap = lower_cap(None, 2);
+        assert_eq!(capped(4, cap), 2, "a later ramp tick can't lift the cap");
+        let cap = lower_cap(cap, 3);
+        assert_eq!(cap, Some(2), "a later cap at 3 doesn't raise it");
+        assert_eq!(capped(4, cap), 2);
+        assert_eq!(capped(1, cap), 1, "the ramp can still go lower");
     }
 
     #[test]
