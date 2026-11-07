@@ -27,6 +27,7 @@ import {
   waitForGone,
   waitForPartBytes,
   waitForStatus,
+  waitForText,
 } from "../helpers";
 
 /** Whether the focused element matches `selector`. */
@@ -45,9 +46,7 @@ async function waitForNoPartial(part: string): Promise<void> {
 
 /** Restarts a stopped row with its labelled action and waits for bytes again. */
 async function restart(id: number, label: "Resume" | "Download again"): Promise<string> {
-  await expect(rowById(id).$(`button[aria-label="${label}"]`)).toHaveText(label, {
-    containing: true,
-  });
+  await waitForText(`${rowSelector(id)} button[aria-label="${label}"]`, label);
   await clickRowAction(id, label);
   await waitForStatus(id, "downloading");
   return waitForPartBytes(id);
@@ -99,7 +98,19 @@ describe("rdm GUI stop dialog", () => {
     // Keep choice, Cancel, Stop, then round to the Keep choice again; and back.
     for (let i = 0; i < 3; i++) await browser.keys(Key.Tab);
     expect(await activeIs('input[name="stop-mode"][value="keep"]')).toBe(true);
-    await browser.keys([Key.Shift, Key.Tab]);
+    // Shift+Tab as a key event, not browser.keys([Key.Shift, Key.Tab]):
+    // on the Linux CI job (WebKitGTK's driver) the chord moved focus forward.
+    // From the first stop, the trap itself moves focus, so this still checks it.
+    await browser.execute(() =>
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Tab",
+          shiftKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
     expect(await activeIs(`${STOP_DIALOG} button.btn-primary`)).toBe(true);
 
     await browser.keys(Key.Escape);

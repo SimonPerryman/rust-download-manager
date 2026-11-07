@@ -64,6 +64,29 @@ export async function waitForGone(selector: string, timeoutMsg?: string): Promis
 }
 
 /**
+ * Waits until the first `selector` match's text contains `text`. A fresh query
+ * each poll, and a thrown error means "not yet": a re-render can replace the
+ * element mid-check, and WebKitGTK's driver then keeps failing on the stale
+ * reference that `expect(el).toHaveText()` holds on to.
+ */
+export async function waitForText(
+  selector: string,
+  text: string,
+  timeoutMsg?: string,
+): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      try {
+        return (await $(selector).getText()).includes(text);
+      } catch {
+        return false;
+      }
+    },
+    { timeoutMsg: timeoutMsg ?? `${selector} never showed "${text}"` },
+  );
+}
+
+/**
  * Replaces a React-controlled input's text (and commits it with Enter unless
  * `enter` is false). Select-and-type rather than setValue: clearing without
  * an input event gets undone on the next render.

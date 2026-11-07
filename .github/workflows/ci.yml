@@ -191,7 +191,9 @@ jobs:
 
       - name: Run webview E2E (xvfb)
         working-directory: gui/e2e
-        run: xvfb-run -a pnpm test
+        # xvfb-run's default screen is 640x480, smaller than the app's
+        # 1200x760 default window; give it a desktop-sized screen.
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" pnpm test
 
   live-smoke:
     name: live smoke (network, on demand)

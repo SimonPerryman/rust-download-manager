@@ -26,7 +26,9 @@ import {
   shownIds,
   waitForAttr,
   waitForGone,
+  rowSelector,
   waitForStatus,
+  waitForText,
 } from "../helpers";
 
 const DONE_COUNT = 'button[data-testid="filter"][data-filter="done"] [data-testid="filter-count"]';
@@ -81,12 +83,11 @@ describe("rdm GUI finish moment", () => {
     await waitForAttr(a, "data-linger", "true");
     // The ~6 s success tint is running (checked well inside its hold).
     await expect(rowById(a)).toHaveElementClass("fresh");
-    const open = rowById(a).$('button[aria-label="Open"]');
-    await expect(open).toHaveText("Open", { containing: true });
+    await waitForText(`${rowSelector(a)} button[aria-label="Open"]`, "Open");
 
-    const card = $(notificationSelector(a));
-    await expect(card).toHaveText("Download finished", { containing: true });
-    await expect(card).toHaveText((await attr(a, "data-filename"))!, { containing: true });
+    const card = notificationSelector(a);
+    await waitForText(card, "Download finished");
+    await waitForText(card, (await attr(a, "data-filename"))!);
 
     await browser.waitUntil(async () => (await filterCount("done")) === doneBefore + 1, {
       timeoutMsg: `Done's count never went from ${doneBefore} to ${doneBefore + 1}`,

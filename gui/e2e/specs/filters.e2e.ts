@@ -20,6 +20,7 @@ import {
   setMaxConcurrent,
   shownIds,
   waitForStatus,
+  waitForText,
 } from "../helpers";
 
 const FILTERS: { key: string; title: string; statuses: string[] }[] = [
@@ -109,7 +110,7 @@ describe("rdm GUI filters", () => {
 
     for (const { key, title, statuses } of FILTERS) {
       await selectFilter(key);
-      await expect($("h1")).toHaveText(title, { containing: true });
+      await waitForText("h1", title);
       await browser.waitUntil(
         async () => {
           const shown = (await shownIds()).length;
