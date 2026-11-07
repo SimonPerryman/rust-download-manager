@@ -279,7 +279,7 @@ async fn checksum_mismatch_errors_and_leaves_no_target() {
     let req = DownloadRequest::to_path(server.url("/ranged"), &out).with_checksum(wrong);
     let err = download(&req, &Control::new(), |_| {}).await.unwrap_err();
 
-    assert!(matches!(err, Error::Integrity(_)), "got {err:?}");
+    assert!(matches!(err, Error::ChecksumMismatch(_)), "got {err:?}");
     assert!(
         !out.exists(),
         "a checksum failure must not create the target"

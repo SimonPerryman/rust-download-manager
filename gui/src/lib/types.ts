@@ -4,6 +4,16 @@
 
 export type Status = "queued" | "downloading" | "paused" | "completed" | "failed" | "cancelled";
 
+/** Where a download's checksum check stands; `pending` means a hash is running now. */
+export type ChecksumState = "none" | "pending" | "verified" | "mismatch";
+
+/** One byte range `[start, end)` of a download, of which `done` bytes are written. */
+export interface Segment {
+  start: number;
+  end: number;
+  done: number;
+}
+
 export interface DownloadSnapshot {
   id: number;
   url: string;
@@ -22,6 +32,16 @@ export interface DownloadSnapshot {
   limit: number | null;
   /** Live connections in use; 0 unless downloading. */
   connections: number;
+  /** Stopped with the partial file kept, so resuming continues it. */
+  partial_kept: boolean;
+  /** Expected checksum as `sha256:<hex>`, if one was given. */
+  checksum: string | null;
+  checksum_state: ChecksumState;
+  /**
+   * The whole segment tiling of the file; kept while paused, failed or stopped with the
+   * partial kept (also after a restart), and once done for this session only.
+   */
+  segments: Segment[];
 }
 
 /** Mirrors the engine's manager-wide `Settings` (see src/engine/store.rs). */

@@ -33,11 +33,13 @@ pub enum Status {
     Downloading,
     /// Paused by the user; `.part` + sidecar kept, resumable.
     Paused,
-    /// Finished and verified; the file is at `final_path`.
+    /// Finished and size-checked; the file is at `final_path`. Any checksum
+    /// result is in [`DownloadRecord::checksum_state`].
     Completed,
     /// Stopped with an error (e.g. HTTP status, integrity); retryable.
     Failed,
-    /// Cancelled by the user; partial data discarded.
+    /// Stopped by the user; partial data discarded unless it was kept
+    /// ([`DownloadRecord::partial_kept`]).
     Cancelled,
 }
 
@@ -52,6 +54,27 @@ impl Status {
     pub fn is_resumable(self) -> bool {
         matches!(self, Status::Paused | Status::Failed | Status::Cancelled)
     }
+
+    /// Whether the download has finished one way or another (completed,
+    /// failed or cancelled), so nothing is running or waiting for it.
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Status::Completed | Status::Failed | Status::Cancelled)
+    }
+}
+
+/// Where a download's checksum check stands.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChecksumState {
+    /// Not checked (no checksum, or the download hasn't finished).
+    #[default]
+    None,
+    /// A hash of the finished file is running right now.
+    Pending,
+    /// The finished file matched its checksum.
+    Verified,
+    /// The finished file didn't match its checksum.
+    Mismatch,
 }
 
 /// One download as persisted to the store.
@@ -101,6 +124,13 @@ pub struct DownloadRecord {
     /// Per-download speed cap in bytes/s; `None` is unlimited.
     #[serde(default)]
     pub limit: Option<u64>,
+    /// A cancelled download whose `.part` + sidecar were kept on disk, so
+    /// resuming it continues from them.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub partial_kept: bool,
+    /// Where the checksum check of the finished file stands.
+    #[serde(default)]
+    pub checksum_state: ChecksumState,
 }
 
 /// Manager-wide download settings, persisted with the download list.
@@ -260,6 +290,8 @@ mod tests {
             added_at: Some(1_700_000_000),
             finished_at: None,
             limit: None,
+            partial_kept: status == Status::Cancelled,
+            checksum_state: ChecksumState::None,
         }
     }
 
@@ -272,8 +304,13 @@ mod tests {
             version: SCHEMA_VERSION,
             next_id: 3,
             downloads: vec![
-                sample_record(1, Status::Completed),
+                DownloadRecord {
+                    checksum: Some("sha256:ab".into()),
+                    checksum_state: ChecksumState::Verified,
+                    ..sample_record(1, Status::Completed)
+                },
                 sample_record(2, Status::Paused),
+                sample_record(3, Status::Cancelled),
             ],
             settings: Settings {
                 max_concurrent: 5,
@@ -331,6 +368,8 @@ mod tests {
         assert_eq!(rec.checksum, None);
         assert!(!rec.target_provisional);
         assert_eq!(rec.limit, None);
+        assert!(!rec.partial_kept);
+        assert_eq!(rec.checksum_state, ChecksumState::None);
         assert_eq!(loaded.settings, Settings::default());
     }
 
@@ -371,6 +410,23 @@ mod tests {
     }
 
     #[test]
+    fn checksum_state_serializes_snake_case() {
+        for (state, json) in [
+            (ChecksumState::None, r#""none""#),
+            (ChecksumState::Pending, r#""pending""#),
+            (ChecksumState::Verified, r#""verified""#),
+            (ChecksumState::Mismatch, r#""mismatch""#),
+        ] {
+            assert_eq!(serde_json::to_string(&state).unwrap(), json);
+            assert_eq!(serde_json::from_str::<ChecksumState>(json).unwrap(), state);
+        }
+        // `partial_kept` is only written when set.
+        let json = serde_json::to_value(sample_record(1, Status::Paused)).unwrap();
+        assert!(json.get("partial_kept").is_none());
+        assert_eq!(json["checksum_state"], "none");
+    }
+
+    #[test]
     fn status_helpers() {
         assert!(Status::Downloading.is_running());
         assert!(Status::Queued.is_running());
@@ -379,5 +435,10 @@ mod tests {
         assert!(Status::Failed.is_resumable());
         assert!(Status::Cancelled.is_resumable());
         assert!(!Status::Completed.is_resumable());
+        assert!(Status::Completed.is_terminal());
+        assert!(Status::Failed.is_terminal());
+        assert!(Status::Cancelled.is_terminal());
+        assert!(!Status::Paused.is_terminal());
+        assert!(!Status::Queued.is_terminal());
     }
 }

@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "lint": "oxlint src e2e && node scripts/guard-e2e-webkit.mjs",
+    "lint": "oxlint src e2e && node scripts/guard-e2e-webkit.mjs && node scripts/guard-ci-pins.mjs",
     "format": "oxfmt src e2e",
     "format:check": "oxfmt --check src e2e",
     "test": "vitest run",

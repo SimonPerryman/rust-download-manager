@@ -36,7 +36,7 @@ pub use ramp::Ramping;
 pub use retry::RetryPolicy;
 pub use segment::Segment;
 pub use state::DownloadState;
-pub use store::{DownloadRecord, JsonStore, Settings, Status, Store, StoreData};
+pub use store::{ChecksumState, DownloadRecord, JsonStore, Settings, Status, Store, StoreData};
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -248,9 +248,12 @@ pub enum Error {
     /// The download was paused via its [`Control`]; `.part` + sidecar kept.
     #[error("download paused")]
     Paused,
-    /// The finished file failed a size or checksum check.
+    /// The finished file failed its size check.
     #[error("integrity check failed: {0}")]
     Integrity(String),
+    /// The finished file's digest doesn't match the expected checksum.
+    #[error("integrity check failed: {0}")]
+    ChecksumMismatch(String),
     /// A response body ended before its byte range did (transient: retried).
     #[error("incomplete response: {0}")]
     Incomplete(String),
@@ -264,6 +267,10 @@ pub enum Error {
         "partial download was saved by a newer rdm (sidecar version {0}); upgrade rdm to resume it"
     )]
     UnsupportedState(u32),
+    /// The caller asked for something the target download can't do now (e.g.
+    /// verify one that isn't completed).
+    #[error("invalid request: {0}")]
+    InvalidRequest(String),
 }
 
 /// Engine result alias.
@@ -738,6 +745,7 @@ async fn resume(
                         bytes_per_sec: 0.0,
                         eta: None,
                         connections: 0,
+                        segments: single_segment(offset, Some(total)),
                     });
                     return Ok((status.as_u16(), part.to_path_buf(), offset));
                 }
@@ -808,6 +816,7 @@ async fn stream_to_part(
         bytes_per_sec: 0.0,
         eta: None,
         connections: 1,
+        segments: single_segment(downloaded, total),
     });
 
     let mut stream = resp.bytes_stream();
@@ -842,11 +851,25 @@ async fn stream_to_part(
             bytes_per_sec,
             eta: progress::eta(downloaded, total, bytes_per_sec),
             connections: 1,
+            segments: single_segment(downloaded, total),
         });
     }
 
     file.flush().await?;
     Ok(downloaded)
+}
+
+/// A single connection's progress as one segment over the whole file, or none
+/// while the size is unknown.
+pub(crate) fn single_segment(downloaded: u64, total: Option<u64>) -> Vec<Segment> {
+    total
+        .map(|total| Segment {
+            start: 0,
+            end: total,
+            done: downloaded.min(total),
+        })
+        .into_iter()
+        .collect()
 }
 
 /// Verify the finished `.part` (size, then checksum), rename it to a
@@ -919,7 +942,9 @@ fn is_transient(err: &Error) -> bool {
         | Error::Cancelled
         | Error::Paused
         | Error::Integrity(_)
-        | Error::UnsupportedState(_) => false,
+        | Error::ChecksumMismatch(_)
+        | Error::UnsupportedState(_)
+        | Error::InvalidRequest(_) => false,
     }
 }
 
@@ -1051,7 +1076,9 @@ mod tests {
         assert!(!is_transient(&Error::Cancelled));
         assert!(!is_transient(&Error::Paused));
         assert!(!is_transient(&Error::Integrity("x".into())));
+        assert!(!is_transient(&Error::ChecksumMismatch("x".into())));
         assert!(!is_transient(&Error::UnsupportedState(3)));
+        assert!(!is_transient(&Error::InvalidRequest("x".into())));
     }
 
     #[test]

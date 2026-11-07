@@ -5,7 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { SettingsPatch } from "./settings";
-import type { DownloadSnapshot, Settings } from "./types";
+import type { DownloadSnapshot, Settings, Status } from "./types";
 
 /** One-shot snapshot of every download, in display order. */
 export const list = () => invoke<DownloadSnapshot[]>("list");
@@ -51,7 +51,19 @@ export const setLimit = (id: number, limit: string | null) =>
 
 export const pause = (id: number) => invoke<void>("pause", { id });
 export const resume = (id: number) => invoke<void>("resume", { id });
-export const cancel = (id: number) => invoke<void>("cancel", { id });
+/** Stop a download, keeping its partial file to resume later or deleting it. */
+export const stop = (id: number, keepPartial: boolean) => invoke<void>("stop", { id, keepPartial });
+/** Move a waiting download to `index` among the waiting ones. */
+export const moveQueued = (id: number, index: number) => invoke<void>("move_queued", { id, index });
+/** Remove finished downloads in `statuses` (only `ids`, if given). Resolves with the count. */
+export const clear = (statuses: Status[], ids?: number[] | null) =>
+  invoke<number>("clear", { statuses, ids: ids ?? null });
+/**
+ * Check a completed download against `checksum` (`sha256:<hex>` or bare hex);
+ * the result arrives as the snapshot's `checksum_state`. Rejects if it can't run.
+ */
+export const verifyChecksum = (id: number, checksum: string) =>
+  invoke<void>("verify_checksum", { id, checksum });
 export const remove = (id: number) => invoke<void>("remove", { id });
 export const pauseAll = () => invoke<void>("pause_all");
 

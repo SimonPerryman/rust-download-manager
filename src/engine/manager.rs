@@ -28,9 +28,10 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::Instrument;
 
-use crate::engine::store::{DownloadRecord, Settings, Status, Store, StoreData};
+use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Store, StoreData};
 use crate::engine::{
-    download, filename, state, Checksum, Control, DownloadRequest, Error, Progress, RateLimiter,
+    download, filename, single_segment, state, Checksum, Control, DownloadRequest, DownloadState,
+    Error, Progress, RateLimiter, Segment,
 };
 
 /// Minimum wall-clock gap between progress-driven snapshot publishes.
@@ -73,6 +74,17 @@ pub struct DownloadSnapshot {
     /// Connections open, including ones still connecting; zero unless
     /// actively downloading.
     pub connections: u8,
+    /// Stopped with its `.part` + sidecar kept, so resuming continues them.
+    pub partial_kept: bool,
+    /// The expected checksum as `"sha256:<hex>"`, if one was given.
+    pub checksum: Option<String>,
+    /// Where the checksum check of the finished file stands.
+    pub checksum_state: ChecksumState,
+    /// The byte ranges being fetched and how far each has got (the whole
+    /// tiling of the file); kept while paused, failed or stopped with the
+    /// partial kept (reloaded from the sidecar on restart), and once done for
+    /// this session only.
+    pub segments: Vec<Segment>,
 }
 
 /// Optional extras for [`Manager::add_with`].
@@ -104,9 +116,30 @@ struct Entry {
     limiter: Arc<RateLimiter>,
     live: Live,
     task: Option<JoinHandle<()>>,
+    /// The running task was asked to stop keeping its partial; it reports
+    /// back as a pause, which `finish` turns into a kept cancel.
+    stop_keeping: bool,
+    /// Bumped per [`Manager::verify_checksum`] call, so a superseded hash's
+    /// result is dropped.
+    verify_gen: u64,
+    /// The latest segment tiling; see [`DownloadSnapshot::segments`].
+    segments: Vec<Segment>,
 }
 
 impl Entry {
+    fn new(record: DownloadRecord, limiter: Arc<RateLimiter>) -> Self {
+        Self {
+            record,
+            control: Control::new(),
+            limiter,
+            live: Live::default(),
+            task: None,
+            stop_keeping: false,
+            verify_gen: 0,
+            segments: Vec::new(),
+        }
+    }
+
     fn snapshot(&self) -> DownloadSnapshot {
         DownloadSnapshot {
             id: self.record.id,
@@ -129,7 +162,29 @@ impl Entry {
             finished_at: self.record.finished_at,
             limit: self.record.limit,
             connections: self.live.connections,
+            partial_kept: self.record.partial_kept,
+            checksum: self.record.checksum.clone(),
+            checksum_state: self.record.checksum_state,
+            segments: self.segments.clone(),
         }
+    }
+
+    /// Mark this download stopped, its partial kept if there is one on disk.
+    fn cancel_keeping(&mut self) {
+        self.record.status = Status::Cancelled;
+        self.record.partial_kept = has_partial(&self.record);
+        self.record.finished_at = now_secs();
+    }
+
+    /// Discard this download's partial data and the progress it stood for.
+    /// With `shared`, another download owns the target's files, so they stay.
+    fn discard_partial(&mut self, shared: bool) {
+        if !shared {
+            remove_partial(&self.record);
+        }
+        self.record.partial_kept = false;
+        self.record.downloaded = 0;
+        self.segments.clear();
     }
 }
 
@@ -205,6 +260,7 @@ impl Inner {
             e.live.bytes_per_sec = p.bytes_per_sec;
             e.live.eta_secs = p.eta.map(|d| d.as_secs());
             e.live.connections = p.connections;
+            e.segments = p.segments;
         } else {
             return;
         }
@@ -284,11 +340,13 @@ impl Inner {
             return;
         }
         let st = &mut *self.state.lock().unwrap();
+        let shared = owned_elsewhere(st, id);
         let Some(e) = st.entries.get_mut(&id) else {
             return;
         };
         e.task = None;
         e.live = Live::default();
+        let stop_keeping = std::mem::take(&mut e.stop_keeping);
         match result {
             Ok(summary) => {
                 e.record.status = Status::Completed;
@@ -297,15 +355,35 @@ impl Inner {
                 e.record.final_path = Some(summary.path);
                 e.record.error = None;
                 e.record.finished_at = now_secs();
+                e.record.checksum_state = if e.record.checksum.is_some() {
+                    ChecksumState::Verified
+                } else {
+                    ChecksumState::None
+                };
             }
+            // A delete-stop landed after the task had already seen the pause.
+            Err(Error::Paused) if e.control.is_cancelled() => {
+                e.discard_partial(shared);
+                e.record.status = Status::Cancelled;
+                e.record.finished_at = now_secs();
+            }
+            Err(Error::Paused) if stop_keeping => e.cancel_keeping(),
             Err(Error::Paused) => {
                 e.record.status = Status::Paused;
             }
+            // The engine already removed `.part` + sidecar; this is a no-op
+            // sweep that also zeroes the progress they stood for.
             Err(Error::Cancelled) => {
+                e.discard_partial(shared);
                 e.record.status = Status::Cancelled;
                 e.record.finished_at = now_secs();
             }
             Err(other) => {
+                // Known-bad bytes: a retry must re-download, not re-finalize them.
+                if matches!(other, Error::ChecksumMismatch(_)) {
+                    e.record.checksum_state = ChecksumState::Mismatch;
+                    e.discard_partial(shared);
+                }
                 e.record.status = Status::Failed;
                 e.record.error = Some(crate::engine::error_detail(&other));
                 e.record.finished_at = now_secs();
@@ -315,15 +393,40 @@ impl Inner {
         self.persist(st);
         self.publish(st);
     }
+
+    /// A [`Manager::verify_checksum`] hash has ended: `Ok(matched)`, or an I/O
+    /// error if the file became unreadable mid-hash.
+    fn finish_verify(&self, id: u64, generation: u64, result: std::io::Result<bool>) {
+        if self.closed.load(Ordering::SeqCst) {
+            return;
+        }
+        let st = &mut *self.state.lock().unwrap();
+        let Some(e) = st.entries.get_mut(&id) else {
+            return;
+        };
+        if e.verify_gen != generation {
+            return;
+        }
+        e.record.checksum_state = match result {
+            Ok(true) => ChecksumState::Verified,
+            Ok(false) => ChecksumState::Mismatch,
+            Err(err) => {
+                tracing::warn!(id, error = %err, "checksum verification could not read the file");
+                ChecksumState::None
+            }
+        };
+        self.persist(st);
+        self.publish(st);
+    }
 }
 
 /// Coordinates many concurrent downloads over the engine's [`download`].
 ///
 /// Cheap to clone-by-`Arc` internally; a frontend holds one `Manager` and
 /// drives it with [`add`](Manager::add), [`pause`](Manager::pause),
-/// [`resume`](Manager::resume), [`cancel`](Manager::cancel) and
-/// [`remove`](Manager::remove), tunes it with the [`Settings`] setters, and
-/// observes via [`subscribe`](Manager::subscribe) or
+/// [`resume`](Manager::resume), [`stop`](Manager::stop),
+/// [`remove`](Manager::remove) and the like, tunes it with the [`Settings`]
+/// setters, and observes via [`subscribe`](Manager::subscribe) or
 /// [`snapshot`](Manager::snapshot).
 pub struct Manager {
     inner: Arc<Inner>,
@@ -334,7 +437,8 @@ impl Manager {
     /// and restore any previously persisted downloads. Downloads that were
     /// mid-flight at the last shutdown are restored as [`Status::Paused`]
     /// (resumable) rather than auto-resumed, so launching the app never kicks
-    /// off surprise network activity.
+    /// off surprise network activity. A checksum hash cut short by the
+    /// shutdown is restored as unchecked.
     ///
     /// Taking an explicit [`tokio::runtime::Handle`] (instead of relying on an
     /// ambient runtime) lets the manager be driven from a synchronous caller
@@ -353,26 +457,33 @@ impl Manager {
             if rec.status.is_running() {
                 rec.status = Status::Paused;
             }
+            if rec.checksum_state == ChecksumState::Pending {
+                rec.checksum_state = ChecksumState::None;
+            }
             // The on-disk state is authoritative for how far we got (a
-            // multi-segment `.part` is pre-allocated, so not its length).
-            if !rec.target_provisional {
+            // multi-segment `.part` is pre-allocated, so not its length), but
+            // only for a record that owns it: a stopped one whose partial was
+            // deleted may share its target with a newer download.
+            let mut segments = Vec::new();
+            if owns_partial(&rec) {
                 if let Some(downloaded) = state::downloaded_bytes(&rec.target) {
                     rec.downloaded = downloaded;
                 }
+                segments = match DownloadState::load(&state::sidecar_path(&rec.target)) {
+                    Ok(DownloadState {
+                        segments: Some(segments),
+                        ..
+                    }) => segments,
+                    Ok(single) => single_segment(rec.downloaded, single.total),
+                    Err(_) => Vec::new(),
+                };
             }
             let limiter = Arc::new(RateLimiter::new(rec.limit));
             rec.limit = limiter.rate();
             order.push(rec.id);
-            entries.insert(
-                rec.id,
-                Entry {
-                    limiter,
-                    record: rec,
-                    control: Control::new(),
-                    live: Live::default(),
-                    task: None,
-                },
-            );
+            let mut entry = Entry::new(rec, limiter);
+            entry.segments = segments;
+            entries.insert(entry.record.id, entry);
         }
         let next_id = data.next_id.max(1);
         let settings = data.settings.clamped();
@@ -457,14 +568,10 @@ impl Manager {
             added_at: now_secs(),
             finished_at: None,
             limit: limiter.rate(),
+            partial_kept: false,
+            checksum_state: ChecksumState::None,
         };
-        let entry = Entry {
-            record,
-            control: Control::new(),
-            limiter,
-            live: Live::default(),
-            task: None,
-        };
+        let entry = Entry::new(record, limiter);
 
         st.order.push(id);
         st.entries.insert(id, entry);
@@ -493,58 +600,173 @@ impl Manager {
         }
     }
 
-    /// Start, resume, or retry a download: resumes a paused one from its
-    /// `.part`, retries a failed one, or restarts a cancelled one from scratch.
-    /// It rejoins the queue, starting now if a slot is free. No-op if it's
-    /// already running, queued or completed.
+    /// Start, resume, or retry a download: resumes a paused one (or one
+    /// stopped with its partial kept) from its `.part`, retries a failed one,
+    /// or restarts a cancelled one from scratch. A restart whose partial was
+    /// deleted moves to a free name (e.g. `name (1).ext`) if another download
+    /// has since claimed its target. It rejoins the queue, starting now if a
+    /// slot is free. No-op if it's already running, queued or completed.
     pub fn resume(&self, id: u64) {
         let st = &mut *self.inner.state.lock().unwrap();
+        // A row that owns nothing on disk may have had its target claimed by a
+        // newer download since; restarting onto it would share one `.part`.
+        let retarget = st
+            .entries
+            .get(&id)
+            .filter(|e| !e.record.target_provisional && !owns_partial(&e.record))
+            .map(|e| unique_target(st, e.record.target.clone()));
         let Some(e) = st.entries.get_mut(&id) else {
             return;
         };
         if e.task.is_some() || !e.record.status.is_resumable() {
             return;
         }
+        if let Some(target) = retarget {
+            e.record.target = target;
+        }
         e.record.status = Status::Queued;
         e.record.error = None;
         e.record.finished_at = None;
+        e.record.partial_kept = false;
+        e.record.checksum_state = ChecksumState::None;
         self.inner.schedule(st);
         self.inner.persist(st);
         self.inner.publish(st);
     }
 
     /// Cancel a running, queued or paused download and discard its partial
-    /// data. No-op for downloads that have already finished.
+    /// data; the same as [`stop`](Self::stop) with `keep_partial = false`.
     pub fn cancel(&self, id: u64) {
+        self.stop(id, false);
+    }
+
+    /// Stop a running, queued or paused download as [`Status::Cancelled`].
+    /// With `keep_partial` its `.part` + sidecar stay on disk and
+    /// [`resume`](Self::resume) continues from them; without, they're deleted
+    /// (also for a download stopped earlier with its partial kept). No-op once
+    /// completed or failed.
+    pub fn stop(&self, id: u64, keep_partial: bool) {
         let st = &mut *self.inner.state.lock().unwrap();
+        let shared = owned_elsewhere(st, id);
         let Some(e) = st.entries.get_mut(&id) else {
             return;
         };
         if e.task.is_some() {
-            // The live task observes the cancel, removes `.part` + sidecar
-            // itself, and reports back through `finish`.
-            e.control.cancel();
+            // A pause makes the live task flush and checkpoint (`finish` turns
+            // it into a kept cancel); a cancel makes it remove `.part` + sidecar
+            // itself. Either way it reports back through `finish`.
+            e.stop_keeping = keep_partial;
+            if keep_partial {
+                e.control.pause();
+            } else {
+                e.control.cancel();
+            }
             return;
         }
         match e.record.status {
+            Status::Queued | Status::Paused if keep_partial => e.cancel_keeping(),
             // No task to observe it: discard the partial here and now (a
             // resumed-then-queued download may own a `.part`).
             Status::Queued | Status::Paused => {
-                remove_partial(&e.record);
+                e.discard_partial(shared);
                 e.record.status = Status::Cancelled;
-                e.record.downloaded = 0;
                 e.record.finished_at = now_secs();
-                self.inner.schedule(st);
-                self.inner.persist(st);
-                self.inner.publish(st);
             }
-            Status::Downloading | Status::Completed | Status::Failed | Status::Cancelled => {}
+            Status::Cancelled if !keep_partial && e.record.partial_kept => {
+                e.discard_partial(shared);
+            }
+            Status::Downloading | Status::Completed | Status::Failed | Status::Cancelled => return,
         }
+        self.inner.schedule(st);
+        self.inner.persist(st);
+        self.inner.publish(st);
+    }
+
+    /// Move a waiting (queued, not yet started) download to position `index`
+    /// among the waiting ones (clamped to the last): the order they start in.
+    /// Persists. No-op for any other download.
+    pub fn move_queued(&self, id: u64, index: usize) {
+        let st = &mut *self.inner.state.lock().unwrap();
+        let entries = &st.entries;
+        let waiting = |id: u64| {
+            entries
+                .get(&id)
+                .is_some_and(|e| e.record.status == Status::Queued && e.task.is_none())
+        };
+        if !waiting(id) {
+            return;
+        }
+        move_among(&mut st.order, waiting, id, index);
+        self.inner.persist(st);
+        self.inner.publish(st);
+    }
+
+    /// Remove every finished (completed, failed or cancelled) download whose
+    /// status is in `statuses` and, with `only`, whose id is listed; files are
+    /// treated as by [`remove`](Self::remove). Returns how many were removed.
+    pub fn clear(&self, statuses: &[Status], only: Option<&[u64]>) -> usize {
+        let st = &mut *self.inner.state.lock().unwrap();
+        let doomed: HashSet<u64> = st
+            .entries
+            .values()
+            .filter(|e| e.record.status.is_terminal() && statuses.contains(&e.record.status))
+            .filter(|e| only.is_none_or(|ids| ids.contains(&e.record.id)))
+            .map(|e| e.record.id)
+            .collect();
+        if doomed.is_empty() {
+            return 0;
+        }
+        st.order.retain(|id| !doomed.contains(id));
+        for id in &doomed {
+            if let Some(e) = st.entries.remove(id) {
+                discard_files(st, &e.record);
+            }
+        }
+        self.inner.persist(st);
+        self.inner.publish(st);
+        doomed.len()
+    }
+
+    /// Hash a completed download's file against `checksum`, off the async
+    /// runtime: the snapshot's `checksum_state` goes `pending`, then `verified`
+    /// or `mismatch`. Errors unless `id` is completed and its file is on disk.
+    pub fn verify_checksum(&self, id: u64, checksum: Checksum) -> crate::engine::Result<()> {
+        let st = &mut *self.inner.state.lock().unwrap();
+        let e = st
+            .entries
+            .get_mut(&id)
+            .ok_or_else(|| Error::InvalidRequest(format!("no download with id {id}")))?;
+        if e.record.status != Status::Completed {
+            return Err(Error::InvalidRequest(format!(
+                "download {id} hasn't completed"
+            )));
+        }
+        let path = e
+            .record
+            .final_path
+            .clone()
+            .filter(|p| p.is_file())
+            .ok_or_else(|| {
+                Error::InvalidRequest(format!("download {id}'s file is no longer on disk"))
+            })?;
+        e.record.checksum = Some(checksum.to_string());
+        e.record.checksum_state = ChecksumState::Pending;
+        e.verify_gen += 1;
+        let generation = e.verify_gen;
+        self.inner.persist(st);
+        self.inner.publish(st);
+
+        let inner = self.inner.clone();
+        self.inner.handle.spawn_blocking(move || {
+            let matched = checksum.digest_file(&path).map(|hex| hex == checksum.hex);
+            inner.finish_verify(id, generation, matched);
+        });
+        Ok(())
     }
 
     /// Remove a download from the list entirely. Any running task is stopped
-    /// and partial data discarded; a completed download's finished file is left
-    /// on disk untouched.
+    /// and partial data discarded unless [`stop`](Self::stop) kept it; a
+    /// completed download's finished file is left on disk untouched.
     pub fn remove(&self, id: u64) {
         let st = &mut *self.inner.state.lock().unwrap();
         let Some(e) = st.entries.remove(&id) else {
@@ -554,9 +776,7 @@ impl Manager {
         if let Some(task) = e.task {
             task.abort();
         }
-        if e.record.status != Status::Completed {
-            remove_partial(&e.record);
-        }
+        discard_files(st, &e.record);
         self.inner.schedule(st);
         self.inner.persist(st);
         self.inner.publish(st);
@@ -707,16 +927,16 @@ fn request_for(
     req.with_connections(connections)
 }
 
-/// Choose a target path that no other *active* download and no file on disk is
-/// already using, so concurrent `.part` files never collide. Mirrors the
-/// `name (1).ext` scheme the engine uses at finalize. Provisional targets own
-/// nothing on disk, so they never block a name.
+/// Choose a target path that no download owning its partial (see
+/// [`owns_partial`]) and no file on disk is already using, so concurrent
+/// `.part` files never collide. Mirrors the `name (1).ext` scheme the engine
+/// uses at finalize. Provisional targets own nothing on disk, so they never
+/// block a name.
 fn unique_target(st: &ManagerState, base: PathBuf) -> PathBuf {
     let active: HashSet<&Path> = st
         .entries
         .values()
-        .filter(|e| !e.record.target_provisional)
-        .filter(|e| e.record.status.is_running() || e.record.status == Status::Paused)
+        .filter(|e| owns_partial(&e.record))
         .map(|e| e.record.target.as_path())
         .collect();
 
@@ -749,6 +969,71 @@ fn unique_target(st: &ManagerState, base: PathBuf) -> PathBuf {
         }
     }
     unreachable!("the range is effectively unbounded")
+}
+
+/// Move `id` to position `index` (clamped) among the entries of `order` that
+/// are `waiting`, leaving every other entry where it is.
+fn move_among(order: &mut [u64], waiting: impl Fn(u64) -> bool, id: u64, index: usize) {
+    let (slots, mut ids): (Vec<usize>, Vec<u64>) = order
+        .iter()
+        .enumerate()
+        .filter(|&(_, &other)| waiting(other))
+        .map(|(slot, &other)| (slot, other))
+        .unzip();
+    let Some(from) = ids.iter().position(|&other| other == id) else {
+        return;
+    };
+    let moved = ids.remove(from);
+    ids.insert(index.min(ids.len()), moved);
+    for (slot, id) in slots.into_iter().zip(ids) {
+        order[slot] = id;
+    }
+}
+
+/// The files rule shared by `remove` and `clear`: a completed download's file
+/// stays, as does a partial the user chose to keep; any other partial the
+/// record owns goes, unless another download in `st` owns the same target.
+fn discard_files(st: &ManagerState, record: &DownloadRecord) {
+    let shared = owned_by_other(st, record.id, &record.target);
+    if owns_partial(record) && !record.partial_kept && !shared {
+        remove_partial(record);
+    }
+}
+
+/// Whether a record has a claim on its target's `.part` + sidecar: it is
+/// running, waiting, paused, failed with its partial left for a retry, or
+/// stopped with its partial kept. Completed, deleted-stopped and
+/// checksum-mismatched (partial discarded) records own nothing, so their
+/// target may be reused by a newer download.
+fn owns_partial(record: &DownloadRecord) -> bool {
+    if record.target_provisional {
+        return false;
+    }
+    match record.status {
+        Status::Queued | Status::Downloading | Status::Paused => true,
+        Status::Failed => record.checksum_state != ChecksumState::Mismatch,
+        Status::Cancelled => record.partial_kept,
+        Status::Completed => false,
+    }
+}
+
+/// Whether some download other than `id` owns `target`'s partial.
+fn owned_by_other(st: &ManagerState, id: u64, target: &Path) -> bool {
+    st.entries
+        .values()
+        .any(|e| e.record.id != id && e.record.target == target && owns_partial(&e.record))
+}
+
+/// [`owned_by_other`] for download `id`'s own target (false if it's unknown).
+fn owned_elsewhere(st: &ManagerState, id: u64) -> bool {
+    st.entries
+        .get(&id)
+        .is_some_and(|e| owned_by_other(st, id, &e.record.target))
+}
+
+/// Whether a record owns a `.part` on disk (a provisional target owns none).
+fn has_partial(record: &DownloadRecord) -> bool {
+    !record.target_provisional && state::part_path(&record.target).exists()
 }
 
 /// Best-effort removal of a record's `.part`, `.rdm` sidecar and any stale
@@ -804,6 +1089,8 @@ mod tests {
             added_at: None,
             finished_at: None,
             limit,
+            partial_kept: false,
+            checksum_state: ChecksumState::None,
         }
     }
 
@@ -834,5 +1121,48 @@ mod tests {
             assert_eq!(e.limiter.rate(), want, "download {id}'s limiter");
             assert_eq!(e.snapshot().limit, want, "download {id}'s shown limit");
         }
+    }
+
+    /// A hash cut short by quitting can't still be running after a restart.
+    #[tokio::test]
+    async fn load_resets_a_pending_checksum() {
+        let pending = DownloadRecord {
+            status: Status::Completed,
+            checksum: Some("sha256:ab".into()),
+            checksum_state: ChecksumState::Pending,
+            ..record(1, None)
+        };
+        let verified = DownloadRecord {
+            id: 2,
+            checksum_state: ChecksumState::Verified,
+            ..pending.clone()
+        };
+        let data = StoreData {
+            next_id: 3,
+            downloads: vec![pending, verified],
+            ..StoreData::default()
+        };
+        let mgr = Manager::load(
+            Box::new(FixedStore(data)),
+            tokio::runtime::Handle::current(),
+        )
+        .unwrap();
+        let states: Vec<_> = mgr.snapshot().iter().map(|s| s.checksum_state).collect();
+        assert_eq!(states, [ChecksumState::None, ChecksumState::Verified]);
+    }
+
+    #[test]
+    fn move_among_permutes_only_the_waiting_entries() {
+        let waiting = |id: u64| id.is_multiple_of(2);
+        let moved = |id, index| {
+            let mut order = vec![1, 2, 3, 4, 5, 6, 8];
+            move_among(&mut order, waiting, id, index);
+            order
+        };
+        assert_eq!(moved(8, 0), [1, 8, 3, 2, 5, 4, 6]);
+        assert_eq!(moved(2, 2), [1, 4, 3, 6, 5, 2, 8]);
+        assert_eq!(moved(2, 99), [1, 4, 3, 6, 5, 8, 2], "clamped to the last");
+        assert_eq!(moved(6, 2), [1, 2, 3, 4, 5, 6, 8], "already there");
+        assert_eq!(moved(3, 0), [1, 2, 3, 4, 5, 6, 8], "not waiting");
     }
 }
