@@ -19,6 +19,10 @@ function snapshot(status: Status, connections: number): DownloadSnapshot {
     finished_at: null,
     limit: null,
     connections,
+    partial_kept: false,
+    checksum: null,
+    checksum_state: "none",
+    segments: [],
   };
 }
 

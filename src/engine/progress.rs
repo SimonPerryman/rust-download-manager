@@ -6,8 +6,10 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
+use crate::engine::Segment;
+
 /// A point-in-time view of a download, passed to the progress callback.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Progress {
     /// Bytes written to disk so far.
     pub downloaded: u64,
@@ -20,6 +22,11 @@ pub struct Progress {
     /// Connections open, including ones still connecting (they ramp up on a
     /// multi-segment download); 1 on the single-connection path.
     pub connections: u8,
+    /// The byte ranges this attempt is fetching and how far each has got: the
+    /// whole tiling of `[0, total)` (one range on a single connection; none
+    /// while the size is unknown). Work-stealing shows as a range's `end`
+    /// shrinking plus a new range appended.
+    pub segments: Vec<Segment>,
 }
 
 /// Sliding-window throughput estimator.

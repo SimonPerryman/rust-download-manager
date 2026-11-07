@@ -375,7 +375,11 @@ pub(crate) async fn run(
     let mut meter = SpeedMeter::new();
     let started = Instant::now();
     let report = |meter: &mut SpeedMeter, on_progress: &mut dyn FnMut(Progress)| {
-        let downloaded = shared.downloaded();
+        // One lock, so the readout and the segments always agree.
+        let (downloaded, segments) = {
+            let table = shared.table.lock().unwrap();
+            (table.done().min(total), table.segments.clone())
+        };
         let bytes_per_sec = meter.observe(started.elapsed(), downloaded);
         on_progress(Progress {
             downloaded,
@@ -383,6 +387,7 @@ pub(crate) async fn run(
             bytes_per_sec,
             eta: progress::eta(downloaded, Some(total), bytes_per_sec),
             connections: shared.pool.live(),
+            segments,
         });
     };
 

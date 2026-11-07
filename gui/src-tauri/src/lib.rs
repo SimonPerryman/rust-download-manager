@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use rdm::{AddOptions, Checksum, DownloadSnapshot, JsonStore, Manager, Settings};
+use rdm::{AddOptions, Checksum, DownloadSnapshot, JsonStore, Manager, Settings, Status};
 use tauri::{Emitter, Manager as _, State};
 use tauri_plugin_opener::OpenerExt;
 
@@ -126,10 +126,47 @@ fn resume(state: State<'_, AppState>, id: u64) {
     state.manager.resume(id);
 }
 
-/// Cancel a running or paused download, discarding its partial data.
+/// Stop a download, keeping its partial file to resume later or deleting it
+/// (also a partial kept by an earlier stop).
 #[tauri::command]
-fn cancel(state: State<'_, AppState>, id: u64) {
-    state.manager.cancel(id);
+fn stop(state: State<'_, AppState>, id: u64, keep_partial: bool) {
+    state.manager.stop(id, keep_partial);
+}
+
+/// Move a waiting download to `index` among the waiting ones.
+#[tauri::command]
+fn move_queued(state: State<'_, AppState>, id: u64, index: usize) {
+    state.manager.move_queued(id, index);
+}
+
+/// Remove the finished downloads in `statuses` (only those in `ids`, if
+/// given). Returns how many were removed.
+#[tauri::command]
+fn clear(state: State<'_, AppState>, statuses: Vec<Status>, ids: Option<Vec<u64>>) -> usize {
+    state.manager.clear(&statuses, ids.as_deref())
+}
+
+/// Check a completed download's file against `checksum`, given as
+/// `"sha256:<hex>"` or a bare 64-digit hex SHA-256. The result arrives in the
+/// snapshot's `checksum_state`.
+#[tauri::command]
+fn verify_checksum(state: State<'_, AppState>, id: u64, checksum: String) -> Result<(), String> {
+    let checksum = parse_sha256(&checksum)?;
+    state
+        .manager
+        .verify_checksum(id, checksum)
+        .map_err(|e| e.to_string())
+}
+
+/// Parse `"<algo>:<hex>"`, or a bare 64-digit hex string as SHA-256.
+fn parse_sha256(input: &str) -> Result<Checksum, String> {
+    let input = input.trim();
+    let bare = input.len() == 64 && input.bytes().all(|b| b.is_ascii_hexdigit());
+    if bare {
+        Checksum::from_str(&format!("sha256:{input}"))
+    } else {
+        Checksum::from_str(input)
+    }
 }
 
 /// Remove a download from the list entirely.
@@ -142,7 +179,7 @@ fn remove(state: State<'_, AppState>, id: u64) {
 #[tauri::command]
 fn pause_all(state: State<'_, AppState>) {
     for d in state.manager.snapshot() {
-        if matches!(d.status, rdm::Status::Downloading | rdm::Status::Queued) {
+        if matches!(d.status, Status::Downloading | Status::Queued) {
             state.manager.pause(d.id);
         }
     }
@@ -338,7 +375,10 @@ pub fn run() {
             set_limit,
             pause,
             resume,
-            cancel,
+            stop,
+            move_queued,
+            clear,
+            verify_checksum,
             remove,
             pause_all,
             default_download_dir,
@@ -353,6 +393,17 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn checksums_parse_prefixed_or_bare() {
+        let hex = "ab".repeat(32);
+        let prefixed = super::parse_sha256(&format!("sha256:{hex}")).unwrap();
+        let bare = super::parse_sha256(&format!("  {}  ", hex.to_uppercase())).unwrap();
+        assert_eq!(prefixed, bare);
+        assert_eq!(bare.to_string(), format!("sha256:{hex}"));
+        assert!(super::parse_sha256("abc").is_err());
+        assert!(super::parse_sha256("md5:abc").is_err());
+    }
 
     /// The log goes to a dated `rdm.YYYY-MM-DD.log` (daily rotation), not one
     /// ever-growing `rdm.log`.

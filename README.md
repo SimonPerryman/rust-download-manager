@@ -83,7 +83,9 @@ rdm https://example.com/big-file.zip --limit-rate 2M
 ```
 
 Ctrl-C pauses: rdm saves its progress, prints `Paused — run the same command
-again to resume`, and exits with code 130; a second Ctrl-C quits at once. With
+again to resume`, and exits with code 130; a second Ctrl-C quits at once. The
+partial download stays on disk as `<file>.part` plus a `<file>.rdm` sidecar; to
+discard it instead of resuming, delete both files. With
 `--checksum`, the final line says the checksum was verified, e.g.
 `Downloaded 1048576 bytes to archive.zip (sha256 verified)`.
 

@@ -356,7 +356,7 @@ function downloadingRow(d: DownloadSnapshot, limit: LimitEditor) {
           <IconButton title="Pause" onClick={() => api.pause(d.id)}>
             <Pause />
           </IconButton>
-          <IconButton title="Cancel" onClick={() => api.cancel(d.id)}>
+          <IconButton title="Cancel" onClick={() => api.stop(d.id, false)}>
             <X />
           </IconButton>
         </>
@@ -403,7 +403,7 @@ function pausedRow(d: DownloadSnapshot, limit: LimitEditor) {
           <IconButton title="Resume" onClick={() => api.resume(d.id)}>
             <Play />
           </IconButton>
-          <IconButton title="Cancel" onClick={() => api.cancel(d.id)}>
+          <IconButton title="Cancel" onClick={() => api.stop(d.id, false)}>
             <X />
           </IconButton>
         </>
@@ -439,7 +439,7 @@ function queuedRow(d: DownloadSnapshot, limit: LimitEditor) {
           <IconButton title="Pause" onClick={() => api.pause(d.id)}>
             <Pause />
           </IconButton>
-          <IconButton title="Cancel" onClick={() => api.cancel(d.id)}>
+          <IconButton title="Cancel" onClick={() => api.stop(d.id, false)}>
             <X />
           </IconButton>
         </>

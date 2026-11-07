@@ -2,16 +2,16 @@
 //!
 //! Size is always checked when the server gave a total. An optional
 //! [`Checksum`] (e.g. `sha256:<hex>`) is hashed and compared before the file is
-//! renamed into place, so a corrupt download is never promoted to the target.
+//! renamed into place, so a corrupt download is never promoted to the target;
+//! the same hashing core verifies an already-finished file on request.
 
 use std::fmt;
+use std::io::Read;
 use std::path::Path;
 use std::str::FromStr;
 
-use sha2::{Digest, Sha256};
-use tokio::io::AsyncReadExt;
-
 use crate::engine::Error;
+use sha2::{Digest, Sha256};
 
 /// A supported checksum algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,11 +66,15 @@ impl fmt::Display for Checksum {
 }
 
 impl Checksum {
-    /// Hash `path` and return an error if the digest doesn't match.
+    /// Hash `path` and return [`Error::ChecksumMismatch`] if the digest doesn't
+    /// match. Hashes on the blocking pool, off the async runtime.
     pub async fn verify(&self, path: &Path) -> crate::engine::Result<()> {
-        let actual = self.hash_file(path).await?;
+        let (checksum, path) = (self.clone(), path.to_path_buf());
+        let actual = tokio::task::spawn_blocking(move || checksum.digest_file(&path))
+            .await
+            .map_err(std::io::Error::other)??;
         if actual != self.hex {
-            return Err(Error::Integrity(format!(
+            return Err(Error::ChecksumMismatch(format!(
                 "{} mismatch: expected {}, got {}",
                 self.algo.name(),
                 self.hex,
@@ -80,14 +84,16 @@ impl Checksum {
         Ok(())
     }
 
-    async fn hash_file(&self, path: &Path) -> crate::engine::Result<String> {
-        let mut file = tokio::fs::File::open(path).await?;
+    /// The lowercase hex digest of `path` under this checksum's algorithm.
+    /// Synchronous and blocking: callers run it via `spawn_blocking`.
+    pub fn digest_file(&self, path: &Path) -> std::io::Result<String> {
+        let mut file = std::fs::File::open(path)?;
         let mut buf = vec![0u8; 64 * 1024];
         match self.algo {
             Algo::Sha256 => {
                 let mut hasher = Sha256::new();
                 loop {
-                    let n = file.read(&mut buf).await?;
+                    let n = file.read(&mut buf)?;
                     if n == 0 {
                         break;
                     }
@@ -157,7 +163,10 @@ mod tests {
 
         let bad: Checksum = "sha256:deadbeef".parse().unwrap();
         let err = bad.verify(&path).await.unwrap_err();
-        assert!(matches!(err, Error::Integrity(_)), "got {err:?}");
+        assert!(matches!(err, Error::ChecksumMismatch(_)), "got {err:?}");
+        assert!(err
+            .to_string()
+            .starts_with("integrity check failed: sha256 mismatch"));
     }
 
     #[test]
