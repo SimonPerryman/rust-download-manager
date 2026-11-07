@@ -85,6 +85,10 @@ pub struct DownloadSnapshot {
     /// partial kept (reloaded from the sidecar on restart), and once done for
     /// this session only.
     pub segments: Vec<Segment>,
+    /// Milliseconds spent running (not waiting or paused) since it last
+    /// started from zero bytes, so a frontend can say how long it took; `None`
+    /// when unknown (an older build's record, or a run cut short by a crash).
+    pub active_ms: Option<u64>,
 }
 
 /// Optional extras for [`Manager::add_with`].
@@ -124,6 +128,8 @@ struct Entry {
     verify_gen: u64,
     /// The latest segment tiling; see [`DownloadSnapshot::segments`].
     segments: Vec<Segment>,
+    /// When the running task started, for [`DownloadRecord::active_ms`].
+    started: Option<Instant>,
 }
 
 impl Entry {
@@ -137,6 +143,7 @@ impl Entry {
             stop_keeping: false,
             verify_gen: 0,
             segments: Vec::new(),
+            started: None,
         }
     }
 
@@ -166,7 +173,14 @@ impl Entry {
             checksum: self.record.checksum.clone(),
             checksum_state: self.record.checksum_state,
             segments: self.segments.clone(),
+            active_ms: self.active_ms(),
         }
+    }
+
+    /// The recorded active time plus the running task's time so far.
+    fn active_ms(&self) -> Option<u64> {
+        let running = self.started.map_or(0, |t| millis(t.elapsed()));
+        self.record.active_ms.map(|ms| ms.saturating_add(running))
     }
 
     /// Mark this download stopped, its partial kept if there is one on disk.
@@ -207,7 +221,7 @@ struct Inner {
     /// than relying on an ambient runtime) so the manager works when driven
     /// from a non-async caller, e.g. a GUI's synchronous command handler.
     handle: tokio::runtime::Handle,
-    /// Set true once dropped, so late task callbacks become no-ops.
+    /// Set by [`Manager::shutdown`] or drop, so late task callbacks become no-ops.
     closed: AtomicBool,
     /// Shared by every download; unlimited until a global limit is set.
     global: Arc<RateLimiter>,
@@ -253,6 +267,12 @@ impl Inner {
         }
         let st = &mut *self.state.lock().unwrap();
         if let Some(e) = st.entries.get_mut(&id) {
+            // The engine threw the partial away and started over (e.g. the
+            // server ignored the resume range), so the clock starts over too.
+            if p.downloaded < e.record.downloaded {
+                e.record.active_ms = Some(0);
+                e.started = Some(Instant::now());
+            }
             e.record.downloaded = p.downloaded;
             if p.total.is_some() {
                 e.record.total = p.total;
@@ -330,6 +350,10 @@ impl Inner {
             let control = Control::new().with_limiters([e.limiter.clone(), self.global.clone()]);
             e.control = control.clone();
             e.record.status = Status::Downloading;
+            if e.record.downloaded == 0 {
+                e.record.active_ms = Some(0);
+            }
+            e.started = Some(Instant::now());
             e.task = Some(spawn_task(self.clone(), &e.record, control, connections));
         }
     }
@@ -346,6 +370,8 @@ impl Inner {
         };
         e.task = None;
         e.live = Live::default();
+        e.record.active_ms = e.active_ms();
+        e.started = None;
         let stop_keeping = std::mem::take(&mut e.stop_keeping);
         match result {
             Ok(summary) => {
@@ -437,8 +463,10 @@ impl Manager {
     /// and restore any previously persisted downloads. Downloads that were
     /// mid-flight at the last shutdown are restored as [`Status::Paused`]
     /// (resumable) rather than auto-resumed, so launching the app never kicks
-    /// off surprise network activity. A checksum hash cut short by the
-    /// shutdown is restored as unchecked.
+    /// off surprise network activity; one still downloading (the process
+    /// ended without [`shutdown`](Self::shutdown)) has its active time marked
+    /// unknown. A checksum hash cut short by the shutdown is restored as
+    /// unchecked.
     ///
     /// Taking an explicit [`tokio::runtime::Handle`] (instead of relying on an
     /// ambient runtime) lets the manager be driven from a synchronous caller
@@ -455,6 +483,11 @@ impl Manager {
             // A download that was running at shutdown has no task now; restore
             // it paused so the user can resume it deliberately.
             if rec.status.is_running() {
+                // Still marked running: the process died mid-run (a quit
+                // would have saved it paused), so that run's time is unknown.
+                if rec.status == Status::Downloading {
+                    rec.active_ms = None;
+                }
                 rec.status = Status::Paused;
             }
             if rec.checksum_state == ChecksumState::Pending {
@@ -573,6 +606,7 @@ impl Manager {
             limit: limiter.rate(),
             partial_kept: false,
             checksum_state: ChecksumState::None,
+            active_ms: Some(0),
         };
         let entry = Entry::new(record, limiter);
 
@@ -783,6 +817,26 @@ impl Manager {
         self.inner.schedule(st);
         self.inner.persist(st);
         self.inner.publish(st);
+    }
+
+    /// Stop every running download ahead of the process exiting, recording
+    /// each one's active time and saving it as paused, so a quit doesn't
+    /// lose the time the way a crash does. Call it last: no download starts or
+    /// reports progress afterwards.
+    pub fn shutdown(&self) {
+        self.inner.closed.store(true, Ordering::SeqCst);
+        let st = &mut *self.inner.state.lock().unwrap();
+        for e in st.entries.values_mut() {
+            if let Some(task) = e.task.take() {
+                task.abort();
+            }
+            e.record.active_ms = e.active_ms();
+            e.started = None;
+            if e.record.status == Status::Downloading {
+                e.record.status = Status::Paused;
+            }
+        }
+        self.inner.persist(st);
     }
 
     /// A one-shot snapshot of every download, in display order.
@@ -1052,6 +1106,11 @@ fn remove_partial(record: &DownloadRecord) {
     state::remove_stale_temps(&sidecar);
 }
 
+/// `d` in whole milliseconds, saturating.
+fn millis(d: Duration) -> u64 {
+    u64::try_from(d.as_millis()).unwrap_or(u64::MAX)
+}
+
 /// Current Unix-epoch seconds, or `None` if the clock is before the epoch.
 fn now_secs() -> Option<u64> {
     SystemTime::now()
@@ -1109,6 +1168,7 @@ mod tests {
             limit,
             partial_kept: false,
             checksum_state: ChecksumState::None,
+            active_ms: None,
         }
     }
 

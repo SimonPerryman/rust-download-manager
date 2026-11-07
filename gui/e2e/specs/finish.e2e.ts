@@ -106,9 +106,17 @@ describe("rdm GUI finish moment", () => {
     await clickRowAction(a, "Open");
     await waitForAttr(a, "data-linger", null);
     await expectOpened(a);
-    // Back to the quiet done state: Open is an icon button now.
+    // Back to the quiet done state: Open is an icon button now. Checked on the
+    // DOM (textContent), not getText(), which WebKitGTK's driver reads unreliably.
     await browser.waitUntil(
-      async () => (await rowById(a).$('button[aria-label="Open"]').getText()).trim() === "",
+      async () => {
+        try {
+          const text = await rowById(a).$('button[aria-label="Open"]').getProperty("textContent");
+          return String(text).trim() === "";
+        } catch {
+          return false;
+        }
+      },
       { timeoutMsg: `download ${a}'s Open button kept its text label` },
     );
   });

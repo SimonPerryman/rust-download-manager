@@ -485,8 +485,14 @@ pub fn run() {
             open_download,
             reveal_download,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running rdm GUI");
+        .build(tauri::generate_context!())
+        .expect("error while building rdm GUI")
+        .run(|app, event| {
+            // Record running downloads' time before the process goes.
+            if let tauri::RunEvent::Exit = event {
+                app.state::<AppState>().manager.shutdown();
+            }
+        });
 }
 
 #[cfg(test)]

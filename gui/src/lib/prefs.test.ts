@@ -4,11 +4,14 @@ import indexHtml from "../../index.html?raw";
 import {
   applyPrefs,
   DEFAULT_PREFS,
+  loadPaneHeight,
   loadPrefs,
   loadUnopened,
+  PANE_HEIGHT_KEY,
   parsePrefs,
   PREFS_KEY,
   resolveTheme,
+  savePaneHeight,
   savePrefs,
   saveUnopened,
   UNOPENED_KEY,
@@ -110,6 +113,28 @@ describe("loadUnopened / saveUnopened", () => {
     expect(loadUnopened(undefined)).toEqual(new Set());
     expect(saveUnopened(new Set([1]), throwing)).toBe(false);
     expect(saveUnopened(new Set([1]), undefined)).toBe(false);
+  });
+});
+
+describe("loadPaneHeight / savePaneHeight", () => {
+  it("round-trips a whole number of pixels under its own key", () => {
+    const storage = memoryStorage();
+    expect(savePaneHeight(301.6, storage)).toBe(true);
+    expect(storage.data).toEqual({ [PANE_HEIGHT_KEY]: "302" });
+    expect(loadPaneHeight(storage)).toBe(302);
+  });
+
+  it("reads garbage, nothing or a non-positive value as no height", () => {
+    expect(loadPaneHeight(memoryStorage())).toBeNull();
+    expect(loadPaneHeight(memoryStorage({ [PANE_HEIGHT_KEY]: "tall" }))).toBeNull();
+    expect(loadPaneHeight(memoryStorage({ [PANE_HEIGHT_KEY]: "-5" }))).toBeNull();
+  });
+
+  it("survives storage that throws or is unavailable", () => {
+    expect(loadPaneHeight(throwing)).toBeNull();
+    expect(loadPaneHeight(undefined)).toBeNull();
+    expect(savePaneHeight(200, throwing)).toBe(false);
+    expect(savePaneHeight(200, undefined)).toBe(false);
   });
 });
 

@@ -1,5 +1,5 @@
-// Cosmetic GUI preferences (theme + row density) and the finish moment's
-// "not opened yet" ids, kept in localStorage. Pure apart from the
+// Cosmetic GUI preferences (theme + row density), the finish moment's
+// "not opened yet" ids and the details pane's height, kept in localStorage. Pure apart from the
 // storage/root handles passed in, so it is unit-testable.
 // The inline script in index.html mirrors `parsePrefs` + `applyPrefs` to apply
 // them before first paint; keep the two in step.
@@ -114,4 +114,30 @@ export function applyPrefs(prefs: Prefs, root: Root, systemDark: boolean): void 
   root.dataset.theme = prefs.theme;
   root.dataset.density = prefs.density;
   root.classList.toggle("dark", resolveTheme(prefs.theme, systemDark) === "dark");
+}
+
+/** The details pane's height in px, as the user last dragged it. */
+export const PANE_HEIGHT_KEY = "rdm.gui.paneHeight";
+
+export function loadPaneHeight(storage: ReadStorage | undefined = defaultStorage()): number | null {
+  try {
+    const n = Number(storage?.getItem(PANE_HEIGHT_KEY));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persists the pane height; returns false (and changes nothing) if storage is unavailable. */
+export function savePaneHeight(
+  px: number,
+  storage: WriteStorage | undefined = defaultStorage(),
+): boolean {
+  try {
+    if (!storage) return false;
+    storage.setItem(PANE_HEIGHT_KEY, String(Math.round(px)));
+    return true;
+  } catch {
+    return false;
+  }
 }
