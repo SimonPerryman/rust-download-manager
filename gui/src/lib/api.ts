@@ -66,6 +66,10 @@ export const verifyChecksum = (id: number, checksum: string) =>
   invoke<void>("verify_checksum", { id, checksum });
 export const remove = (id: number) => invoke<void>("remove", { id });
 export const pauseAll = () => invoke<void>("pause_all");
+/** Resume every paused download (stopped ones stay stopped). */
+export const resumeAll = () => invoke<void>("resume_all");
+/** Retry every failed download. */
+export const retryFailed = () => invoke<void>("retry_failed");
 
 export const defaultDownloadDir = () => invoke<string>("default_download_dir");
 export const pickFolder = () => invoke<string | null>("pick_folder");

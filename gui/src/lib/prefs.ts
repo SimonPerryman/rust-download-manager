@@ -1,7 +1,10 @@
-// Cosmetic GUI preferences (theme + row density), kept in localStorage. Pure
-// apart from the storage/root handles passed in, so it is unit-testable.
+// Cosmetic GUI preferences (theme + row density) and the finish moment's
+// "not opened yet" ids, kept in localStorage. Pure apart from the
+// storage/root handles passed in, so it is unit-testable.
 // The inline script in index.html mirrors `parsePrefs` + `applyPrefs` to apply
 // them before first paint; keep the two in step.
+
+import { parseIdList } from "./finish";
 
 export const THEMES = ["system", "light", "dark"] as const;
 export const DENSITIES = ["comfortable", "compact"] as const;
@@ -66,6 +69,31 @@ export function savePrefs(
   }
 }
 
+/** Ids of downloads that finished while the app watched and haven't been opened yet. */
+export const UNOPENED_KEY = "rdm.gui.unopened";
+
+export function loadUnopened(storage: ReadStorage | undefined = defaultStorage()): Set<number> {
+  try {
+    return new Set(parseIdList(storage?.getItem(UNOPENED_KEY) ?? null));
+  } catch {
+    return new Set();
+  }
+}
+
+/** Persists the unopened ids; returns false (and changes nothing) if storage is unavailable. */
+export function saveUnopened(
+  ids: Iterable<number>,
+  storage: WriteStorage | undefined = defaultStorage(),
+): boolean {
+  try {
+    if (!storage) return false;
+    storage.setItem(UNOPENED_KEY, JSON.stringify([...ids]));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function resolveTheme(theme: ThemePref, systemDark: boolean): "light" | "dark" {
   if (theme === "system") return systemDark ? "dark" : "light";
   return theme;
@@ -78,7 +106,8 @@ type Root = {
 
 /**
  * Stamps prefs onto the document root: `data-theme` / `data-density` record the
- * choice (density CSS keys off it), and the `.dark` class that Tailwind's
+ * choice (rows are a fixed 32 px until the density toggle returns, so nothing
+ * reads `data-density` yet), and the `.dark` class that Tailwind's
  * `dark:` variants and the dark palette key off reflects the resolved theme.
  */
 export function applyPrefs(prefs: Prefs, root: Root, systemDark: boolean): void {

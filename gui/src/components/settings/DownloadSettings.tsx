@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import * as api from "../lib/api";
-import { NO_LIMIT } from "../lib/rate";
+import * as api from "../../lib/api";
+import { NO_LIMIT } from "../../lib/rate";
 import {
   dirtyPatches,
   draftsFrom,
@@ -9,14 +9,24 @@ import {
   mergeApplied,
   type SettingsDrafts as Drafts,
   type SettingsField as Field,
-} from "../lib/settings";
-import type { Settings } from "../lib/types";
-import { RateInput } from "./RateInput";
+  type SettingsPatch,
+} from "../../lib/settings";
+import type { Settings } from "../../lib/types";
+import { RateInput } from "../RateInput";
+
+// Which field a single-field patch from `fieldPatch` / `dirtyPatches` sets.
+const fieldOf = (patch: SettingsPatch): Field =>
+  patch.maxConcurrent != null ? "concurrent" : patch.globalLimit != null ? "limit" : "connections";
 
 // The engine-backed "Downloads" section of the settings popover. Values are
 // read from the engine each time it mounts (the popover opens) and written
 // back on blur/Enter; the engine clamps and the field shows what it applied.
-export function DownloadSettings() {
+// `onApplied` passes each result on, so the status bar's limit follows.
+export function DownloadSettings({
+  onApplied,
+}: {
+  onApplied: (applied: Settings, fields: Field[]) => void;
+}) {
   const [saved, setSaved] = useState<Settings | null>(null);
   const [drafts, setDrafts] = useState<Drafts>({
     concurrent: "",
@@ -53,6 +63,7 @@ export function DownloadSettings() {
       setSaved((prev) => mergeApplied(prev, applied, [field]));
       setDrafts((d) => ({ ...d, [field]: draftsFrom(applied)[field] }));
       setErrors((e) => ({ ...e, [field]: undefined }));
+      onApplied(applied, [field]);
     } catch (e) {
       setErrors((prev) => ({ ...prev, [field]: String(e) }));
     }
@@ -61,14 +72,17 @@ export function DownloadSettings() {
   // Closing the popover unmounts this before a pending edit's blur can land,
   // so flush every pending edit on the way out (best effort), one call per
   // field so an invalid one can't take the others down with it.
-  const latest = useRef({ drafts, saved });
-  latest.current = { drafts, saved };
+  const latest = useRef({ drafts, saved, onApplied });
+  latest.current = { drafts, saved, onApplied };
   useEffect(
     () => () => {
-      const { drafts, saved } = latest.current;
+      const { drafts, saved, onApplied } = latest.current;
       if (!saved) return;
       for (const patch of dirtyPatches(drafts, saved)) {
-        api.setSettings(patch).catch(() => {});
+        api
+          .setSettings(patch)
+          .then((applied) => onApplied(applied, [fieldOf(patch)]))
+          .catch(() => {});
       }
     },
     [],
@@ -86,12 +100,12 @@ export function DownloadSettings() {
       onBlur={() => commit(field)}
       onKeyDown={(e) => e.key === "Enter" && commit(field)}
       inputMode="numeric"
-      className="flex h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-[13px] tabular-nums shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60 aria-[invalid]:border-red-500/70"
+      className="flex h-7 w-full rounded-md border border-line-strong bg-raised px-2 text-sm tabular-nums transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-none disabled:opacity-60 aria-[invalid]:border-danger"
     />
   );
 
   return (
-    <div className="space-y-2.5" data-testid="download-settings">
+    <div className="space-y-3" data-testid="download-settings">
       <SettingRow label="Max concurrent downloads" error={errors.concurrent}>
         {input("concurrent", "Max concurrent downloads")}
       </SettingRow>
@@ -140,13 +154,13 @@ function SettingRow({
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
-        <p className="px-0.5 text-[13px] text-foreground">{label}</p>
+        <p className="text-sm text-ink">{label}</p>
         <div className={`${wide ? "" : "w-24"} shrink-0`}>{children}</div>
       </div>
       {error ? (
-        <p className="mt-1 px-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>
+        <p className="mt-1 text-xs text-danger-ink">{error}</p>
       ) : (
-        hint && <p className="mt-1 px-0.5 text-xs text-muted-foreground">{hint}</p>
+        hint && <p className="mt-1 text-xs text-g400">{hint}</p>
       )}
     </div>
   );

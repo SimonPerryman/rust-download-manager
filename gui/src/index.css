@@ -2,99 +2,504 @@
 @tailwind components;
 @tailwind utilities;
 
-/* CSS-variable tokens ported verbatim from the approved mockup
-   (.ai-cache/mockups/slick.html): shadcn light/dark palettes with a single
-   blue `--brand` accent for primary actions and in-progress bars. */
+/* The Console palette, verbatim from .ai-cache/mockups/m5/d-combined.html.
+   Dark overrides key off the `.dark` class that prefs.ts and the inline script
+   in index.html put on <html>; "system" is already resolved to that class
+   before first paint, so there's no prefers-color-scheme block to fight an
+   explicit Light choice. */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
-    --radius: 0.5rem;
-    /* single accent color — shadcn-style blue */
-    --brand: 221 83% 53%;
-    --brand-foreground: 0 0% 100%;
-  }
-  .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
-    --brand: 217 91% 60%;
-    --brand-foreground: 0 0% 100%;
-  }
-  :root {
+    --ink: #1c1b19;
+    --g600: #5e5a53;
+    --g400: #9a958c;
+    --g300: #cbc7bf;
+    --g200: #e2dfd8;
+    --surface: #f7f6f3;
+    --sidebar: #efede8;
+    --raised: #ffffff;
+    --hover: rgba(28, 27, 25, 0.04);
+    --line: rgba(28, 27, 25, 0.08);
+    --line-strong: rgba(28, 27, 25, 0.14);
+    --track: #e7e4de;
+    --accent: #2b4acb;
+    --btn: #2b4acb;
+    --btn-h: #233eae;
+    --on-btn: #ffffff;
+    --fill: #2b4acb;
+    --primary-soft: #e8ecfa;
+    --primary-soft-h: #dce2f8;
+    --primary-ink: #2340ae;
+    --sel: #e9edfb;
+    --success: #1f8a5b;
+    --success-soft: #e1f1e8;
+    --success-ink: #15673f;
+    --warn: #b7791f;
+    --warn-soft: #f7eedc;
+    --warn-ink: #80530e;
+    --danger: #c0392b;
+    --danger-fill: #c0392b;
+    --danger-soft: #f8e5e2;
+    --danger-ink: #972b1f;
+    --muted-fill: #6f6a62;
+    --toast-bg: #1c1b19;
+    --toast-ink: #f7f6f3;
+    --toast-action: #a9b8f7;
+    --success-linger: rgba(31, 138, 91, 0.06);
+    --sh-raised: 0 1px 2px rgba(28, 27, 25, 0.1), 0 1px 4px rgba(28, 27, 25, 0.05);
+    --sh-pop: 0 2px 4px rgba(28, 27, 25, 0.1), 0 12px 32px rgba(28, 27, 25, 0.14);
+    --sh-dialog: 0 4px 8px rgba(28, 27, 25, 0.12), 0 24px 64px rgba(28, 27, 25, 0.24);
+    --backdrop: rgba(28, 27, 25, 0.32);
+    --drop-tint: rgba(43, 74, 203, 0.06);
+    --row-h: 32px;
     color-scheme: light;
   }
-  .dark {
+  :root.dark {
+    --ink: #eeece7;
+    --g600: #aba69c;
+    --g400: #7c786f;
+    --g300: #4b4842;
+    --g200: #35332f;
+    --surface: #181715;
+    --sidebar: #201f1c;
+    --raised: #26251f;
+    --hover: rgba(255, 255, 255, 0.04);
+    --line: rgba(255, 255, 255, 0.07);
+    --line-strong: rgba(255, 255, 255, 0.13);
+    --track: #2f2d29;
+    --accent: #8299f3;
+    --btn: #3d5ad6;
+    --btn-h: #4b67e0;
+    --on-btn: #ffffff;
+    --fill: #3d5ad6;
+    --primary-soft: rgba(130, 153, 243, 0.15);
+    --primary-soft-h: rgba(130, 153, 243, 0.22);
+    --primary-ink: #b0bff8;
+    --sel: rgba(130, 153, 243, 0.13);
+    --success: #45b884;
+    --success-soft: rgba(69, 184, 132, 0.13);
+    --success-ink: #82d5ae;
+    --warn: #e0a54a;
+    --warn-soft: rgba(224, 165, 74, 0.13);
+    --warn-ink: #eec47f;
+    --danger: #e2675a;
+    --danger-fill: #b8402f;
+    --danger-soft: rgba(226, 103, 90, 0.14);
+    --danger-ink: #f2a398;
+    --muted-fill: #5f5b54;
+    --toast-bg: #eeece7;
+    --toast-ink: #1c1b19;
+    --toast-action: #2b4acb;
+    --success-linger: rgba(69, 184, 132, 0.07);
+    --sh-raised: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.25);
+    --sh-pop: 0 2px 4px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+    --sh-dialog: 0 4px 8px rgba(0, 0, 0, 0.45), 0 24px 64px rgba(0, 0, 0, 0.6);
+    --backdrop: rgba(0, 0, 0, 0.55);
+    --drop-tint: rgba(130, 153, 243, 0.08);
     color-scheme: dark;
   }
 
-  /* Row density tokens (Tailwind `*-row-*` utilities), switched by
-     `data-density` on <html>. Comfortable is the mockup's original spacing. */
-  :root {
-    --row-px: 1.25rem;
-    --row-py: 1rem;
-    --row-gap: 1rem;
-    --row-icon: 2.25rem;
-    --row-glyph: 17px;
-    --row-action: 2rem;
-    --row-stack: 0.625rem;
-    --row-stack-sm: 0.375rem;
-    --row-note: 0.5rem;
-    --row-title: 0.875rem;
-    --row-title-lh: 1.25rem;
-    --row-meta: 0.75rem;
-    --row-meta-lh: 1rem;
-  }
-  [data-density="compact"] {
-    --row-px: 1rem;
-    --row-py: 0.5rem;
-    --row-gap: 0.75rem;
-    --row-icon: 1.75rem;
-    --row-glyph: 14px;
-    --row-action: 1.75rem;
-    --row-stack: 0.375rem;
-    --row-stack-sm: 0.25rem;
-    --row-note: 0.25rem;
-    --row-title: 0.8125rem;
-    --row-title-lh: 1.125rem;
-    --row-meta: 0.6875rem;
-    --row-meta-lh: 0.875rem;
-  }
-
   * {
-    border-color: hsl(var(--border));
+    border-color: var(--line);
   }
   body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* ---------- buttons: one solid primary per view, soft / ghost / link below it ---------- */
+  .btn {
+    @apply inline-flex h-8 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-sm font-medium;
+  }
+  .btn:disabled {
+    cursor: default;
+    opacity: 0.45;
+  }
+  .btn-primary {
+    background: var(--btn);
+    color: var(--on-btn);
+    box-shadow: 0 1px 2px rgba(28, 27, 25, 0.18);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--btn-h);
+  }
+  .btn-soft {
+    background: var(--primary-soft);
+    color: var(--primary-ink);
+  }
+  .btn-soft:hover:not(:disabled) {
+    background: var(--primary-soft-h);
+  }
+  .btn-ghost {
+    color: var(--g600);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--hover);
+    color: var(--ink);
+  }
+  .btn-danger {
+    background: var(--danger-fill);
+    color: #fff;
+  }
+  .btn-sm {
+    @apply h-6 gap-1 rounded-sm px-2 text-xs;
+  }
+  .btn-link {
+    @apply inline-flex items-center whitespace-nowrap font-medium;
+    color: var(--accent);
+  }
+  .btn-link:hover {
+    text-decoration: underline;
+  }
+  .icon-btn {
+    @apply inline-grid h-8 w-8 shrink-0 place-items-center rounded-md;
+    color: var(--g600);
+  }
+  .icon-btn:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+  .icon-btn-sm {
+    @apply h-6 w-6 rounded-sm;
+  }
+  .icon-btn[aria-pressed="true"] {
+    background: var(--primary-soft);
+    color: var(--primary-ink);
+  }
+
+  /* ---------- window grid: sidebar | (toolbar / table) over a full-width status bar ---------- */
+  .app {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 32px;
+    height: 100vh;
+  }
+  .main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 48px minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+  }
+
+  /* ---------- sidebar ---------- */
+  .f-item[aria-current="true"] {
+    background: var(--raised);
+    color: var(--ink);
+    box-shadow: var(--sh-raised);
+  }
+  .f-item[aria-current="true"] .f-icon {
+    color: var(--accent);
+  }
+  .f-count {
+    @apply inline-block min-w-5 rounded-lg px-1 text-right text-xs tabular-nums;
+    color: var(--g600);
+  }
+  .f-count.alert {
+    background: var(--danger-soft);
+    color: var(--danger-ink);
+    font-weight: 600;
+  }
+  .f-count.bump {
+    animation: bump 1.4s ease-out;
+  }
+
+  /* ---------- table ---------- */
+  .list-wrap {
+    position: relative;
+    min-height: 0;
+    overflow: auto;
+    padding-bottom: 96px;
+    background: var(--raised);
+    border-top: 1px solid var(--line);
+  }
+  .list-wrap:focus {
+    outline: none;
+  }
+  table.dl {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+  }
+  .dl th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    height: 32px;
+    padding: 0;
+    background: var(--raised);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--g600);
+    text-align: left;
+    box-shadow: inset 0 -1px 0 var(--line);
+  }
+  .th-btn {
+    @apply flex h-8 w-full items-center gap-1 whitespace-nowrap px-3 text-xs font-medium;
+    color: inherit;
+  }
+  .th-btn:hover {
+    color: var(--ink);
+  }
+  .th-btn svg {
+    opacity: 0;
+  }
+  th[aria-sort] .th-btn {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  th[aria-sort] .th-btn svg {
+    opacity: 1;
+    color: var(--accent);
+  }
+  th.num .th-btn {
+    justify-content: flex-end;
+  }
+  .dl td {
+    height: var(--row-h);
+    padding: 0 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: inset 0 -1px 0 var(--line);
+  }
+  .dl td.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .c-size {
+    width: 76px;
+  }
+  .c-prog {
+    width: 148px;
+  }
+  .c-speed {
+    width: 104px;
+  }
+  .c-left {
+    width: 84px;
+  }
+  .c-conn {
+    width: 96px;
+  }
+  .c-added {
+    width: 80px;
+  }
+  .c-act {
+    width: 168px;
+  }
+  .dl td.c-act {
+    position: relative;
+    overflow: visible;
+  }
+  .row:hover td {
+    background: var(--hover);
+  }
+  .row.linger td {
+    background: var(--success-linger);
+  }
+  /* The finish moment: a success tint that holds, then settles to the linger tint.
+     The negative delay resumes it mid-way when the row remounts. */
+  .row.fresh td {
+    animation: freshTint 7.5s ease-out both;
+    animation-delay: var(--fresh-delay, 0s);
+  }
+  .fn {
+    @apply min-w-0 truncate font-medium;
+  }
+  .st-waiting .fn,
+  .st-stopped .fn {
+    color: var(--g600);
+  }
+  .st-done .fn {
+    font-weight: 400;
+    color: var(--g600);
+  }
+  .st-done.linger .fn {
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .st-done td.num {
+    color: var(--g400);
+  }
+  .st-ico {
+    color: var(--g400);
+  }
+  .st-downloading .st-ico {
+    color: var(--accent);
+  }
+  .st-done .st-ico {
+    color: var(--success);
+  }
+  .st-failed .st-ico {
+    color: var(--danger);
+  }
+  .st-paused .st-ico,
+  .st-stopped .st-ico {
+    color: var(--g600);
+  }
+
+  .err-row td {
+    height: auto;
+    padding: 0 12px 8px 36px;
+    white-space: normal;
+    background: var(--raised);
+  }
+  .err-msg {
+    @apply flex items-start gap-3 rounded-md px-3 py-2 text-sm;
+    line-height: 1.45;
+    background: var(--danger-soft);
+    color: var(--danger-ink);
+  }
+  .err-msg .btn-link {
+    color: var(--danger-ink);
+    text-decoration: underline;
+  }
+
+  /* ---------- overlays ---------- */
+  .choice {
+    @apply grid cursor-pointer items-start gap-x-3 gap-y-1 rounded-md p-3;
+    grid-template-columns: 16px minmax(0, 1fr);
+  }
+  .choice:hover {
+    background: var(--hover);
+  }
+  .choice input {
+    margin-top: 2px;
+    accent-color: var(--btn);
+  }
+  .choice-hint {
+    color: var(--g600);
+  }
+  .choice:has(input:checked) {
+    background: var(--primary-soft);
+  }
+  .choice:has(input:checked) .choice-hint {
+    color: var(--primary-ink);
+  }
+  .toast {
+    @apply pointer-events-auto flex min-h-10 items-center gap-4 rounded-lg py-2 pl-4 pr-2 text-sm shadow-pop;
+    max-width: min(560px, calc(100vw - 32px));
+    background: var(--toast-bg);
+    color: var(--toast-ink);
+    animation: rise 0.2s ease-out;
+  }
+  .toast .btn {
+    @apply h-7;
+    color: var(--toast-action);
+  }
+  .toast .btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .toast .icon-btn {
+    color: inherit;
+    opacity: 0.6;
+  }
+  .notif {
+    @apply grid gap-3 rounded-lg bg-raised p-3;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    box-shadow:
+      var(--sh-pop),
+      0 0 0 1px var(--line);
+    animation: slideIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .name-filter {
+    width: 192px;
+  }
+
+  /* ---------- narrow windows: keep 640px usable (the icon rail is PR D) ---------- */
+  @media (max-width: 1099px) {
+    .c-conn {
+      display: none;
+    }
+  }
+  @media (max-width: 959px) {
+    .c-added {
+      display: none;
+    }
+    .tb-label {
+      display: none;
+    }
+  }
+  @media (max-width: 819px) {
+    .app {
+      grid-template-columns: 160px minmax(0, 1fr);
+    }
+    .c-prog {
+      width: 112px;
+    }
+    .name-filter {
+      width: 128px;
+    }
+  }
+  @media (max-width: 679px) {
+    .sb-counts {
+      display: none;
+    }
+  }
+}
+
+@keyframes freshTint {
+  0%,
+  80% {
+    background: var(--success-soft);
+  }
+  100% {
+    background: var(--success-linger);
+  }
+}
+@keyframes bump {
+  0% {
+    transform: scale(1);
+  }
+  18% {
+    transform: scale(1.45);
+    background: var(--success-soft);
+    color: var(--success-ink);
+  }
+  60% {
+    background: var(--success-soft);
+    color: var(--success-ink);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes slideIn {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes rise {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
   }
 }

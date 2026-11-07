@@ -1,81 +1,78 @@
 /** @type {import('tailwindcss').Config} */
-// Ported verbatim from the approved mockup (.ai-cache/mockups/slick.html):
-// shadcn-style CSS-variable tokens with a single blue `brand` accent.
+// The Console palette (.ai-cache/mockups/m5/d-combined.html). Every colour is a
+// CSS variable from index.css; several are hex in one theme and rgba in the
+// other, so there is no `<alpha-value>` and no `/opacity` modifiers on them.
+const token = (name) => `var(--${name})`;
+
+const COLOR_TOKENS = [
+  "ink",
+  "g600",
+  "g400",
+  "g300",
+  "g200",
+  "surface",
+  "sidebar",
+  "raised",
+  "hover",
+  "line",
+  "line-strong",
+  "track",
+  "accent",
+  "btn",
+  "btn-h",
+  "on-btn",
+  "fill",
+  "primary-soft",
+  "primary-soft-h",
+  "primary-ink",
+  "sel",
+  "success",
+  "success-soft",
+  "success-ink",
+  "warn",
+  "warn-soft",
+  "warn-ink",
+  "danger",
+  "danger-fill",
+  "danger-soft",
+  "danger-ink",
+  "muted-fill",
+  "toast-bg",
+  "toast-ink",
+  "toast-action",
+  "success-linger",
+];
+
 export default {
   darkMode: "class",
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
-    container: { center: true, padding: "2rem", screens: { "2xl": "1400px" } },
+    // The design plan's type scale: 12 13 14 16 20 24.
+    fontSize: {
+      xs: ["12px", "16px"],
+      sm: ["13px", "20px"],
+      base: ["14px", "20px"],
+      lg: ["16px", "24px"],
+      xl: ["20px", "28px"],
+      "2xl": ["24px", "32px"],
+    },
+    borderRadius: {
+      none: "0",
+      sm: "4px",
+      md: "6px",
+      lg: "8px",
+      full: "9999px",
+    },
     extend: {
-      colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
-        },
-        secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
-        },
-        muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
-        },
-        accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
-        },
-        card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
-        },
-        popover: {
-          DEFAULT: "hsl(var(--popover))",
-          foreground: "hsl(var(--popover-foreground))",
-        },
-        // single accent used for primary actions + in-progress bars
-        brand: {
-          DEFAULT: "hsl(var(--brand))",
-          foreground: "hsl(var(--brand-foreground))",
-        },
-      },
-      // Density-driven row metrics; values live in index.css per data-density.
-      spacing: {
-        "row-px": "var(--row-px)",
-        "row-py": "var(--row-py)",
-        "row-gap": "var(--row-gap)",
-        "row-icon": "var(--row-icon)",
-        "row-glyph": "var(--row-glyph)",
-        "row-action": "var(--row-action)",
-        "row-stack": "var(--row-stack)",
-        "row-stack-sm": "var(--row-stack-sm)",
-        "row-note": "var(--row-note)",
-      },
-      fontSize: {
-        "row-title": ["var(--row-title)", { lineHeight: "var(--row-title-lh)" }],
-        "row-meta": ["var(--row-meta)", { lineHeight: "var(--row-meta-lh)" }],
-      },
-      borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+      colors: Object.fromEntries(COLOR_TOKENS.map((name) => [name, token(name)])),
+      boxShadow: {
+        raised: token("sh-raised"),
+        pop: token("sh-pop"),
+        dialog: token("sh-dialog"),
       },
       fontFamily: {
-        sans: [
-          "ui-sans-serif",
-          "system-ui",
-          "-apple-system",
-          "BlinkMacSystemFont",
-          "Segoe UI",
-          "Roboto",
-          "Helvetica Neue",
-          "Arial",
-          "sans-serif",
-        ],
+        sans: ["IBM Plex Sans", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+        mono: ["IBM Plex Mono", "ui-monospace", "Consolas", "monospace"],
       },
     },
   },

@@ -107,6 +107,8 @@ export const config: WebdriverIO.Config = {
       mkdirSync(dir, { recursive: true });
       process.env[key] = dir;
     }
+    // open_path / reveal_path log here instead of launching an OS handler.
+    process.env.RDM_OPEN_LOG = path.join(e2eRoot, "opened.log");
     console.log(`E2E temp root: ${e2eRoot}`);
 
     process.env.RDM_E2E_BASE_URL = await startFixture();
@@ -121,7 +123,7 @@ export const config: WebdriverIO.Config = {
     await waitForPort(DRIVER_PORT);
   },
 
-  // A failed run keeps its temp root (state.json, rdm.*.log, downloads) to inspect.
+  // A failed run keeps its temp root (state.json, rdm.*.log, opened.log, downloads) to inspect.
   onComplete: (exitCode: number) => {
     tauriDriver?.kill();
     fixture?.kill();

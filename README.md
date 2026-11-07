@@ -40,12 +40,12 @@ line or through a desktop GUI — streaming to disk with a live progress readout
   optional per-download limit, set when adding or changed from the download's
   row (both applied live).
 - Download queue (GUI): at most 3 downloads stream at once by default
-  (configurable); the rest wait as *Queued* and start in order as slots free.
-- Optional **desktop GUI** (Tauri + React): manage many downloads at once —
-  add/pause/resume/cancel, live progress/speed/ETA (plus *N connections* while
-  more than one is open), a download queue with a
-  concurrency cap, global and per-download speed limits, and an Active/History
-  list that persists across restarts. The GUI is an *additive* frontend; the CLI and
+  (configurable); the rest wait as *Waiting* and start in order as slots free.
+- Optional **desktop GUI** (Tauri + React): manage many downloads at once in
+  one sortable table with status and folder filters — add/pause/resume/stop,
+  live progress/speed/time left and connection count, a download queue with a
+  concurrency cap, global and per-download speed limits, a clear "done" moment
+  when a download finishes, and a list that persists across restarts. The GUI is an *additive* frontend; the CLI and
   engine stay fully functional headless (no webview/Node needed).
 
 ## Installation
@@ -114,7 +114,40 @@ workspace crate) that drives the same engine — so the CLI and engine never
 depend on Tauri, Node, or a webview, and a headless server build stays fully
 functional. Your download list and history are stored in `~/.rdm/state.json`.
 
-To add a download, click **Add download**, drag a link (or the address bar's
+The window has a sidebar of filters, a toolbar, one table of every download
+and a status bar:
+
+- **Sidebar:** status filters (All, Downloading, Waiting, Paused, Done, Failed,
+  Stopped) and one filter per destination folder, each with a live count.
+- **Toolbar:** filter by name (matches the filename or the site), Pause all /
+  Resume all, **Clear finished**, **Add**, a light/dark theme toggle and
+  **Settings**.
+- **Table:** click a column header to sort by it (click again to reverse).
+  Downloads stay where they are when they finish.
+- **Status bar:** total speed, how many are downloading and waiting, and the
+  global speed limit — click it to change it in place.
+
+When a download finishes, its row turns green for a few seconds and keeps a
+faint tint and a solid **Open** button until you open the file once (remembered
+across restarts). A notification in the corner offers **Open** and **Show in
+folder**. A finished row shows a check, "Done", and never moves or disappears
+by itself.
+
+A failed download is pinned to the top of All with the reason in plain words
+under it and a **Retry** button; with two or more failed, **Retry all failed**
+restarts them all.
+
+**Stop** asks first: keep the partial file to resume later (the default), or
+delete it. A stopped download with its partial kept offers **Resume** and
+**Delete partial file**; one without offers **Download again**.
+
+**Clear finished** removes Done and Stopped downloads from the list (in every
+folder), with **Undo** for about 5 seconds; nothing is removed until that
+window ends. Downloaded files stay on disk, and so do kept partial files.
+A row's **Remove from list** takes just that download off the list, at once
+(no Undo), by the same rule for files.
+
+To add a download, click **Add**, drag a link (or the address bar's
 URL) from your browser onto the window, or press Ctrl/Cmd+V with an `http(s)`
 URL on the clipboard — the latter two open the Add dialog pre-filled.
 
@@ -122,24 +155,23 @@ Speed limits in the GUI are a number plus a unit picker (KB/s or MB/s, ×1024);
 an empty box means no limit, and 0 is rejected. Under **More options**, the Add
 dialog takes a checksum and a **Speed limit** for that download.
 
-A limited download shows its cap on its row (`limit 500.0 KB/s`). To set,
-change or remove a download's limit while it's downloading, paused or queued,
-click that text or the row's speedometer button, then press Enter or click
-away. The change applies at once, without restarting the download, and is
+A download with its own limit shows a speedometer in its Speed column (the
+limit itself while it isn't streaming). To set, change or remove a download's
+limit while it's downloading, paused or waiting, click the row's speedometer
+button, then press Enter or click away. The change applies at once, without restarting the download, and is
 kept across restarts. Escape discards the edit, and ✕ removes the limit. A
 download's own limit can be higher than the global one, but the lower limit
 wins, and the editor says so.
 
-The sliders button in the header opens **Settings**:
+The sliders button in the toolbar opens **Settings**:
 
-- **Display** — theme (System — follows your OS — Light, or Dark) and row
-  density (Comfortable or Compact). Remembered per machine in the webview's
-  local storage.
+- **Display** — theme (System — follows your OS — Light, or Dark).
+  Remembered per machine in the webview's local storage.
 - **Downloads** — stored with your download list in `~/.rdm/state.json`:
   - *Max concurrent downloads* (default 3): more downloads than this wait as
-    **Queued** ("Waiting for a free slot") and start in the order added as running
+    **Waiting** and start in the order added as running
     ones finish or are paused. Lowering it never interrupts a running download.
-    A queued download can be paused or cancelled.
+    A waiting download can be paused or stopped.
   - *Global speed limit*: a cap on all downloads combined (empty = no
     limit); applies live, alongside any per-download limit (the lower one
     wins).
@@ -181,11 +213,15 @@ Add dialog's default destination.
 real app through [tauri-driver](https://v2.tauri.app/develop/tests/webdriver/):
 adding a download through the Add dialog (and seeing its `Content-Disposition`
 name), pause/resume to completion with the bytes checked on disk, a paused
-download surviving an app restart, display settings, paste/drop URL intake, and
+download surviving an app restart, display settings, paste/drop URL intake,
 the download queue (a cap of 1 queues a second download until the first is
-paused). It downloads only from the repo's own fixture server
+paused) and per-download limits, connection ramping, the finish moment, the
+sidebar filters, failed downloads and Retry all failed, the Stop dialog, and
+Clear finished with Undo. It downloads only from the repo's own fixture server
 (`cargo run --example fixture_server`) on loopback, and keeps all app state in
-a throwaway temp dir via `RDM_HOME`/`RDM_DOWNLOAD_DIR`. It is a separate pnpm
+a throwaway temp dir via `RDM_HOME`/`RDM_DOWNLOAD_DIR`; `RDM_OPEN_LOG` makes
+Open and Show in folder write `open <path>` / `reveal <path>` lines to that
+file instead of launching anything. It is a separate pnpm
 package and not part of `cargo test` or `pnpm test`; CI runs it on Linux.
 
 One-time setup:

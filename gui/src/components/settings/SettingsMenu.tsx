@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { Density, ThemePref } from "../lib/prefs";
-import { usePrefs } from "../lib/usePrefs";
+import type { Prefs, ThemePref } from "../../lib/prefs";
+import type { SettingsField } from "../../lib/settings";
+import type { Settings } from "../../lib/types";
 import { DownloadSettings } from "./DownloadSettings";
-import { Monitor } from "./icons/Monitor";
-import { Moon } from "./icons/Moon";
-import { Sliders } from "./icons/Sliders";
-import { Sun } from "./icons/Sun";
+import { Monitor } from "../icons/Monitor";
+import { Moon } from "../icons/Moon";
+import { Sliders } from "../icons/Sliders";
+import { Sun } from "../icons/Sun";
 
 const THEME_OPTIONS: { value: ThemePref; label: string; icon: React.ReactNode }[] = [
   { value: "system", label: "System", icon: <Monitor size={14} /> },
@@ -13,15 +14,16 @@ const THEME_OPTIONS: { value: ThemePref; label: string; icon: React.ReactNode }[
   { value: "dark", label: "Dark", icon: <Moon size={14} /> },
 ];
 
-const DENSITY_OPTIONS: { value: Density; label: string }[] = [
-  { value: "comfortable", label: "Comfortable" },
-  { value: "compact", label: "Compact" },
-];
+type Props = {
+  prefs: Prefs;
+  onPrefs: (patch: Partial<Prefs>) => void;
+  /** A `set_settings` result from the Downloads section, for the status bar to follow. */
+  onApplied: (applied: Settings, fields: SettingsField[]) => void;
+};
 
-// Header settings popover: cosmetic display prefs (theme + row density, kept
-// in localStorage) and the engine-backed Downloads settings.
-export function SettingsMenu() {
-  const [prefs, update] = usePrefs();
+// The toolbar's settings popover: the theme pref (kept in localStorage) and
+// the engine-backed Downloads settings.
+export function SettingsMenu({ prefs, onPrefs, onApplied }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -46,37 +48,30 @@ export function SettingsMenu() {
       <button
         onClick={() => setOpen((o) => !o)}
         aria-label="Settings"
+        title="Settings"
         aria-haspopup="dialog"
         aria-expanded={open}
-        className={`inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-          open ? "bg-accent text-foreground" : ""
-        }`}
+        className={`icon-btn ${open ? "bg-primary-soft text-primary-ink" : ""}`}
       >
-        <Sliders size={17} />
+        <Sliders />
       </button>
 
       {open && (
         <div
           role="dialog"
           aria-label="Settings"
-          className="absolute right-0 top-full z-30 mt-2 w-80 space-y-3 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+          className="absolute right-0 top-full z-30 mt-2 w-80 space-y-3 rounded-lg bg-raised p-4 text-ink shadow-pop ring-1 ring-line"
         >
           <SectionHeading>Display</SectionHeading>
           <Segmented
             label="Theme"
             options={THEME_OPTIONS}
             value={prefs.theme}
-            onChange={(theme) => update({ theme })}
+            onChange={(theme) => onPrefs({ theme })}
           />
-          <Segmented
-            label="Density"
-            options={DENSITY_OPTIONS}
-            value={prefs.density}
-            onChange={(density) => update({ density })}
-          />
-          <div className="-mx-3 h-px bg-border" />
+          <div className="-mx-4 h-px bg-line" />
           <SectionHeading>Downloads</SectionHeading>
-          <DownloadSettings />
+          <DownloadSettings onApplied={onApplied} />
         </div>
       )}
     </div>
@@ -84,10 +79,10 @@ export function SettingsMenu() {
 }
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
-  return <h3 className="px-0.5 text-[13px] font-semibold tracking-tight">{children}</h3>;
+  return <h3 className="text-base font-semibold tracking-tight">{children}</h3>;
 }
 
-// A labelled row of toggle buttons in the Tabs control's visual style.
+// A labelled row of toggle buttons; the chosen one is raised.
 function Segmented<T extends string>({
   label,
   options,
@@ -101,21 +96,19 @@ function Segmented<T extends string>({
 }) {
   return (
     <div>
-      <p className="mb-1.5 px-0.5 text-xs font-medium text-muted-foreground">{label}</p>
+      <p className="mb-1 text-xs font-medium text-g600">{label}</p>
       <div
         role="group"
         aria-label={label}
-        className="flex h-9 items-center rounded-lg bg-muted p-1 text-muted-foreground"
+        className="flex h-8 items-center rounded-md bg-hover p-1"
       >
         {options.map((o) => (
           <button
             key={o.value}
             onClick={() => onChange(o.value)}
             aria-pressed={o.value === value}
-            className={`inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-[13px] font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-              o.value === value
-                ? "bg-background text-foreground shadow-sm"
-                : "hover:text-foreground"
+            className={`inline-flex h-6 flex-1 items-center justify-center gap-1 rounded-sm px-2 text-sm font-medium ${
+              o.value === value ? "bg-raised text-ink shadow-raised" : "text-g600 hover:text-ink"
             }`}
           >
             {o.icon}

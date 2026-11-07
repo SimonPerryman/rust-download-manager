@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import * as api from "../lib/api";
-import { formatSpeed } from "../lib/format";
-import { NO_LIMIT, composeRate, exceeds, type RateDraft } from "../lib/rate";
-import { Folder } from "./icons/Folder";
-import { RateInput } from "./RateInput";
+import * as api from "../../lib/api";
+import { formatSpeed } from "../../lib/format";
+import { NO_LIMIT, composeRate, exceeds, type RateDraft } from "../../lib/rate";
+import { ChevronDown } from "../icons/ChevronDown";
+import { Folder } from "../icons/Folder";
+import { RateInput } from "../RateInput";
 
 type Props = {
   open: boolean;
@@ -94,23 +95,20 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50">
-      <div
-        onClick={onClose}
-        className="fixed inset-0 bg-black/60 backdrop-blur-[1px] transition-opacity"
-      />
+      <div onClick={onClose} className="fixed inset-0 bg-[var(--backdrop)]" />
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Add download"
-        className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 px-4"
+        className="fixed left-1/2 top-1/2 z-50 w-full max-w-[560px] -translate-x-1/2 -translate-y-1/2 px-4"
       >
-        <div className="rounded-lg border border-border bg-card text-card-foreground shadow-lg">
-          <div className="flex flex-col space-y-1.5 px-6 pb-4 pt-6">
-            <h2 className="text-lg font-semibold leading-none tracking-tight">Add download</h2>
-            <p className="text-sm text-muted-foreground">Paste a URL to start.</p>
+        <div className="rounded-lg bg-raised text-ink shadow-dialog">
+          <div className="px-6 pt-6">
+            <h2 className="text-xl font-semibold tracking-tight">Add download</h2>
+            <p className="mt-1 text-sm text-g600">Paste a link to start.</p>
           </div>
 
-          <div className="space-y-4 px-6 pb-2">
+          <div className="space-y-4 px-6 py-4">
             <Field label="URL">
               <input
                 autoFocus
@@ -120,7 +118,7 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
                 onChange={(e) => setUrl(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && submit()}
                 placeholder="https://releases.ubuntu.com/24.04/ubuntu-24.04.iso"
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 font-mono text-xs transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-none"
               />
             </Field>
 
@@ -131,13 +129,10 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
                   aria-label="Destination folder"
                   value={dest}
                   onChange={(e) => setDest(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 text-sm transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-none"
                 />
-                <button
-                  onClick={browse}
-                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-input bg-transparent px-3 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
-                >
-                  <Folder size={15} />
+                <button onClick={browse} className="btn btn-soft">
+                  <Folder />
                   Browse
                 </button>
               </div>
@@ -148,14 +143,9 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
               aria-expanded={moreOpen}
               aria-controls="add-more-options"
               onClick={() => setMoreOpen((o) => !o)}
-              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+              className="inline-flex items-center gap-1 text-sm font-medium text-g600 hover:text-ink"
             >
-              <span
-                aria-hidden
-                className={`inline-block transition-transform ${moreOpen ? "rotate-90" : ""}`}
-              >
-                ▸
-              </span>
+              <ChevronDown size={14} className={moreOpen ? "" : "-rotate-90"} />
               More options
             </button>
 
@@ -168,16 +158,16 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
                   value={checksum}
                   onChange={(e) => setChecksum(e.target.value)}
                   placeholder="e3b0c44298fc1c149afbf4c8996fb924…"
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-[13px] shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 font-mono text-xs transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-none"
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-g400">
                   If provided, the file is verified after download and discarded on mismatch.
                 </p>
               </Field>
 
               <Field label="Speed limit">
                 <RateInput label="Speed limit" value={limit} onChange={setLimit} onEnter={submit} />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-g400">
                   {globalLimit != null && exceeds(limit, globalLimit)
                     ? `The global limit is ${formatSpeed(globalLimit)} for all downloads combined, so this one won't go faster than that.`
                     : "Empty = no limit."}
@@ -185,21 +175,14 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
               </Field>
             </div>
 
-            {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+            {error && <p className="text-xs text-danger-ink">{error}</p>}
           </div>
 
-          <div className="flex items-center justify-end gap-2 px-6 pb-6 pt-4">
-            <button
-              onClick={onClose}
-              className="inline-flex h-9 items-center justify-center rounded-md px-4 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
+          <div className="flex items-center justify-end gap-2 rounded-b-lg bg-surface px-6 py-4">
+            <button onClick={onClose} className="btn btn-ghost">
               Cancel
             </button>
-            <button
-              onClick={submit}
-              disabled={busy}
-              className="inline-flex h-9 items-center justify-center rounded-md bg-brand px-4 text-sm font-medium text-brand-foreground shadow-sm transition-colors hover:bg-brand/90 disabled:opacity-60"
-            >
+            <button onClick={submit} disabled={busy} className="btn btn-primary">
               Add download
             </button>
           </div>
@@ -211,8 +194,8 @@ export function AddDialog({ open, initialUrl = "", onClose }: Props) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-2">
-      <label className="text-sm font-medium leading-none">{label}</label>
+    <div className="space-y-1">
+      <label className="block text-sm font-medium">{label}</label>
       {children}
     </div>
   );

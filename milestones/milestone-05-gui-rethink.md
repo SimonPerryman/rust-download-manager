@@ -1,7 +1,7 @@
 ---
 id: M5
 title: GUI rethink — Console layout
-status: todo
+status: in-progress
 depends-on: [M2, M3, M4]
 tags: [gui, engine, testing]
 ---
@@ -142,21 +142,21 @@ can start in parallel on today's snapshot.
   open question 5.)
 
 ### PR B — window structure, finish moment, failed downloads
-- [ ] Replace `Tabs`, `DownloadList` and `DownloadRow` with a sidebar, a table
+- [x] Replace `Tabs`, `DownloadList` and `DownloadRow` with a sidebar, a table
   and a status bar.
-- [ ] Status and folder filters with live counts; sortable columns; filter by
+- [x] Status and folder filters with live counts; sortable columns; filter by
   name.
-- [ ] Finish moment: tint, lingering Open, in-app notification. Track "opened
+- [x] Finish moment: tint, lingering Open, in-app notification. Track "opened
   once" per download in the GUI's local prefs, since it's presentation state.
-- [ ] Quiet done state; failed downloads pinned with Retry and Retry all
+- [x] Quiet done state; failed downloads pinned with Retry and Retry all
   failed.
-- [ ] Status bar with an editable global limit, reusing `RateInput`.
-- [ ] Clear finished with an undo toast. The undo window delays the
+- [x] Status bar with an editable global limit, reusing `RateInput`.
+- [x] Clear finished with an undo toast. The undo window delays the
   `clear` call by about 5 s, so nothing is restored after the fact.
-- [ ] Stop confirm dialog (uses A's `stop`; before A merges, ship without the
+- [x] Stop confirm dialog (uses A's `stop`; before A merges, ship without the
   keep option).
-- [ ] Remove the developer text (`~/.rdm/state.json`) from the UI.
-- [ ] Restyle to the Console palette and IBM Plex; tokens stay on `:root`
+- [x] Remove the developer text (`~/.rdm/state.json`) from the UI.
+- [x] Restyle to the Console palette and IBM Plex; tokens stay on `:root`
   with dark overrides.
 
 ### PR C — details pane and lanes
@@ -202,20 +202,20 @@ apply here without being restated. E2E specs follow AGENTS.md's WebKitGTK rules
 **GUI (B–D):** Vitest unit tests for the pure logic (filters, counts,
 folder derivation, sorting, URL-list parsing, the lane bucketing rule), plus
 these e2e specs against the fixture server:
-- [ ] **Finish moment:** a download that completes stays in the All view with
+- [x] **Finish moment:** a download that completes stays in the All view with
   `data-status="completed"`, shows an Open button and a notification, and is
   counted under Done. Opening it once removes the lingering Open state.
   (`specs/finish.e2e.ts`)
-- [ ] **Filters:** with a downloading, a queued, a completed and a failed
+- [x] **Filters:** with a downloading, a queued, a completed and a failed
   download, each sidebar filter shows exactly its rows, and the counts match.
   Folder filters split downloads by target folder. (`specs/filters.e2e.ts`)
-- [ ] **Failed pinned:** a download that fails against the `/seg-403`
+- [x] **Failed pinned:** a download that fails against the `/seg-403`
   fixture appears at the top of All with its error inline. Retry all failed
   restarts it. (`specs/failed.e2e.ts`)
-- [ ] **Stop asks first:** Stop opens the dialog. Choosing Keep leaves the
+- [x] **Stop asks first:** Stop opens the dialog. Choosing Keep leaves the
   row Stopped and resumable; choosing Delete leaves it Stopped with Download
   again. (`specs/stop.e2e.ts`)
-- [ ] **Clear finished:** clears Done and Stopped rows. Undo within the
+- [x] **Clear finished:** clears Done and Stopped rows. Undo within the
   window brings them back, and nothing is removed from the engine.
   (`specs/clear.e2e.ts`)
 - [ ] **Lanes:** a 4-connection download on the `/gated` fixture shows 4
@@ -226,17 +226,21 @@ these e2e specs against the fixture server:
 - [ ] **Reorder:** with a cap of 1, moving the last waiting row to the top
   with Alt+↑ marks it Next up, and it starts next. Assert on Manager status.
   (`specs/queue.e2e.ts`, extended)
-- [ ] Existing specs (`downloads`, `queue`, `ramping`) are updated to the new
+- [x] Existing specs (`downloads`, `queue`, `ramping`) are updated to the new
   layout and pass.
 
 ## Open questions (decide before or during the PR they affect)
 1. **Free space in the status bar:** keep it, which needs a `free_space(dir)`
-   command, or cut it? It affects B.
+   command, or cut it? It affects B. **Decided (PR B):** cut; moved to the
+   backlog.
 2. **Log tab:** in M5, which needs the engine to stream per-download log
    lines to the GUI, or later? Currently out.
 3. **Density default:** compact (Console's default) or comfortable?
+   **Decided (PR B):** compact (32 px). PR B ships compact rows only; the
+   toggle comes with PR D.
 4. **Notification:** in-app only (in scope), or a native OS notification too
-   (Tauri notification plugin)?
+   (Tauri notification plugin)? **Decided (PR B):** in-app only; native OS
+   notifications stay in the backlog.
 5. **Stop CLI parity:** should the CLI's cancel keep the partial by default?
    **Decided (PR A):** the CLI is unchanged. Ctrl-C already pauses and keeps
    the partial; `README.md` says how to discard it.

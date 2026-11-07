@@ -185,6 +185,26 @@ fn pause_all(state: State<'_, AppState>) {
     }
 }
 
+/// Resume every paused download (Resume all). Stopped ones stay stopped.
+#[tauri::command]
+fn resume_all(state: State<'_, AppState>) {
+    for d in state.manager.snapshot() {
+        if d.status == Status::Paused {
+            state.manager.resume(d.id);
+        }
+    }
+}
+
+/// Retry every failed download (Retry all failed).
+#[tauri::command]
+fn retry_failed(state: State<'_, AppState>) {
+    for d in state.manager.snapshot() {
+        if d.status == Status::Failed {
+            state.manager.resume(d.id);
+        }
+    }
+}
+
 /// The default download directory, as a string (for the Add dialog's default).
 #[tauri::command]
 fn default_download_dir(app: tauri::AppHandle) -> Result<String, String> {
@@ -205,6 +225,9 @@ async fn pick_folder(app: tauri::AppHandle) -> Option<String> {
 /// Open a file (or folder) with the OS default handler.
 #[tauri::command]
 fn open_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    if let Some(log) = env_dir(OPEN_LOG_ENV) {
+        return append_open_log(&log, "open", &path).map_err(|e| e.to_string());
+    }
     app.opener()
         .open_path(path, None::<&str>)
         .map_err(|e| e.to_string())
@@ -213,6 +236,9 @@ fn open_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
 /// Reveal a file in its containing folder in the OS file manager.
 #[tauri::command]
 fn reveal_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    if let Some(log) = env_dir(OPEN_LOG_ENV) {
+        return append_open_log(&log, "reveal", &path).map_err(|e| e.to_string());
+    }
     app.opener()
         .reveal_item_in_dir(path)
         .map_err(|e| e.to_string())
@@ -225,6 +251,26 @@ const HOME_ENV: &str = "RDM_HOME";
 
 /// Overrides the Add dialog's default download directory (default: the OS one).
 const DOWNLOAD_DIR_ENV: &str = "RDM_DOWNLOAD_DIR";
+
+/// When set, `open_path` / `reveal_path` append `open <path>` / `reveal <path>` lines to
+/// this file instead of launching the OS handler. Lets the webview E2E suite check what
+/// would open without starting another program.
+const OPEN_LOG_ENV: &str = "RDM_OPEN_LOG";
+
+/// One `RDM_OPEN_LOG` line (without its newline): `kind` is `open` or `reveal`.
+fn open_log_line(kind: &str, path: &str) -> String {
+    format!("{kind} {path}")
+}
+
+/// Append one [`open_log_line`] to `log`, creating the file if needed.
+fn append_open_log(log: &std::path::Path, kind: &str, path: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log)?;
+    writeln!(file, "{}", open_log_line(kind, path))
+}
 
 /// A non-empty path from environment variable `key`, if set.
 fn env_dir(key: &str) -> Option<PathBuf> {
@@ -381,6 +427,8 @@ pub fn run() {
             verify_checksum,
             remove,
             pause_all,
+            resume_all,
+            retry_failed,
             default_download_dir,
             pick_folder,
             open_path,
@@ -403,6 +451,22 @@ mod tests {
         assert_eq!(bare.to_string(), format!("sha256:{hex}"));
         assert!(super::parse_sha256("abc").is_err());
         assert!(super::parse_sha256("md5:abc").is_err());
+    }
+
+    /// The open log records one `<kind> <path>` line per call, appending.
+    #[test]
+    fn open_log_appends_one_line_per_call() {
+        assert_eq!(
+            super::open_log_line("open", r"C:\dl\a b.iso"),
+            r"open C:\dl\a b.iso"
+        );
+        let log = std::env::temp_dir().join(format!("rdm-gui-open-{}.log", std::process::id()));
+        let _ = std::fs::remove_file(&log);
+        super::append_open_log(&log, "open", "/dl/a.iso").unwrap();
+        super::append_open_log(&log, "reveal", "/dl/b.iso").unwrap();
+        let text = std::fs::read_to_string(&log).unwrap();
+        let _ = std::fs::remove_file(&log);
+        assert_eq!(text, "open /dl/a.iso\nreveal /dl/b.iso\n");
     }
 
     /// The log goes to a dated `rdm.YYYY-MM-DD.log` (daily rotation), not one

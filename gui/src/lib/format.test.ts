@@ -1,45 +1,48 @@
 import { describe, expect, it } from "vitest";
-import { connectionsLabel } from "./format";
-import type { DownloadSnapshot, Status } from "./types";
+import { formatAdded, formatLeft, statusCountsLine } from "./format";
+describe("statusCountsLine", () => {
+  it("names what's downloading and waiting, or says nothing is", () => {
+    expect(statusCountsLine(2, 1)).toBe("2 downloading, 1 waiting");
+    expect(statusCountsLine(1, 0)).toBe("1 downloading");
+    expect(statusCountsLine(0, 1)).toBe("1 waiting");
+    expect(statusCountsLine(0, 0)).toBe("Nothing downloading");
+  });
+});
 
-function snapshot(status: Status, connections: number): DownloadSnapshot {
-  return {
-    id: 1,
-    url: "http://example.com/file.iso",
-    filename: "file.iso",
-    target: "/downloads/file.iso",
-    final_path: null,
-    status,
-    downloaded: 0,
-    total: null,
-    bytes_per_sec: 0,
-    eta_secs: null,
-    error: null,
-    added_at: null,
-    finished_at: null,
-    limit: null,
-    connections,
-    partial_kept: false,
-    checksum: null,
-    checksum_state: "none",
-    segments: [],
-  };
-}
+describe("formatAdded", () => {
+  const now = new Date(2026, 10, 7, 18, 30);
+  const secs = (d: Date) => d.getTime() / 1000;
 
-describe("connectionsLabel", () => {
-  it("names the live count while downloading over several connections", () => {
-    expect(connectionsLabel(snapshot("downloading", 2))).toBe("2 connections");
-    expect(connectionsLabel(snapshot("downloading", 8))).toBe("8 connections");
+  it("shows the time for today, Yesterday, else day and month", () => {
+    expect(formatAdded(secs(new Date(2026, 10, 7, 14, 5)), now)).toBe("14:05");
+    expect(formatAdded(secs(new Date(2026, 10, 7, 0, 0)), now)).toBe("00:00");
+    expect(formatAdded(secs(new Date(2026, 10, 6, 23, 59)), now)).toBe("Yesterday");
+    expect(formatAdded(secs(new Date(2026, 10, 6, 0, 0)), now)).toBe("Yesterday");
+    expect(formatAdded(secs(new Date(2026, 10, 3, 9, 0)), now)).toBe("3 Nov");
+    expect(formatAdded(secs(new Date(2025, 0, 12, 9, 0)), now)).toBe("12 Jan");
   });
 
-  it("stays quiet for a single connection", () => {
-    expect(connectionsLabel(snapshot("downloading", 1))).toBeNull();
-    expect(connectionsLabel(snapshot("downloading", 0))).toBeNull();
+  it("handles Yesterday across a month boundary", () => {
+    const first = new Date(2026, 11, 1, 8, 0);
+    expect(formatAdded(secs(new Date(2026, 10, 30, 22, 0)), first)).toBe("Yesterday");
   });
 
-  it("stays quiet unless downloading", () => {
-    for (const status of ["queued", "paused", "completed", "failed", "cancelled"] as const) {
-      expect(connectionsLabel(snapshot(status, 4))).toBeNull();
-    }
+  it("is blank when unknown", () => {
+    expect(formatAdded(null, now)).toBe("");
+  });
+});
+
+describe("formatLeft", () => {
+  it("uses seconds, minutes, then hours and minutes", () => {
+    expect(formatLeft(9)).toBe("9 s");
+    expect(formatLeft(59)).toBe("59 s");
+    expect(formatLeft(60)).toBe("1 min");
+    expect(formatLeft(12 * 60 + 40)).toBe("12 min");
+    expect(formatLeft(3600)).toBe("1 h");
+    expect(formatLeft(3600 + 5 * 60 + 30)).toBe("1 h 5 min");
+  });
+
+  it("is blank when unknown", () => {
+    expect(formatLeft(null)).toBe("");
   });
 });
