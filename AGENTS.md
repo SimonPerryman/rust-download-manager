@@ -27,6 +27,8 @@ instruction sheet for any agent (and human) working in this repo.
 ## Commands
 - Build: `cargo build`
 - Test (fast, offline — the default gate): `cargo test`
+  (CI runs `cargo nextest run --profile ci` + `cargo test --doc`; config in
+  `.config/nextest.toml`; optional locally)
 - Live smoke test (real network, opt-in): `cargo test -- --ignored`
 - Lint (treat warnings as errors): `cargo clippy -- -D warnings`
 - Format check: `cargo fmt --check`

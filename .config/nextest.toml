@@ -1,0 +1,35 @@
+# cargo-nextest config: CI runs `cargo nextest run --profile ci`; locally
+# `cargo test` stays the gate and `cargo nextest run` is optional.
+
+[test-groups]
+# Tests whose assertions put an upper or relative bound on real-clock time
+# ("promptly", "faster than", "no slower than 3x"). They share the machine
+# with the rest of the suite but never with each other. Lower-bound-only
+# checks (Retry-After / backoff gaps, "at least this slow") can't be broken
+# by contention, so they run fully parallel.
+timing = { max-threads = 1 }
+# The ramp settles on measured throughput, so its tests are timing-sensitive
+# too; two at a time is what libtest already ran them at on CI's 2 vCPUs.
+ramping = { max-threads = 2 }
+
+[[profile.default.overrides]]
+filter = """
+binary(rate_limit)
+| test(=multi_segment_is_faster_than_single_connection)
+| test(=pause_is_noticed_while_all_workers_wait_on_the_network)
+| test(=sibling_failure_interrupts_a_throttled_worker)
+| test(=capped_host_does_not_escalate_backoff)
+"""
+test-group = "timing"
+
+[[profile.default.overrides]]
+filter = "binary(ramping)"
+test-group = "ramping"
+
+[profile.ci]
+# Most tests wait on fixture-paced sleeps, not the CPU, so run more of them
+# than the runner has cores.
+test-threads = 8
+# Report every failure in one run; never retry, so a flake stays visible.
+fail-fast = false
+retries = 0
