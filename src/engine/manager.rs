@@ -739,19 +739,7 @@ impl Manager {
             .entries
             .get_mut(&id)
             .ok_or_else(|| Error::InvalidRequest(format!("no download with id {id}")))?;
-        if e.record.status != Status::Completed {
-            return Err(Error::InvalidRequest(format!(
-                "download {id} hasn't completed"
-            )));
-        }
-        let path = e
-            .record
-            .final_path
-            .clone()
-            .filter(|p| p.is_file())
-            .ok_or_else(|| {
-                Error::InvalidRequest(format!("download {id}'s file is no longer on disk"))
-            })?;
+        let path = finished_file(&e.record)?;
         e.record.checksum = Some(checksum.to_string());
         e.record.checksum_state = ChecksumState::Pending;
         e.verify_gen += 1;
@@ -765,6 +753,18 @@ impl Manager {
             inner.finish_verify(id, generation, matched);
         });
         Ok(())
+    }
+
+    /// The finished file of completed download `id`, for a frontend to open or
+    /// reveal: only paths the engine itself downloaded, never arbitrary ones.
+    /// Errors if `id` is unknown, hasn't completed, or its file is gone.
+    pub fn completed_file(&self, id: u64) -> crate::engine::Result<PathBuf> {
+        let st = self.inner.state.lock().unwrap();
+        let e = st
+            .entries
+            .get(&id)
+            .ok_or_else(|| Error::InvalidRequest(format!("no download with id {id}")))?;
+        finished_file(&e.record)
     }
 
     /// Remove a download from the list entirely. Any running task is stopped
@@ -1060,6 +1060,21 @@ fn now_secs() -> Option<u64> {
         .map(|d| d.as_secs())
 }
 
+/// A completed record's file, if it's still on disk.
+fn finished_file(record: &DownloadRecord) -> crate::engine::Result<PathBuf> {
+    let id = record.id;
+    if record.status != Status::Completed {
+        return Err(Error::InvalidRequest(format!(
+            "download {id} hasn't completed"
+        )));
+    }
+    record
+        .final_path
+        .clone()
+        .filter(|p| p.is_file())
+        .ok_or_else(|| Error::InvalidRequest(format!("download {id}'s file is no longer on disk")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1152,6 +1167,42 @@ mod tests {
         .unwrap();
         let states: Vec<_> = mgr.snapshot().iter().map(|s| s.checksum_state).collect();
         assert_eq!(states, [ChecksumState::None, ChecksumState::Verified]);
+    }
+
+    /// Only a completed download whose file is still on disk hands out a path,
+    /// so a frontend can't be steered into opening anything else.
+    #[tokio::test]
+    async fn completed_file_only_for_a_finished_file_on_disk() {
+        let dir = std::env::temp_dir().join(format!("rdm-completed-file-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("done.bin");
+        std::fs::write(&file, b"done").unwrap();
+        let completed = |id, path: &Path| DownloadRecord {
+            status: Status::Completed,
+            final_path: Some(path.to_path_buf()),
+            ..record(id, None)
+        };
+        let data = StoreData {
+            next_id: 4,
+            downloads: vec![
+                completed(1, &file),
+                completed(2, &dir.join("gone.bin")),
+                record(3, None),
+            ],
+            ..StoreData::default()
+        };
+        let mgr = Manager::load(
+            Box::new(FixedStore(data)),
+            tokio::runtime::Handle::current(),
+        )
+        .unwrap();
+
+        assert_eq!(mgr.completed_file(1).unwrap(), file);
+        let err = |id| mgr.completed_file(id).unwrap_err().to_string();
+        assert!(err(2).contains("no longer on disk"), "{}", err(2));
+        assert!(err(3).contains("hasn't completed"), "{}", err(3));
+        assert!(err(99).contains("no download with id 99"), "{}", err(99));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

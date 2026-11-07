@@ -106,7 +106,7 @@ export default function App() {
   const openDownload = useCallback(
     (d: DownloadSnapshot) => {
       api
-        .openPath(d.final_path ?? d.target)
+        .openDownload(d.id)
         .then(() => markOpened(d.id))
         .catch((e) => notify(openFailedMessage(d, e)));
     },
@@ -114,7 +114,7 @@ export default function App() {
   );
   const revealDownload = useCallback(
     (d: DownloadSnapshot) => {
-      api.revealPath(d.final_path ?? d.target).catch(fail);
+      api.revealDownload(d.id).catch(fail);
     },
     [fail],
   );

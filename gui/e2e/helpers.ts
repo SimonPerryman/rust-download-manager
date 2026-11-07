@@ -414,7 +414,7 @@ export async function stopThroughDialog(id: number, mode: "keep" | "delete"): Pr
   await waitForGone(STOP_DIALOG);
 }
 
-/** The lines `open_path` / `reveal_path` appended to `RDM_OPEN_LOG` (missing file = none). */
+/** The lines `open_download` / `reveal_download` appended to `RDM_OPEN_LOG` (missing file = none). */
 export function openLog(): string[] {
   const log = process.env.RDM_OPEN_LOG;
   if (!log || !existsSync(log)) return [];

@@ -1,12 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for the rdm desktop window.",
+  "description": "Permissions for the rdm desktop window. Only core: the folder picker and open/reveal are Rust commands that call their plugins directly, so the webview gets no plugin permissions.",
   "windows": ["main"],
-  "permissions": [
-    "core:default",
-    "dialog:allow-open",
-    "opener:allow-open-path",
-    "opener:allow-reveal-item-in-dir"
-  ]
+  "permissions": ["core:default"]
 }
