@@ -62,6 +62,17 @@ instruction sheet for any agent (and human) working in this repo.
   WebKitGTK's driver throws a stale-element error when the element detaches
   mid-check, so reverse waits flake on the Linux CI job. Enforced by the same
   guard, `gui/scripts/guard-e2e-webkit.mjs`.
+- **When an e2e spec reads text that sits inside a `truncate` (ellipsis)
+  element, even through an ancestor, use `waitForText()` from
+  `gui/e2e/helpers.ts`, never `getText()` or `toHaveText()`.** Why:
+  WebKitGTK's driver reads ellipsis text as `""` (the toolbar `h1` and the
+  finish notification's filename failed only on Linux). Not guarded: which
+  element is truncated isn't visible from the spec, so check `className` in
+  `gui/src` before asserting on its text.
+- **When an e2e spec needs Shift+key, dispatch a `KeyboardEvent` with
+  `shiftKey` instead of `browser.keys([Key.Shift, …])`.** Why: WebKitGTK's
+  driver drops the Shift, so Shift+Tab arrived as Tab. Enforced by
+  `gui/scripts/guard-e2e-webkit.mjs`.
 
 ## Comments & docs
 - Doc-comment (`///`) the public engine API: it's the contract and renders in

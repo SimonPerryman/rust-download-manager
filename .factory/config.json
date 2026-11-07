@@ -5,9 +5,9 @@
   "defaultBranch": "main",
   "gate": {
     "format": "cargo fmt --all --check && pnpm --dir gui format:check",
-    "lint": "cargo clippy --all-targets -- -D warnings && pnpm --dir gui lint",
+    "lint": "cargo clippy --all-targets -- -D warnings && cargo clippy -p rdm-gui --all-targets -- -D warnings && pnpm --dir gui lint",
     "typecheck": "pnpm --dir gui build",
-    "test": "cargo test && pnpm --dir gui test"
+    "test": "cargo test && cargo test -p rdm-gui && pnpm --dir gui test"
   },
   "vcs": {
     "host": "github"

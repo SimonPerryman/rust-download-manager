@@ -1,9 +1,11 @@
 // Guard: e2e calls that WebKitGTK's driver (the Linux CI job) gets wrong.
 // - `browser.keys()` may only send `Key.*` constants and string literals
 //   without a repeated consecutive character ("When an e2e spec types text").
+// - `browser.keys()` may not send `Key.Shift` ("When an e2e spec needs
+//   Shift+key").
 // - `waitForExist()` may not set `reverse` ("When an e2e spec waits for an
 //   element to disappear").
-// Both rules live in AGENTS.md (Testing philosophy).
+// All three rules live in AGENTS.md (Testing philosophy).
 //
 // Usage: node scripts/guard-e2e-webkit.mjs [e2eDir]   (default: e2e)
 
@@ -17,6 +19,14 @@ const CHECKS = {
       "type the text with element send-keys instead: `await input.addValue(text)` (or setValue) — " +
       "WebKitGTK's driver drops repeated characters sent as key actions " +
       '(AGENTS.md, Testing philosophy: "When an e2e spec types text")',
+  },
+  shift: {
+    rule: "browser.keys() never sends Key.Shift",
+    fix:
+      "dispatch the key event with the modifier set instead: " +
+      '`document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true }))` ' +
+      "via browser.execute — WebKitGTK's driver drops the Shift (AGENTS.md, Testing philosophy: " +
+      '"When an e2e spec needs Shift+key")',
   },
   reverse: {
     rule: "waitForExist() never sets `reverse`",
@@ -78,6 +88,7 @@ for (const file of tsFiles(e2eDir)) {
     }
     const rest = args.replace(LITERAL, "").replace(/\bKey\.\w+/g, "").replace(/[\s,[\]]/g, "");
     if (rest) report("keys", line, `non-literal argument (\`${rest}\`) can't be checked`);
+    if (/\bKey\.Shift\b/.test(args)) report("shift", line, "sends Key.Shift (a Shift chord)");
   }
 
   for (const { line, args } of calls(src, /\bwaitForExist\s*\(/g)) {
