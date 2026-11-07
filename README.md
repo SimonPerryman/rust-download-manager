@@ -205,6 +205,10 @@ Troubleshooting: the GUI logs to stderr and to a daily file in `~/.rdm`
 download starts, each retry with its reason, and failures, each line tagged
 with its download's `id` and file name. Set `RUST_LOG=debug` for more detail.
 An `rdm.log` left by older versions isn't pruned and can be deleted.
+Log lines and error messages (CLI and GUI) show a download's URL without its
+`user:password@` part, query string or fragment (`?<redacted>`), so they're
+safer to paste into a bug report; `~/.rdm` itself keeps full URLs for resume
+and is owner-only (0700) on Linux and macOS.
 
 Two environment variables relocate the GUI's files, mainly for automated runs:
 `RDM_HOME` replaces `~/.rdm` (state, log, and — except on macOS — the webview's

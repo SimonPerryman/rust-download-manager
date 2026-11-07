@@ -540,3 +540,25 @@ async fn cli_reports_a_failure_once() {
     assert_eq!(stderr.matches("HTTP 404").count(), 1, "stderr: {stderr}");
     assert!(stderr.contains("failed to download"), "stderr: {stderr}");
 }
+
+/// The CLI's failure message names the URL without its query secrets.
+#[tokio::test]
+async fn cli_failure_message_redacts_url_secrets() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .arg(server.url("/missing?token=SECRET123"))
+        .arg("-o")
+        .arg(dir.path().join("nope.bin"))
+        .arg("--verbose")
+        .env_remove("RUST_LOG")
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("SECRET123"), "stderr: {stderr}");
+    assert!(stderr.contains("/missing?<redacted>"), "stderr: {stderr}");
+}

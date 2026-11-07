@@ -129,3 +129,63 @@ async fn pause_and_cancel_are_not_logged_as_errors() {
         "{lines:#?}"
     );
 }
+
+/// A URL whose port nothing listens on, carrying secrets in its userinfo and
+/// query, as signed CDN links and `user:pass@` URLs do.
+async fn secret_url_to_closed_port() -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    format!("http://user:PASSWORD9@127.0.0.1:{port}/f.bin?token=SECRET123#frag")
+}
+
+/// A failing download's error text and every log line it emits (retries
+/// included) redact the URL's secrets, so pasted logs and error messages
+/// never leak them.
+#[tokio::test]
+async fn failed_download_never_logs_or_reports_url_secrets() {
+    let (captured, _guard) = capture();
+    let url = secret_url_to_closed_port().await;
+    let dir = tempfile::tempdir().unwrap();
+    let req =
+        DownloadRequest::to_path(&url, dir.path().join("f.bin")).with_retry(rdm::RetryPolicy {
+            max_attempts: 2,
+            base_delay: Duration::from_millis(1),
+            ..rdm::RetryPolicy::none()
+        });
+
+    let err = download(&req, &Control::new(), |_| {}).await.unwrap_err();
+    assert!(matches!(err, Error::Http(_)), "{err:?}");
+    let reported = format!("{err} {err:?}");
+    let logged = captured.lines().join("\n");
+    for secret in ["SECRET123", "PASSWORD9", "frag"] {
+        assert!(!reported.contains(secret), "{reported}");
+        assert!(!logged.contains(secret), "{logged}");
+    }
+    assert!(logged.contains("download failed"), "{logged}");
+    assert!(logged.contains("retrying"), "{logged}");
+    assert!(logged.contains("/f.bin?<redacted>"), "{logged}");
+}
+
+/// The error a Manager records for a failed download (shown in the GUI and
+/// saved to `state.json`) carries no URL secrets either.
+#[tokio::test]
+async fn manager_error_never_carries_url_secrets() {
+    let url = secret_url_to_closed_port().await;
+    let dir = tempfile::tempdir().unwrap();
+    let store: Box<dyn Store> = Box::new(JsonStore::new(dir.path().join("state.json")));
+    let mgr = Manager::load(store, tokio::runtime::Handle::current()).unwrap();
+
+    let id = mgr.add(url, dir.path(), None, None);
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let error = loop {
+        let snap = mgr.snapshot().into_iter().find(|s| s.id == id).unwrap();
+        if snap.status == Status::Failed {
+            break snap.error.expect("a failed download has an error");
+        }
+        assert!(Instant::now() < deadline, "never failed: {:?}", snap.status);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    };
+    assert!(!error.contains("SECRET123"), "{error}");
+    assert!(!error.contains("PASSWORD9"), "{error}");
+}
