@@ -32,12 +32,16 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M3 | Multi-segment parallel downloads | done | [[milestone-03-multi-segment]] |
 | M4 | Queue & throughput management | done | [[milestone-04-queue-throughput]] |
 | M5 | GUI rethink — Console layout | in-progress | [[milestone-05-gui-rethink]] |
+| M6 | Releases & install | todo | [[milestone-06-releases-install]] |
+| M7 | Archive & tags | todo | [[milestone-07-archive-tags]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 
 Dependency notes: M2, M3 and M4 all depend only on M1, not on each other, so
 their order is flexible. M2 (GUI) is sequenced first post-MVP by choice; M3 is
 the parallel-download speed feature; M4 is the day-to-day queue/throttle layer.
+M6 (prebuilt releases) follows M5 so the first release ships the new GUI. M7
+needs M5's details pane, context menu and multi-select, and comes after M6.
 
 ## Backlog (not yet scheduled — parked on purpose)
 
@@ -61,6 +65,13 @@ the parallel-download speed feature; M4 is the day-to-day queue/throttle layer.
 - **GUI desktop integration (cut from M5)**: a free-space readout in the
   status bar (needs a `free_space(dir)` command), native OS notifications
   (Tauri notification plugin), tray icon, start with the system.
+- **Code signing and in-app updates (cut from M6)**: sign the Windows
+  binaries and installers (e.g. Azure Trusted Signing) and sign and notarise
+  the macOS app (Apple Developer Program), so SmartScreen and Gatekeeper stop
+  warning; then the Tauri updater plugin, which needs signed updates.
+- **Archive and tag automation (cut from M7)**: auto-archive finished
+  downloads after N days; auto-tag rules by host or file type; tag rename,
+  merge and colours.
 - **Post-download safety checks** (optional): a checksum only proves we got
   the bytes the server sent, not that they're safe or what they claim to be.
   Candidates: Windows Mark-of-the-Web (`Zone.Identifier` with ZoneId=3 and
