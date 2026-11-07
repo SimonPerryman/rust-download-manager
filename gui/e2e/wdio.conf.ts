@@ -107,7 +107,7 @@ export const config: WebdriverIO.Config = {
       mkdirSync(dir, { recursive: true });
       process.env[key] = dir;
     }
-    // open_path / reveal_path log here instead of launching an OS handler.
+    // open_download / reveal_download log here instead of launching an OS handler.
     process.env.RDM_OPEN_LOG = path.join(e2eRoot, "opened.log");
     console.log(`E2E temp root: ${e2eRoot}`);
 

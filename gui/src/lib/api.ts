@@ -73,8 +73,10 @@ export const retryFailed = () => invoke<void>("retry_failed");
 
 export const defaultDownloadDir = () => invoke<string>("default_download_dir");
 export const pickFolder = () => invoke<string | null>("pick_folder");
-export const openPath = (path: string) => invoke<void>("open_path", { path });
-export const revealPath = (path: string) => invoke<void>("reveal_path", { path });
+/** Open a completed download's file. By id: the backend resolves the path, so the webview can't name one. */
+export const openDownload = (id: number) => invoke<void>("open_download", { id });
+/** Show a completed download's file in its folder (by id, like `openDownload`). */
+export const revealDownload = (id: number) => invoke<void>("reveal_download", { id });
 
 /** Subscribe to live snapshots pushed from the backend's watch channel. */
 export const onDownloadsChanged = (

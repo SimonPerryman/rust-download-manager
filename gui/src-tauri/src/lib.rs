@@ -25,9 +25,11 @@ fn list(state: State<'_, AppState>) -> Vec<DownloadSnapshot> {
     state.manager.snapshot()
 }
 
-/// Add a download. `dir` defaults to [`default_dir`]; `checksum`, if
-/// given, must parse as `"sha256:<hex>"`; `limit` is a rate like `"500K"`
-/// (blank = unlimited). Returns the new download's id.
+/// Add a download. `dir` is the user's chosen destination (folder picker or
+/// typed in the Add dialog), checked by [`download_dir`]; blank defaults to
+/// [`default_dir`]. `checksum`, if given, must parse as `"sha256:<hex>"`;
+/// `limit` is a rate like `"500K"` (blank = unlimited). Returns the new
+/// download's id.
 #[tauri::command]
 fn add_download(
     app: tauri::AppHandle,
@@ -38,7 +40,7 @@ fn add_download(
     limit: Option<String>,
 ) -> Result<u64, String> {
     let dir = match dir {
-        Some(d) if !d.trim().is_empty() => PathBuf::from(d),
+        Some(d) if !d.trim().is_empty() => download_dir(&d)?,
         _ => default_dir(&app)?,
     };
     let checksum = match checksum {
@@ -53,6 +55,20 @@ fn add_download(
         ..AddOptions::default()
     };
     Ok(state.manager.add_with(url, dir, options))
+}
+
+/// Check a user-chosen destination: it must be an absolute path and, if it
+/// exists, a directory. A missing one is fine; the engine creates it when the
+/// download starts.
+fn download_dir(dir: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(dir);
+    if !path.is_absolute() {
+        return Err(format!("download folder must be a full path: {dir}"));
+    }
+    if path.exists() && !path.is_dir() {
+        return Err(format!("download folder is not a folder: {dir}"));
+    }
+    Ok(path)
 }
 
 /// Parse an optional rate string (`"2M"`, `"500K"`); blank or absent is
@@ -222,20 +238,33 @@ async fn pick_folder(app: tauri::AppHandle) -> Option<String> {
     rx.await.ok().flatten().map(|p| p.to_string())
 }
 
-/// Open a file (or folder) with the OS default handler.
+/// Open completed download `id`'s file with the OS default handler. Takes an
+/// id, not a path, so the webview can only open files the engine downloaded.
 #[tauri::command]
-fn open_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
+fn open_download(app: tauri::AppHandle, state: State<'_, AppState>, id: u64) -> Result<(), String> {
+    let path = state
+        .manager
+        .completed_file(id)
+        .map_err(|e| e.to_string())?;
     if let Some(log) = env_dir(OPEN_LOG_ENV) {
         return append_open_log(&log, "open", &path).map_err(|e| e.to_string());
     }
     app.opener()
-        .open_path(path, None::<&str>)
+        .open_path(path.to_string_lossy(), None::<&str>)
         .map_err(|e| e.to_string())
 }
 
-/// Reveal a file in its containing folder in the OS file manager.
+/// Show completed download `id`'s file in its folder in the OS file manager.
 #[tauri::command]
-fn reveal_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
+fn reveal_download(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: u64,
+) -> Result<(), String> {
+    let path = state
+        .manager
+        .completed_file(id)
+        .map_err(|e| e.to_string())?;
     if let Some(log) = env_dir(OPEN_LOG_ENV) {
         return append_open_log(&log, "reveal", &path).map_err(|e| e.to_string());
     }
@@ -252,18 +281,22 @@ const HOME_ENV: &str = "RDM_HOME";
 /// Overrides the Add dialog's default download directory (default: the OS one).
 const DOWNLOAD_DIR_ENV: &str = "RDM_DOWNLOAD_DIR";
 
-/// When set, `open_path` / `reveal_path` append `open <path>` / `reveal <path>` lines to
+/// When set, `open_download` / `reveal_download` append `open <path>` / `reveal <path>` lines to
 /// this file instead of launching the OS handler. Lets the webview E2E suite check what
 /// would open without starting another program.
 const OPEN_LOG_ENV: &str = "RDM_OPEN_LOG";
 
 /// One `RDM_OPEN_LOG` line (without its newline): `kind` is `open` or `reveal`.
-fn open_log_line(kind: &str, path: &str) -> String {
-    format!("{kind} {path}")
+fn open_log_line(kind: &str, path: &std::path::Path) -> String {
+    format!("{kind} {}", path.display())
 }
 
 /// Append one [`open_log_line`] to `log`, creating the file if needed.
-fn append_open_log(log: &std::path::Path, kind: &str, path: &str) -> std::io::Result<()> {
+fn append_open_log(
+    log: &std::path::Path,
+    kind: &str,
+    path: &std::path::Path,
+) -> std::io::Result<()> {
     use std::io::Write;
     let mut file = std::fs::OpenOptions::new()
         .create(true)
@@ -449,8 +482,8 @@ pub fn run() {
             retry_failed,
             default_download_dir,
             pick_folder,
-            open_path,
-            reveal_path,
+            open_download,
+            reveal_download,
         ])
         .run(tauri::generate_context!())
         .expect("error while running rdm GUI");
@@ -471,17 +504,39 @@ mod tests {
         assert!(super::parse_sha256("md5:abc").is_err());
     }
 
+    /// A destination must be absolute and not an existing file; a missing
+    /// folder is accepted (the engine creates it).
+    #[test]
+    fn download_dir_is_absolute_and_not_a_file() {
+        let root = std::env::temp_dir().join(format!("rdm-gui-dir-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("a-file");
+        std::fs::write(&file, b"x").unwrap();
+        let s = |p: &std::path::Path| p.to_string_lossy().into_owned();
+
+        assert_eq!(super::download_dir(&s(&root)).unwrap(), root);
+        let missing = root.join("new").join("sub");
+        assert_eq!(super::download_dir(&s(&missing)).unwrap(), missing);
+        assert!(super::download_dir(&s(&file))
+            .unwrap_err()
+            .contains("not a folder"));
+        assert!(super::download_dir("relative/dir")
+            .unwrap_err()
+            .contains("full path"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The open log records one `<kind> <path>` line per call, appending.
     #[test]
     fn open_log_appends_one_line_per_call() {
         assert_eq!(
-            super::open_log_line("open", r"C:\dl\a b.iso"),
+            super::open_log_line("open", r"C:\dl\a b.iso".as_ref()),
             r"open C:\dl\a b.iso"
         );
         let log = std::env::temp_dir().join(format!("rdm-gui-open-{}.log", std::process::id()));
         let _ = std::fs::remove_file(&log);
-        super::append_open_log(&log, "open", "/dl/a.iso").unwrap();
-        super::append_open_log(&log, "reveal", "/dl/b.iso").unwrap();
+        super::append_open_log(&log, "open", "/dl/a.iso".as_ref()).unwrap();
+        super::append_open_log(&log, "reveal", "/dl/b.iso".as_ref()).unwrap();
         let text = std::fs::read_to_string(&log).unwrap();
         let _ = std::fs::remove_file(&log);
         assert_eq!(text, "open /dl/a.iso\nreveal /dl/b.iso\n");
