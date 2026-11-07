@@ -100,17 +100,20 @@ describe("rdm GUI stop dialog", () => {
     expect(await activeIs('input[name="stop-mode"][value="keep"]')).toBe(true);
     // Shift+Tab as a key event, not browser.keys([Key.Shift, Key.Tab]):
     // on the Linux CI job (WebKitGTK's driver) the chord moved focus forward.
-    // From the first stop, the trap itself moves focus, so this still checks it.
-    await browser.execute(() =>
-      document.activeElement?.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Tab",
-          shiftKey: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      ),
+    // From the first stop only the trap moves focus, and it must cancel the
+    // browser's own Shift+Tab (dispatchEvent returns false once prevented).
+    const notPrevented = await browser.execute(
+      () =>
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Tab",
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        ) ?? true,
     );
+    expect(notPrevented).toBe(false);
     expect(await activeIs(`${STOP_DIALOG} button.btn-primary`)).toBe(true);
 
     await browser.keys(Key.Escape);

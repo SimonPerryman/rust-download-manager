@@ -64,12 +64,13 @@ export async function waitForGone(selector: string, timeoutMsg?: string): Promis
 }
 
 /**
- * Waits until the first `selector` match is displayed and its rendered text
- * (innerText) contains `text`. Not getText(): WebKitGTK's driver returns ""
- * for a displayed element with `text-overflow: ellipsis` (Tailwind
- * `truncate`). A fresh query each poll, and a thrown error means "not yet",
- * so a re-render replacing the element mid-check can't strand a stale
- * reference. On timeout the error says what the driver and the page saw.
+ * Waits until the first match of the CSS `selector` is displayed and its
+ * rendered text (innerText) contains `text`. Not getText(): WebKitGTK's driver
+ * returns "" for a displayed Tailwind `truncate` element (the toolbar title,
+ * the notification filename), and drops that text from an ancestor's read too.
+ * A fresh query each poll, and a thrown error means "not yet", so a re-render
+ * replacing the element mid-check can't strand a stale reference. On timeout
+ * the error says what the driver and the page saw.
  */
 export async function waitForText(
   selector: string,
@@ -93,7 +94,8 @@ export async function waitForText(
       { timeoutMsg: timeoutMsg ?? `${selector} never showed "${text}"` },
     );
   } catch (e) {
-    throw new Error(`${String(e)}\n${await textDiagnostics(selector)}`);
+    const message = e instanceof Error ? e.message : String(e);
+    throw new Error(`${message}\n${await textDiagnostics(selector)}`, { cause: e });
   }
 }
 
@@ -107,11 +109,21 @@ async function textDiagnostics(selector: string): Promise<string> {
     }
   };
   const el = $(selector);
+  // Element commands on a missing element each wait out waitforTimeout, which
+  // could push the spec past mocha's timeout and hide this error behind it.
+  const exists = await safe(async () => (await $$(selector).length) > 0);
+  const driver =
+    exists === true
+      ? {
+          getText: await safe(() => el.getText()),
+          isDisplayed: await safe(() => el.isDisplayed()),
+          size: await safe(() => el.getSize()),
+          location: await safe(() => el.getLocation()),
+        }
+      : null;
   const report = {
-    getText: await safe(() => el.getText()),
-    isDisplayed: await safe(() => el.isDisplayed()),
-    size: await safe(() => el.getSize()),
-    location: await safe(() => el.getLocation()),
+    exists,
+    driver,
     windowSize: await safe(() => browser.getWindowSize()),
     page: await safe(() =>
       browser.execute((sel) => {

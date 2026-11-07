@@ -22,11 +22,11 @@ import {
   openLog,
   removeAll,
   rowById,
+  rowSelector,
   selectFilter,
   shownIds,
   waitForAttr,
   waitForGone,
-  rowSelector,
   waitForStatus,
   waitForText,
 } from "../helpers";
