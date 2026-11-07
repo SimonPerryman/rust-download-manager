@@ -64,11 +64,12 @@ export async function waitForGone(selector: string, timeoutMsg?: string): Promis
 }
 
 /**
- * Waits until the first `selector` match's visible text (getText) contains
- * `text`. A fresh query each poll, and a thrown error means "not yet": a
- * re-render can replace the element mid-check, and WebKitGTK's driver then
- * keeps failing on the stale reference `expect(el).toHaveText()` holds on to.
- * On timeout the error carries why the driver might not see the text.
+ * Waits until the first `selector` match is displayed and its rendered text
+ * (innerText) contains `text`. Not getText(): WebKitGTK's driver returns ""
+ * for a displayed element with `text-overflow: ellipsis` (Tailwind
+ * `truncate`). A fresh query each poll, and a thrown error means "not yet",
+ * so a re-render replacing the element mid-check can't strand a stale
+ * reference. On timeout the error says what the driver and the page saw.
  */
 export async function waitForText(
   selector: string,
@@ -79,7 +80,12 @@ export async function waitForText(
     await browser.waitUntil(
       async () => {
         try {
-          return (await $(selector).getText()).includes(text);
+          if (!(await $(selector).isDisplayed())) return false;
+          const shown = await browser.execute(
+            (sel) => (document.querySelector(sel) as HTMLElement | null)?.innerText ?? "",
+            selector,
+          );
+          return shown.includes(text);
         } catch {
           return false;
         }
@@ -87,8 +93,7 @@ export async function waitForText(
       { timeoutMsg: timeoutMsg ?? `${selector} never showed "${text}"` },
     );
   } catch (e) {
-    throw new Error(`${String(e)}
-${await textDiagnostics(selector)}`);
+    throw new Error(`${String(e)}\n${await textDiagnostics(selector)}`);
   }
 }
 
