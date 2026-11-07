@@ -2,8 +2,7 @@
 # package.json "pnpm" field.)
 #
 # pnpm blocks dependency build scripts by default and fails the install if any
-# are left undecided. esbuild's postinstall fetches its native binary (used by
-# Vite), so we allow it to run; this keeps `pnpm install` clean on every
-# platform. Maintained via `pnpm approve-builds` / `pnpm install --allow-build`.
-allowBuilds:
-  esbuild: true
+# are left undecided. No dependency here needs one: Vite 8 bundles with
+# Rolldown and ships its native binaries as optional packages, so nothing is
+# allowed. Maintained via `pnpm approve-builds` / `pnpm install --allow-build`.
+allowBuilds: {}
