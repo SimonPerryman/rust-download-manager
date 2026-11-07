@@ -1,0 +1,96 @@
+// Starts what a WebdriverIO run drives the app through: the Rust fixture
+// server on loopback and tauri-driver. Shared by the e2e suite
+// (wdio.conf.ts) and the README screenshot run (wdio.screenshots.conf.ts).
+
+import { spawn, type ChildProcess } from "node:child_process";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { createInterface } from "node:readline";
+
+const isWindows = process.platform === "win32";
+const exe = (p: string) => (isWindows ? `${p}.exe` : p);
+
+export const repoRoot = path.resolve(import.meta.dirname, "../..");
+const targetDir = process.env.CARGO_TARGET_DIR ?? path.join(repoRoot, "target");
+export const appBinary = exe(path.join(targetDir, "debug", "rdm-gui"));
+const fixtureBinary = exe(path.join(targetDir, "debug", "examples", "fixture_server"));
+const tauriDriverBinary =
+  process.env.TAURI_DRIVER_PATH ?? exe(path.join(os.homedir(), ".cargo", "bin", "tauri-driver"));
+
+export const DRIVER_PORT = 4444;
+
+/** The WebdriverIO settings both runs share; each adds its specs and hooks. */
+export const baseConfig = {
+  runner: "local",
+  hostname: "127.0.0.1",
+  port: DRIVER_PORT,
+  maxInstances: 1,
+  capabilities: [
+    {
+      // tauri-driver translates this into the native driver's capabilities.
+      "tauri:options": { application: appBinary },
+    } as WebdriverIO.Capabilities,
+  ],
+  logLevel: "warn",
+  waitforTimeout: 15_000,
+  connectionRetryTimeout: 60_000,
+  connectionRetryCount: 2,
+  framework: "mocha",
+  reporters: ["spec"],
+} satisfies WebdriverIO.Config;
+
+let fixture: ChildProcess | undefined;
+let tauriDriver: ChildProcess | undefined;
+
+/** Start the fixture server (with `args`) on a free port and resolve its base URL. */
+export function startFixture(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(fixtureBinary, ["--port", "0", ...args], {
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+    fixture = child;
+    child.once("error", reject);
+    child.once("exit", (code) => reject(new Error(`fixture server exited (${code})`)));
+    createInterface({ input: child.stdout! }).on("line", (line) => {
+      const match = /^listening on (\S+)/.exec(line);
+      if (match) resolve(match[1]);
+    });
+  });
+}
+
+/** Resolve once something accepts TCP connections on `port`. */
+async function waitForPort(port: number, timeoutMs = 15_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const open = await new Promise<boolean>((resolve) => {
+      const socket = net.connect(port, "127.0.0.1");
+      socket.once("connect", () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.once("error", () => resolve(false));
+    });
+    if (open) return;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error(`nothing listening on port ${port} after ${timeoutMs} ms`);
+}
+
+/** Start tauri-driver and wait until it accepts connections. */
+export async function startTauriDriver(): Promise<void> {
+  const driverArgs = process.env.MSEDGEDRIVER_PATH
+    ? ["--native-driver", process.env.MSEDGEDRIVER_PATH]
+    : [];
+  tauriDriver = spawn(tauriDriverBinary, driverArgs, {
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  tauriDriver.once("error", (e) => console.error(`tauri-driver failed to start: ${e}`));
+  await waitForPort(DRIVER_PORT);
+}
+
+/** Stop tauri-driver and the fixture server. */
+export function stopAll(): void {
+  tauriDriver?.kill();
+  fixture?.kill();
+}
