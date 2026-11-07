@@ -551,7 +551,10 @@ impl Manager {
 
         let (target, target_provisional) = match options.out {
             Some(out) => (unique_target(st, out), false),
-            None => (dir.into().join(filename::resolve(None, &url, None)), true),
+            None => {
+                let name = filename::resolve(None, &url, None);
+                (filename::join_in(&dir.into(), &name), true)
+            }
         };
         let limiter = Arc::new(RateLimiter::new(options.limit));
         let record = DownloadRecord {
