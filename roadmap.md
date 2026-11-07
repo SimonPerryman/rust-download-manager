@@ -73,6 +73,14 @@ to be a single PR; promote one into a ticket when it's picked up.
   can spill into the next, judged window and stop ramping early.
 - **Ramp window tuning** (M4): with the 1 s window a download needs ~7 s to
   reach 4 connections; a live smoke run decides whether it should shrink.
+- **Move CI to Ubuntu 26.04** (CI pins): the e2e job's `webkit2gtk-driver`
+  is `webkitgtk-webdriver` there; check the other Tauri deps and bump the pin
+  in its own PR.
+- **Automated pin bumps** (CI pins): have Dependabot or Renovate propose
+  action SHA and image updates, so pinned versions keep getting security fixes.
+- **Add-time checksum "checking" state** (M5 PR A): the engine hashes inside
+  finalize, so `checksum_state` never shows `pending` for it; an engine hook
+  could publish it.
 
 ## Candidate crates
 

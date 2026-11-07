@@ -25,15 +25,15 @@ jobs:
       matrix:
         # Windows minutes bill at 2x, and the local gate already runs on
         # Windows before each push, so PRs run Linux only.
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04", "windows-2025-vs2026"]') }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install Rust (pinned by rust-toolchain.toml)
         run: rustup toolchain install
 
       - name: Cache cargo registry and build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         # Only main saves: branch caches (~640 MB each on Windows) would
         # otherwise evict main's from GitHub's 10 GB cache limit. Branches
         # still restore main's cache.
@@ -51,32 +51,32 @@ jobs:
 
   # The Linux GUI checks run in the e2e job, which builds the same app anyway.
   gui:
-    name: gui build (windows-latest)
-    runs-on: windows-latest
+    name: gui build (windows-2025)
+    runs-on: windows-2025-vs2026
     # Windows-only and 2x billed: main and manual runs, not PRs.
     if: github.event_name != 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install Rust (pinned by rust-toolchain.toml)
         run: rustup toolchain install
 
       - name: Cache cargo registry and build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           # The pinned pnpm version lives in gui/package.json's "packageManager"
           # (there is no root package.json).
           package_json_file: gui/package.json
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 20.20.2
           cache: pnpm
           cache-dependency-path: gui/pnpm-lock.yaml
 
@@ -116,9 +116,9 @@ jobs:
 
   e2e:
     name: gui checks + e2e (webview, ubuntu)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install Rust (pinned by rust-toolchain.toml)
         run: rustup toolchain install
@@ -126,7 +126,7 @@ jobs:
       # Also caches ~/.cargo/bin, so the tauri-driver install below is a no-op
       # on a warm cache.
       - name: Cache cargo registry, build and tools
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
@@ -138,17 +138,17 @@ jobs:
           sudo apt-get install -y             libwebkit2gtk-4.1-dev             libayatana-appindicator3-dev             librsvg2-dev             libxdo-dev             libssl-dev             patchelf             webkit2gtk-driver             xvfb
 
       - name: Install tauri-driver
-        run: cargo install tauri-driver --locked
+        run: cargo install tauri-driver --version 2.1.0 --locked
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           package_json_file: gui/package.json
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 20.20.2
           cache: pnpm
           cache-dependency-path: |
             gui/pnpm-lock.yaml
@@ -195,15 +195,15 @@ jobs:
 
   live-smoke:
     name: live smoke (network, on demand)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Keep the default gate offline; run the real-network test only on manual
     # dispatch so it never gates everyday pushes.
     if: github.event_name == 'workflow_dispatch'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install Rust (pinned by rust-toolchain.toml)
         run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Run ignored live smoke test

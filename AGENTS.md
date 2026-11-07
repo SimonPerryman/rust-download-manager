@@ -9,6 +9,18 @@ instruction sheet for any agent (and human) working in this repo.
   file and never names a version.** Why: newer clippy adds lints, so an
   unpinned local toolchain passes code CI rejects. Bump the pin in its own
   commit and fix any new lints there.
+- **CI pins everything it runs on:**
+  - runner images are exact (`ubuntu-24.04`, never `*-latest`);
+  - actions use a full commit SHA with a `# vX.Y.Z` comment;
+  - `node-version` is an exact `x.y.z`;
+  - `cargo install` passes `--version`.
+
+  Why: supply-chain safety, because a moved tag can't inject code, and
+  because an upstream move can't break CI unannounced (`ubuntu-latest`
+  moving to 26.04 renamed `webkit2gtk-driver`). Apt packages are pinned by
+  the image, not by version, because Ubuntu drops superseded versions,
+  which breaks builds and blocks security fixes. Bump a pin in its own
+  commit. Enforced by `gui/scripts/guard-ci-pins.mjs` (part of `pnpm lint`).
 - On Windows, build from a Developer PowerShell for VS (MSVC env loaded) so the
   linker (`link.exe`) and the Windows SDK are on PATH.
 
