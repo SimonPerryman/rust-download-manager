@@ -32,8 +32,7 @@ tears everything down. No dev stack is needed. Runs are isolated via
   ```
   (If that vcvars path doesn't exist, find `vcvars64.bat` under
   `C:\Program Files (x86)\Microsoft Visual Studio\2022\`.)
-- **Linux:** `cd gui/e2e && pnpm run build && xvfb-run -a --server-args="-screen 0 1920x1080x24" pnpm test`
-  (xvfb-run's default 640x480 screen is smaller than the app's default window.)
+- **Linux:** `cd gui/e2e && pnpm run build && xvfb-run -a pnpm test`
 - **macOS:** unsupported — tauri-driver has no macOS WKWebView driver. Report skip.
 
 ## 3. Report

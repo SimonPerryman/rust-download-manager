@@ -64,26 +64,85 @@ export async function waitForGone(selector: string, timeoutMsg?: string): Promis
 }
 
 /**
- * Waits until the first `selector` match's text contains `text`. A fresh query
- * each poll, and a thrown error means "not yet": a re-render can replace the
- * element mid-check, and WebKitGTK's driver then keeps failing on the stale
- * reference that `expect(el).toHaveText()` holds on to.
+ * Waits until the first `selector` match's visible text (getText) contains
+ * `text`. A fresh query each poll, and a thrown error means "not yet": a
+ * re-render can replace the element mid-check, and WebKitGTK's driver then
+ * keeps failing on the stale reference `expect(el).toHaveText()` holds on to.
+ * On timeout the error carries why the driver might not see the text.
  */
 export async function waitForText(
   selector: string,
   text: string,
   timeoutMsg?: string,
 ): Promise<void> {
-  await browser.waitUntil(
-    async () => {
-      try {
-        return (await $(selector).getText()).includes(text);
-      } catch {
-        return false;
-      }
-    },
-    { timeoutMsg: timeoutMsg ?? `${selector} never showed "${text}"` },
-  );
+  try {
+    await browser.waitUntil(
+      async () => {
+        try {
+          return (await $(selector).getText()).includes(text);
+        } catch {
+          return false;
+        }
+      },
+      { timeoutMsg: timeoutMsg ?? `${selector} never showed "${text}"` },
+    );
+  } catch (e) {
+    throw new Error(`${String(e)}
+${await textDiagnostics(selector)}`);
+  }
+}
+
+/** What the driver and the page say about `selector`, for a failed text wait. */
+async function textDiagnostics(selector: string): Promise<string> {
+  const safe = async <T>(f: () => Promise<T>): Promise<T | string> => {
+    try {
+      return await f();
+    } catch (e) {
+      return `error: ${String(e).slice(0, 120)}`;
+    }
+  };
+  const el = $(selector);
+  const report = {
+    getText: await safe(() => el.getText()),
+    isDisplayed: await safe(() => el.isDisplayed()),
+    size: await safe(() => el.getSize()),
+    location: await safe(() => el.getLocation()),
+    windowSize: await safe(() => browser.getWindowSize()),
+    page: await safe(() =>
+      browser.execute((sel) => {
+        const node = document.querySelector(sel);
+        if (!node) return null;
+        const cs = getComputedStyle(node);
+        const r = node.getBoundingClientRect();
+        const chain: string[] = [];
+        for (let a = node.parentElement; a; a = a.parentElement) {
+          const s = getComputedStyle(a);
+          if (s.opacity !== "1" || s.visibility !== "visible" || s.display === "none") {
+            chain.push(`${a.tagName}.${a.className}: ${s.display}/${s.visibility}/${s.opacity}`);
+          }
+        }
+        return {
+          textContent: node.textContent,
+          innerText: (node as HTMLElement).innerText,
+          rect: { x: r.x, y: r.y, w: r.width, h: r.height },
+          scrollW: node.scrollWidth,
+          clientW: node.clientWidth,
+          style: {
+            display: cs.display,
+            visibility: cs.visibility,
+            opacity: cs.opacity,
+            overflow: cs.overflow,
+            textOverflow: cs.textOverflow,
+            whiteSpace: cs.whiteSpace,
+          },
+          ancestorsHidden: chain,
+          viewport: { w: window.innerWidth, h: window.innerHeight },
+          screen: { w: screen.width, h: screen.height },
+        };
+      }, selector),
+    ),
+  };
+  return `text diagnostics for ${selector}: ${JSON.stringify(report)}`;
 }
 
 /**
