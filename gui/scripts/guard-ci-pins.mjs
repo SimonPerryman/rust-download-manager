@@ -5,6 +5,7 @@
 // - `uses:` pins a full 40-hex commit SHA (with a `# vX.Y.Z` comment).
 // - `node-version` is an exact x.y.z.
 // - `cargo install` passes `--version`.
+// - `tool:` (taiki-e/install-action) names an exact `name@x.y.z` per tool.
 //
 // Usage: node scripts/guard-ci-pins.mjs [workflowsDir]   (default: ../.github/workflows)
 
@@ -40,6 +41,14 @@ const CHECKS = [
     test: (line) => /\bcargo install\b/.test(line) && !/--version\b/.test(line),
     rule: "cargo install without --version",
     fix: "add `--version X.Y.Z --locked`",
+  },
+  {
+    test: (line) => {
+      const m = line.match(/^\s*tool:\s*["']?([^"'#]*)/);
+      return m && m[1].split(",").some((t) => !/^[\w-]+@\d+\.\d+\.\d+$/.test(t.trim()));
+    },
+    rule: "install-action `tool:` without an exact version",
+    fix: "pin each tool, e.g. `tool: cargo-nextest@0.9.149`",
   },
 ];
 
