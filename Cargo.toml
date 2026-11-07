@@ -9,6 +9,7 @@ version = "0.1.0"
 edition = "2021"
 description = "A download manager in Rust"
 license = "MIT OR Apache-2.0"
+publish = false
 repository = "https://github.com/SimonPerryman/rust-download-manager"
 
 # Engine/CLI split: the engine lives in the library crate; `rdm` is a thin
