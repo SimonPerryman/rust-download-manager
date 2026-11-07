@@ -1,7 +1,7 @@
 // Guard: CI pins everything it runs on, so an upstream change (a `-latest`
 // image migrating, a moved action tag) can neither break nor compromise a
 // build unannounced. Rule lives in AGENTS.md (Toolchain).
-// - `runs-on` names an exact image, never `*-latest`.
+// - runner images are exact, never `*-latest` (under any key).
 // - `uses:` pins a full 40-hex commit SHA (with a `# vX.Y.Z` comment).
 // - `node-version` is an exact x.y.z.
 // - `cargo install` passes `--version`.
@@ -15,7 +15,8 @@ const dir = process.argv[2] ?? join("..", ".github", "workflows");
 
 const CHECKS = [
   {
-    test: (line) => /-latest\b/.test(line) && /runs-on|os:/.test(line),
+    // Any key, not just `runs-on`/`os:`: matrix entries and label lists name images too.
+    test: (line) => /\b(ubuntu|windows|macos)-latest\b/.test(line),
     rule: "runner image is `*-latest`",
     fix: "name the exact image, e.g. `ubuntu-24.04` or `windows-2025-vs2026`",
   },
