@@ -69,6 +69,16 @@ the parallel-download speed feature; M4 is the day-to-day queue/throttle layer.
   do); magic-byte sniffing against the extension (flag a "video" that's an
   executable, or `.mp4.exe`); warn when an archive holds executables or
   scripts; a user-configured post-download command (e.g. a scanner).
+- **Per-app VPN routing** (optional): route only rdm's traffic through a VPN
+  without changing the whole machine. (1) First, SOCKS5/HTTP proxy support
+  (`--proxy` plus a GUI setting; reqwest supports SOCKS): many VPN services
+  expose a SOCKS5 endpoint, and it also helps behind corporate proxies.
+  (2) Optionally, bind to a chosen network interface (e.g. the VPN tunnel
+  adapter) with a kill switch: pause downloads rather than fall back to the
+  normal connection if that interface goes away. Easier on Linux/macOS;
+  Windows needs more work. Out of scope: an embedded VPN client, which is
+  security-sensitive, needs credentials and duplicates the VPN app's own
+  split tunnelling.
 
 ## Follow-ups (small, from shipped milestones)
 
