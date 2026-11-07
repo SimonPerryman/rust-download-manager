@@ -24,10 +24,8 @@ jobs:
   test:
     name: fmt + clippy + test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # actions: write lets the main-only prune step below delete caches.
     permissions:
       contents: read
-      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -47,36 +45,6 @@ jobs:
         # still restore main's cache.
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      # Main saves a fresh cache each run under a new key; GitHub only evicts
-      # an entry after 7 days unused (or at the 10 GB limit, oldest first, which
-      # can take main's newest). Keep only the newest entry per key prefix.
-      # This runs before this run's own save, so it lags one run: intended.
-      # Prefixes no current job uses are left to the 7-day eviction.
-      - name: Prune stale caches on main
-        if: matrix.os == 'ubuntu-24.04' && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # Prefix = key minus its trailing hash segments, e.g.
-          #   v0-rust-e2e-Linux-x64-cdee7d24-19fb34bd -> v0-rust-e2e-Linux-x64
-          #   node-cache-Linux-x64-pnpm-<64 hex>      -> node-cache-Linux-x64-pnpm
-          stale_filter='
-            map(. + {prefix: (.key | sub("(-[0-9a-f]{8,})+$"; ""))})
-            | group_by(.prefix)[]
-            | sort_by(.createdAt) | reverse | .[1:][]
-            | "\(.id) \(.key)"'
-          stale=$(gh cache list --repo "$GITHUB_REPOSITORY" --ref refs/heads/main --limit 100 --json id,key,createdAt --jq "$stale_filter")
-          if [ -z "$stale" ]; then
-            echo "No stale caches."
-            exit 0
-          fi
-          while read -r id key; do
-            echo "Deleting $key"
-            gh cache delete "$id" --repo "$GITHUB_REPOSITORY"
-          done <<< "$stale"
 
       - name: Format check
         run: cargo fmt --all --check
@@ -241,6 +209,46 @@ jobs:
       - name: Run webview E2E (xvfb)
         working-directory: gui/e2e
         run: xvfb-run -a pnpm test
+
+  # Main saves a fresh cache each run under a new key; GitHub only evicts an
+  # entry after 7 days unused (or at the 10 GB limit, oldest first, which can
+  # take main's newest). Keep only the newest entry per key prefix.
+  # Its own job so the cache-deleting token never reaches build scripts or
+  # tests. It needs every job that saves a cache, so this run's saves are
+  # already the newest and are kept. It runs even if one failed: a failed job
+  # saves nothing, so its prefix's newest is the previous entry, still kept.
+  # Prefixes no current job uses are left to the 7-day eviction.
+  prune-caches:
+    name: prune stale caches (main)
+    needs: [test, gui, e2e]
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - name: Prune stale caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Prefix = key minus its trailing hash segments, e.g.
+          #   v0-rust-e2e-Linux-x64-cdee7d24-19fb34bd -> v0-rust-e2e-Linux-x64
+          #   node-cache-Linux-x64-pnpm-<64 hex>      -> node-cache-Linux-x64-pnpm
+          stale_filter='
+            map(. + {prefix: (.key | sub("(-[0-9a-f]{8,})+$"; ""))})
+            | group_by(.prefix)[]
+            | sort_by(.createdAt) | reverse | .[1:][]
+            | "\(.id) \(.key)"'
+          stale=$(gh cache list --ref refs/heads/main --limit 100 --json id,key,createdAt --jq "$stale_filter")
+          if [ -z "$stale" ]; then
+            echo "No stale caches."
+            exit 0
+          fi
+          while read -r id key; do
+            echo "Deleting $key"
+            gh cache delete "$id"
+          done <<< "$stale"
 
   live-smoke:
     name: live smoke (network, on demand)
