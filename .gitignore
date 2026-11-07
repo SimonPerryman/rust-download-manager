@@ -6,6 +6,7 @@
 # Claude Code local state
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
+.claude/worktrees/
 
 # Environment / editor
 .env
@@ -16,3 +17,13 @@
 
 # AI working artifacts — mockups, scratch, notes. Local only, never pushed.
 .ai-cache/
+.context/
+
+# rdm download artifacts from manual runs: the partial file, its `.rdm`
+# sidecar, and the sidecar's crash-safe-save temps (`<x>.rdm.<pid>.<n>.tmp`).
+*.part
+*.rdm
+*.rdm.*.tmp
+
+# Logs (the GUI writes `rdm.YYYY-MM-DD.log`)
+*.log

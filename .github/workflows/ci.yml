@@ -12,6 +12,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: jobs only read the repo by default (prune-caches alone
+# raises its own token to actions: write). No step pushes or fetches private
+# refs, so every checkout sets persist-credentials: false to keep the token
+# out of .git/config.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
@@ -34,6 +41,8 @@ jobs:
         os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04", "windows-2025-vs2026"]') }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install Rust (pinned by rust-toolchain.toml)
         run: rustup toolchain install
@@ -74,6 +83,8 @@ jobs:
     if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install Rust (pinned by rust-toolchain.toml)
         run: rustup toolchain install
@@ -131,11 +142,17 @@ jobs:
       - name: Test GUI crate
         run: cargo test -p rdm-gui
 
+  # Also runs the dependency audits: this job already sets up pnpm and caches
+  # ~/.cargo/bin, so they add seconds here instead of a separate job's minute.
   e2e:
     name: gui checks + e2e (webview, ubuntu)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install Rust (pinned by rust-toolchain.toml)
         run: rustup toolchain install
@@ -156,6 +173,9 @@ jobs:
 
       - name: Install tauri-driver
         run: cargo install tauri-driver --version 2.1.0 --locked
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
 
       - name: Setup pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
@@ -210,6 +230,21 @@ jobs:
         working-directory: gui/e2e
         run: xvfb-run -a pnpm test
 
+      # Last, and even after a failed test step, so an advisory published
+      # upstream never hides the test result (and vice versa).
+      # Fails on vulnerabilities in the workspace Cargo.lock (engine, CLI and
+      # GUI crate); unmaintained/unsound/yanked notices only warn.
+      - name: Audit Rust dependencies (cargo audit)
+        if: ${{ !cancelled() }}
+        run: cargo audit
+
+      # --prod: the runtime deps that ship in the GUI bundle, at any severity.
+      # Dev tooling (vite, vitest) never ships and only runs locally/in CI.
+      - name: Audit shipped frontend dependencies (pnpm audit)
+        if: ${{ !cancelled() }}
+        working-directory: gui
+        run: pnpm audit --prod
+
   # Main saves a fresh cache each run under a new key; GitHub only evicts an
   # entry after 7 days unused (or at the 10 GB limit, oldest first, which can
   # take main's newest). Keep only the newest entry per key prefix.
@@ -258,6 +293,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Install Rust (pinned by rust-toolchain.toml)
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3

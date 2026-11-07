@@ -269,5 +269,5 @@ downloads (single-connection and multi-segment) against pinned public assets.
 
 ## License
 
-Dual-licensed under either [MIT](https://opensource.org/licenses/MIT) or
-[Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0), at your option.
+Dual-licensed under either [MIT](LICENSE-MIT) or
+[Apache-2.0](LICENSE-APACHE), at your option.
