@@ -61,6 +61,14 @@ the parallel-download speed feature; M4 is the day-to-day queue/throttle layer.
 - **GUI desktop integration (cut from M5)**: a free-space readout in the
   status bar (needs a `free_space(dir)` command), native OS notifications
   (Tauri notification plugin), tray icon, start with the system.
+- **Post-download safety checks** (optional): a checksum only proves we got
+  the bytes the server sent, not that they're safe or what they claim to be.
+  Candidates: Windows Mark-of-the-Web (`Zone.Identifier` with ZoneId=3 and
+  HostUrl/ReferrerUrl, ideally via `IAttachmentExecute` so SmartScreen,
+  Office protected view and the registered antivirus scan apply, as browsers
+  do); magic-byte sniffing against the extension (flag a "video" that's an
+  executable, or `.mp4.exe`); warn when an archive holds executables or
+  scripts; a user-configured post-download command (e.g. a scanner).
 
 ## Follow-ups (small, from shipped milestones)
 
