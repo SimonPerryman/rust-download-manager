@@ -552,7 +552,7 @@ async fn attempt_once(
         Some(known) => known.clone(),
         None => {
             let name = filename::resolve(None, final_url.as_str(), content_disposition.as_deref());
-            let derived = req.dir.join(name);
+            let derived = filename::join_in(&req.dir, &name);
             let chosen = match &req.claim_target {
                 Some(claim) => claim.claim(&derived),
                 None => derived,

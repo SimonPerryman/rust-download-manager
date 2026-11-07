@@ -11,6 +11,10 @@
 //! - `GET /file`      — payload with `Content-Length`; no range support.
 //! - `GET /named`     — payload with a `Content-Disposition` filename.
 //! - `GET /named/report-final.bin` — `/named`, under a URL naming the same file.
+//! - `GET /evil-named` — payload with a hostile `Content-Disposition`
+//!   filename ([`EVIL_DISPOSITION`]).
+//! - `GET /any/{*name}` — payload under any URL path (e.g. a percent-encoded
+//!   hostile name), no `Content-Disposition`.
 //! - `GET /redirect`  — 307 to `/file`.
 //! - `GET /missing`   — 404.
 //! - `GET /ranged`    — payload, full+correct `Range`/`If-Range` support.
@@ -552,6 +556,20 @@ async fn named_handler() -> impl IntoResponse {
         [
             (header::CONTENT_TYPE, "application/octet-stream"),
             (header::CONTENT_DISPOSITION, NAMED_DISPOSITION),
+        ],
+        payload(),
+    )
+}
+
+/// `Content-Disposition` served by `/evil-named`: a Windows drive-relative
+/// name that `Path::join` would let escape the download directory.
+pub const EVIL_DISPOSITION: &str = "attachment; filename=\"C:evil.txt\"";
+
+async fn evil_named_handler() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "application/octet-stream"),
+            (header::CONTENT_DISPOSITION, EVIL_DISPOSITION),
         ],
         payload(),
     )
@@ -1307,6 +1325,8 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/named", get(named_handler))
         .route("/named/report-final.bin", get(named_handler))
         .route("/named-slow", get(named_slow_handler))
+        .route("/evil-named", get(evil_named_handler))
+        .route("/any/{*name}", get(file_handler))
         .route("/redirect", get(redirect_handler))
         .route("/missing", get(missing_handler))
         .route("/ranged", get(ranged_handler))

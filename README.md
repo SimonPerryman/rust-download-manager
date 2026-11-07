@@ -21,7 +21,11 @@ line or through a desktop GUI — streaming to disk with a live progress readout
   automatically.
 - Follows redirects and handles common HTTP status codes.
 - Derives the output filename from `Content-Disposition` or the URL, or takes
-  an explicit path.
+  an explicit path. A derived name is made safe on every OS: characters
+  Windows forbids (`<>:"|?*`), control and bidi-override characters become
+  `_`; leading/trailing dots and spaces are dropped (so no hidden dotfiles);
+  device names like `CON` or `nul.txt` get a `_` prefix; names are capped at
+  200 bytes. A derived name always lands inside the download folder.
 - Live progress bar with size, speed, ETA, and the live connection count
   (`N conn` while more than one is open).
 - Resumable: data streams to a `<file>.part` with a `<file>.rdm` sidecar;
