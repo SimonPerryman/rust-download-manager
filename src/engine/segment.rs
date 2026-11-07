@@ -177,9 +177,21 @@ pub(crate) struct Job<'a> {
 struct Table {
     segments: Vec<Segment>,
     owned: Vec<bool>,
+    /// Set once the host has refused a request as a rate limit this attempt.
+    rate_limited: bool,
 }
 
 impl Table {
+    /// [`Table::claim`] for a worker; one that hasn't sent a request yet gets
+    /// nothing once the host has rate-limited us, since its first request
+    /// would be a new connection (the outer backoff resumes that work).
+    fn claim_for(&mut self, min: u64, fresh: bool) -> Option<usize> {
+        if fresh && self.rate_limited {
+            return None;
+        }
+        self.claim(min)
+    }
+
     /// Hand out an unowned unfinished segment, else steal one.
     fn claim(&mut self, min: u64) -> Option<usize> {
         let queued =
@@ -365,7 +377,11 @@ pub(crate) async fn run(
         total,
         min: job.min_segment_size,
         part: job.part,
-        table: Mutex::new(Table { segments, owned }),
+        table: Mutex::new(Table {
+            segments,
+            owned,
+            rate_limited: false,
+        }),
         progressed: Notify::new(),
         stop,
         pool: Pool::new(ramp.target()),
@@ -629,6 +645,9 @@ async fn worker(
         .open(shared.part)
         .await?;
     let mut first = first.map(|resp| (0, resp));
+    // Until its first claim, a worker may still be opening the file while a
+    // sibling's segment is handed back after a 429.
+    let mut fresh = first.is_none();
     loop {
         if shared.is_stopping() {
             return Ok(());
@@ -639,13 +658,14 @@ async fn worker(
                 if slot.try_retire() {
                     return Ok(());
                 }
-                let claimed = shared.table.lock().unwrap().claim(shared.min);
+                let claimed = shared.table.lock().unwrap().claim_for(shared.min, fresh);
                 match claimed {
                     Some(idx) => (idx, None),
                     None => return Ok(()),
                 }
             }
         };
+        fresh = false;
         match fetch_segment(shared, &mut file, idx, resp, &mut stop, &mut slot).await {
             Ok(Outcome::Done) => {}
             Ok(Outcome::Stopped) => return Ok(()),
@@ -654,7 +674,17 @@ async fn worker(
                 return Ok(());
             }
             Err(failure) => {
-                shared.table.lock().unwrap().owned[idx] = false;
+                let mut table = shared.table.lock().unwrap();
+                table.owned[idx] = false;
+                // Under the same lock as the hand-back, so no fresh worker
+                // can claim the segment in between. This worker's slot is
+                // still live, hence `> 1` for "others live".
+                let others_live = shared.pool.live() > 1;
+                if matches!(&failure, Failure::Engine(e)
+                    if matches!(Severity::of(e, others_live), Severity::RateLimit(_)))
+                {
+                    table.rate_limited = true;
+                }
                 return Err(failure);
             }
         }
@@ -968,6 +998,7 @@ mod tests {
         let mut table = Table {
             segments: vec![seg(0, 100, 0), seg(100, 200, 100), seg(200, 300, 0)],
             owned: vec![true, false, false],
+            rate_limited: false,
         };
         // Segment 1 is complete, so the queued pick is segment 2.
         assert_eq!(table.claim(10), Some(2));
@@ -975,6 +1006,25 @@ mod tests {
         assert_eq!(table.claim(10), Some(3));
         assert_eq!(table.segments[0], seg(0, 50, 0));
         assert_eq!(table.owned, vec![true, false, true, true]);
+    }
+
+    #[test]
+    fn rate_limit_holds_handed_back_work_from_fresh_workers_only() {
+        let mut table = Table {
+            segments: vec![seg(0, 100, 100), seg(100, 200, 0)],
+            owned: vec![false, false],
+            rate_limited: true,
+        };
+        // A worker still starting up would open a new connection: it waits
+        // for the outer backoff instead.
+        assert_eq!(table.claim_for(10, true), None);
+        assert_eq!(table.owned, vec![false, false]);
+        // A live worker that finished its own segment may take it.
+        assert_eq!(table.claim_for(10, false), Some(1));
+
+        table.rate_limited = false;
+        table.owned[1] = false;
+        assert_eq!(table.claim_for(10, true), Some(1));
     }
 
     #[test]
