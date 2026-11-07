@@ -5,10 +5,13 @@ import {
   applyPrefs,
   DEFAULT_PREFS,
   loadPrefs,
+  loadUnopened,
   parsePrefs,
   PREFS_KEY,
   resolveTheme,
   savePrefs,
+  saveUnopened,
+  UNOPENED_KEY,
   type Prefs,
 } from "./prefs";
 
@@ -85,6 +88,28 @@ describe("loadPrefs / savePrefs", () => {
     expect(loadPrefs(undefined)).toEqual(DEFAULT_PREFS);
     expect(savePrefs(DEFAULT_PREFS, throwing)).toBe(false);
     expect(savePrefs(DEFAULT_PREFS, undefined)).toBe(false);
+  });
+});
+
+describe("loadUnopened / saveUnopened", () => {
+  it("round-trips the ids under their own key", () => {
+    const storage = memoryStorage();
+    expect(saveUnopened(new Set([3, 1]), storage)).toBe(true);
+    expect(Object.keys(storage.data)).toEqual([UNOPENED_KEY]);
+    expect(loadUnopened(storage)).toEqual(new Set([3, 1]));
+  });
+
+  it("reads garbage or nothing as no ids", () => {
+    expect(loadUnopened(memoryStorage())).toEqual(new Set());
+    expect(loadUnopened(memoryStorage({ [UNOPENED_KEY]: "{oops" }))).toEqual(new Set());
+    expect(loadUnopened(memoryStorage({ [UNOPENED_KEY]: '[1,"x",2]' }))).toEqual(new Set([1, 2]));
+  });
+
+  it("survives storage that throws or is unavailable", () => {
+    expect(loadUnopened(throwing)).toEqual(new Set());
+    expect(loadUnopened(undefined)).toEqual(new Set());
+    expect(saveUnopened(new Set([1]), throwing)).toBe(false);
+    expect(saveUnopened(new Set([1]), undefined)).toBe(false);
   });
 });
 

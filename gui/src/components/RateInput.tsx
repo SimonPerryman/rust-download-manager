@@ -52,9 +52,9 @@ export function RateInput({
       }}
     >
       <span
-        className={`flex items-stretch overflow-hidden rounded-md border bg-transparent shadow-sm transition-colors focus-within:ring-1 focus-within:ring-ring ${
-          invalid ? "border-red-500/70" : "border-input"
-        } ${sm ? "h-7" : "h-9 w-full"} ${disabled ? "opacity-60" : ""}`}
+        className={`flex items-stretch overflow-hidden rounded-md border bg-raised transition-colors focus-within:border-accent ${
+          invalid ? "border-danger" : "border-line-strong"
+        } ${sm ? "h-7" : "h-8 w-full"} ${disabled ? "opacity-60" : ""}`}
       >
         <input
           type="text"
@@ -67,8 +67,8 @@ export function RateInput({
           value={value.amount}
           onChange={(e) => onChange({ ...value, amount: sanitizeAmount(e.target.value) })}
           onFocus={(e) => e.currentTarget.select()}
-          className={`min-w-0 bg-transparent tabular-nums text-foreground placeholder:text-muted-foreground focus-visible:outline-none ${
-            sm ? "w-16 px-2 text-[12.5px]" : "flex-1 px-3 text-sm"
+          className={`min-w-0 bg-transparent tabular-nums text-ink placeholder:text-g400 focus-visible:outline-none ${
+            sm ? "w-16 px-2 text-xs" : "flex-1 px-3 text-sm"
           }`}
         />
         <select
@@ -76,8 +76,8 @@ export function RateInput({
           disabled={disabled}
           value={value.unit}
           onChange={(e) => onChange({ ...value, unit: e.target.value as RateUnit })}
-          className={`border-l border-input bg-muted text-foreground focus-visible:outline-none ${
-            sm ? "px-1 text-[12px]" : "px-2 text-[13px]"
+          className={`border-l border-line-strong bg-hover text-ink focus-visible:outline-none ${
+            sm ? "px-1 text-xs" : "px-2 text-sm"
           }`}
         >
           {RATE_UNITS.map((u) => (
@@ -95,7 +95,7 @@ export function RateInput({
           // Keep focus inside the control so clicking this isn't also a "leave" commit.
           onMouseDown={(e) => e.preventDefault()}
           onClick={onClear}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="icon-btn icon-btn-sm"
         >
           <X size={13} />
         </button>

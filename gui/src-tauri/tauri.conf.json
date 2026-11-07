@@ -15,8 +15,8 @@
         "label": "main",
         "create": false,
         "title": "rdm",
-        "width": 900,
-        "height": 700,
+        "width": 1200,
+        "height": 760,
         "minWidth": 640,
         "minHeight": 480,
         "dragDropEnabled": false

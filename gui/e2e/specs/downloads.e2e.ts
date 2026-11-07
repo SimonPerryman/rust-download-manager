@@ -1,58 +1,37 @@
 // End-to-end: the real app, driven through its webview, against the local
 // fixture server (see wdio.conf.ts). Specs run in order and share one app
-// state dir, so later specs see earlier downloads in History.
+// state dir, so later specs can see earlier downloads in the list.
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { $, browser, expect } from "@wdio/globals";
-import { waitForGone } from "../helpers";
-
-const baseUrl = process.env.RDM_E2E_BASE_URL!;
-const downloadDir = process.env.RDM_DOWNLOAD_DIR!;
+import {
+  ADD_DIALOG,
+  addThroughDialog,
+  attr,
+  baseUrl,
+  clickRowAction,
+  downloadDir,
+  removeAll,
+  rowSelector,
+  selectFilter,
+  stopThroughDialog,
+  waitForGone,
+  waitForPartBytes,
+  waitForStatus,
+} from "../helpers";
 
 /** The fixture's deterministic payload (mirrors `payload()` in tests/common). */
 const PAYLOAD = Buffer.from(Array.from({ length: 99_991 }, (_, i) => i % 251));
 
-const rowSelector = (filename: string) =>
-  `li[data-testid="download-row"][data-filename="${filename}"]`;
-const ADD_DIALOG = '[role="dialog"][aria-label="Add download"]';
-
-const row = (filename: string) => $(rowSelector(filename));
 const addDialog = () => $(ADD_DIALOG);
 
-async function waitForStatus(filename: string, status: string): Promise<void> {
-  await browser.waitUntil(
-    async () => {
-      const r = row(filename);
-      return (await r.isExisting()) && (await r.getAttribute("data-status")) === status;
-    },
-    { timeoutMsg: `${filename} never reached status "${status}"` },
-  );
-}
-
-/** Pauses `filename` once some bytes have landed, so the pause is mid-stream. */
-async function pauseMidStream(filename: string): Promise<void> {
-  await waitForStatus(filename, "downloading");
-  const part = path.join(downloadDir, `${filename}.part`);
-  await browser.waitUntil(() => existsSync(part) && statSync(part).size > 0, {
-    timeoutMsg: `${part} never received any bytes`,
-  });
-  await clickRowAction(filename, "Pause");
-  await waitForStatus(filename, "paused");
-}
-
-async function clickRowAction(filename: string, action: string): Promise<void> {
-  await row(filename).$(`button[aria-label="${action}"]`).click();
-}
-
-async function addThroughDialog(url: string): Promise<void> {
-  await $("button=Add download").click();
-  const dialog = addDialog();
-  await dialog.waitForDisplayed();
-  await expect(dialog.$('input[aria-label="Destination folder"]')).toHaveValue(downloadDir);
-  await dialog.$('input[aria-label="URL"]').setValue(url);
-  await dialog.$("button=Add download").click();
-  await waitForGone(ADD_DIALOG);
+/** Pauses `id` once some bytes have landed, so the pause is mid-stream. */
+async function pauseMidStream(id: number): Promise<void> {
+  await waitForStatus(id, "downloading");
+  await waitForPartBytes(id);
+  await clickRowAction(id, "Pause");
+  await waitForStatus(id, "paused");
 }
 
 /** Asserts a paused download really stopped mid-stream: a partial `.part` that isn't growing. */
@@ -66,8 +45,8 @@ async function expectPausedMidStream(filename: string): Promise<void> {
   expect(existsSync(path.join(downloadDir, filename))).toBe(false);
 }
 
-/** Waits for the finished file, checks its bytes, and finds it Completed in History. */
-async function expectCompleted(filename: string): Promise<void> {
+/** Waits for the finished file, checks its bytes, and finds it completed under All. */
+async function expectCompleted(id: number, filename: string): Promise<void> {
   const file = path.join(downloadDir, filename);
   await browser.waitUntil(() => existsSync(file), {
     timeoutMsg: `${file} never appeared`,
@@ -75,77 +54,120 @@ async function expectCompleted(filename: string): Promise<void> {
   expect(readFileSync(file).equals(PAYLOAD)).toBe(true);
   expect(existsSync(`${file}.part`)).toBe(false);
 
-  await $("button*=History").click();
-  await waitForStatus(filename, "completed");
-  await $("button*=Active").click();
+  await selectFilter("all");
+  await waitForStatus(id, "completed");
 }
 
 describe("rdm GUI", () => {
-  it("adds a download, shows its Content-Disposition name, pauses, resumes and completes", async () => {
-    await addThroughDialog(`${baseUrl}/named-slow`);
+  const ids: number[] = [];
 
-    await pauseMidStream("report-final.bin");
+  after(async () => {
+    await removeAll(ids);
+  });
+
+  it("adds a download, shows its Content-Disposition name, pauses, resumes and completes", async () => {
+    const id = await addThroughDialog(`${baseUrl}/named-slow`);
+    ids.push(id);
+    expect(await attr(id, "data-filename")).toBe("report-final.bin");
+
+    await pauseMidStream(id);
     await expectPausedMidStream("report-final.bin");
 
-    await clickRowAction("report-final.bin", "Resume");
-    await expectCompleted("report-final.bin");
+    await clickRowAction(id, "Resume");
+    await expectCompleted(id, "report-final.bin");
   });
 
   it("restores a paused download after an app restart and completes it", async () => {
-    await addThroughDialog(`${baseUrl}/slow`);
-    await pauseMidStream("slow");
+    const id = await addThroughDialog(`${baseUrl}/slow`);
+    ids.push(id);
+    expect(await attr(id, "data-filename")).toBe("slow");
+    await pauseMidStream(id);
 
     await browser.reloadSession();
 
-    await waitForStatus("slow", "paused");
+    await waitForStatus(id, "paused");
     await expectPausedMidStream("slow");
-    await clickRowAction("slow", "Resume");
-    await expectCompleted("slow");
+    await clickRowAction(id, "Resume");
+    await expectCompleted(id, "slow");
   });
 
   // Runs after the restore spec, so `slow` is taken and this one is claimed as `slow (1)`.
-  it("cancels a running download, then removes it from History", async () => {
+  it("stops a running download deleting its partial, then removes it from the list", async () => {
     const name = "slow (1)";
     const target = path.join(downloadDir, name);
-    await addThroughDialog(`${baseUrl}/slow`);
-    await waitForStatus(name, "downloading");
+    const id = await addThroughDialog(`${baseUrl}/slow`);
+    ids.push(id);
+    expect(await attr(id, "data-filename")).toBe(name);
+    await waitForStatus(id, "downloading");
     await browser.waitUntil(() => existsSync(`${target}.part`), {
       timeoutMsg: `${target}.part never appeared`,
     });
 
-    await clickRowAction(name, "Cancel");
-    await $("button*=History").click();
-    await waitForStatus(name, "cancelled");
+    await stopThroughDialog(id, "delete");
+    await waitForStatus(id, "cancelled");
     await browser.waitUntil(() => !existsSync(`${target}.part`) && !existsSync(`${target}.rdm`), {
-      timeoutMsg: `cancel left partial state for ${name}`,
+      timeoutMsg: `stop and delete left partial state for ${name}`,
     });
     expect(existsSync(target)).toBe(false);
 
-    await clickRowAction(name, "Remove");
-    await waitForGone(rowSelector(name));
-    await $("button*=Active").click();
+    await clickRowAction(id, "Remove from list");
+    await waitForGone(rowSelector(id));
+  });
+
+  it("pauses everything with Pause all and resumes it with Resume all", async () => {
+    const first = await addThroughDialog(`${baseUrl}/crawl`);
+    ids.push(first);
+    const second = await addThroughDialog(`${baseUrl}/crawl`);
+    ids.push(second);
+    await waitForStatus(first, "downloading");
+    await waitForStatus(second, "downloading");
+
+    await $("button=Pause all").click();
+    await waitForStatus(first, "paused");
+    await waitForStatus(second, "paused");
+
+    const resumeAll = $("button=Resume all");
+    await resumeAll.waitForDisplayed();
+    await resumeAll.click();
+    // Either may wait for a slot, so "left paused" is the assertion, not "downloading".
+    await browser.waitUntil(
+      async () => {
+        const states = [await attr(first, "data-status"), await attr(second, "data-status")];
+        return states.every((s) => s === "downloading" || s === "queued");
+      },
+      { timeoutMsg: "Resume all didn't resume both paused downloads" },
+    );
+    await removeAll([first, second]);
   });
 
   // Across a reload, not a restart: msedgedriver gives every session a fresh
   // throwaway webview profile, so localStorage can't outlive a session there.
-  it("keeps theme and density choices across a reload", async () => {
-    const settings = $('button[aria-label="Settings"]');
-    await settings.click();
-    await $('[role="group"][aria-label="Theme"]').$("button=Dark").click();
-    await $('[role="group"][aria-label="Density"]').$("button=Compact").click();
-    await settings.click();
-
+  it("keeps the theme choice across a reload, from Settings and from the toolbar toggle", async () => {
     const rootState = () =>
       browser.execute(() => ({
         theme: document.documentElement.dataset.theme,
-        density: document.documentElement.dataset.density,
         dark: document.documentElement.classList.contains("dark"),
       }));
-    expect(await rootState()).toEqual({ theme: "dark", density: "compact", dark: true });
+
+    const settings = $('button[aria-label="Settings"]');
+    await settings.click();
+    await $('[role="group"][aria-label="Theme"]').$("button=Dark").click();
+    await settings.click();
+    expect(await rootState()).toEqual({ theme: "dark", dark: true });
 
     await browser.refresh();
-    await $("button=Add download").waitForDisplayed();
-    expect(await rootState()).toEqual({ theme: "dark", density: "compact", dark: true });
+    await $('[data-testid="add-button"]').waitForDisplayed();
+    expect(await rootState()).toEqual({ theme: "dark", dark: true });
+
+    const toggle = $('button[aria-label^="Switch to"]');
+    await expect(toggle).toHaveAttribute("aria-label", "Switch to light theme");
+    await toggle.click();
+    expect(await rootState()).toEqual({ theme: "light", dark: false });
+    await expect(toggle).toHaveAttribute("aria-label", "Switch to dark theme");
+
+    await browser.refresh();
+    await $('[data-testid="add-button"]').waitForDisplayed();
+    expect(await rootState()).toEqual({ theme: "light", dark: false });
   });
 
   it("opens the Add dialog pre-filled when a URL is pasted", async () => {

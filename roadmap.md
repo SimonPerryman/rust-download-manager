@@ -31,7 +31,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M2 | GUI (first post-MVP) | done | [[milestone-02-gui]] |
 | M3 | Multi-segment parallel downloads | done | [[milestone-03-multi-segment]] |
 | M4 | Queue & throughput management | done | [[milestone-04-queue-throughput]] |
-| M5 | GUI rethink — Console layout | todo | [[milestone-05-gui-rethink]] |
+| M5 | GUI rethink — Console layout | in-progress | [[milestone-05-gui-rethink]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 
@@ -58,6 +58,9 @@ the parallel-download speed feature; M4 is the day-to-day queue/throttle layer.
   themes beyond the shipped slick light+dark, richer per-download detail views,
   drag-and-drop / clipboard-URL add. M2 ships one clean slick design; these are
   deliberately deferred.
+- **GUI desktop integration (cut from M5)**: a free-space readout in the
+  status bar (needs a `free_space(dir)` command), native OS notifications
+  (Tauri notification plugin), tray icon, start with the system.
 
 ## Follow-ups (small, from shipped milestones)
 

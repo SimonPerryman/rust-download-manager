@@ -1,9 +1,12 @@
-// Inline lucide-style SVG icons ported verbatim from the mockup. Keeping them
-// as small components avoids an icon-library dependency.
+// Inline lucide-style SVG icons (Console stroke weight). Keeping them as small
+// components avoids an icon-library dependency. Decorative: buttons carry the name.
 
 export type Props = { size?: number; className?: string; strokeWidth?: number };
 
-export function svg(children: React.ReactNode, { size = 16, className, strokeWidth = 2 }: Props) {
+export function svg(
+  children: React.ReactNode,
+  { size = 16, className, strokeWidth = 1.75 }: Props,
+) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -16,6 +19,7 @@ export function svg(children: React.ReactNode, { size = 16, className, strokeWid
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
+      aria-hidden="true"
     >
       {children}
     </svg>
