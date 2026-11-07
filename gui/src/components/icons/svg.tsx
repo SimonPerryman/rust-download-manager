@@ -1,5 +1,6 @@
-// Inline lucide-style SVG icons (Console stroke weight). Keeping them as small
-// components avoids an icon-library dependency. Decorative: buttons carry the name.
+// Inline SVG icons (Console stroke weight); many are copied from Lucide (ISC),
+// see THIRD-PARTY-NOTICES.md. Keeping them as small components avoids an
+// icon-library dependency. Decorative: buttons carry the name.
 
 export type Props = { size?: number; className?: string; strokeWidth?: number };
 

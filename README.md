@@ -279,3 +279,6 @@ downloads (single-connection and multi-segment) against pinned public assets.
 
 Dual-licensed under either [MIT](LICENSE-MIT) or
 [Apache-2.0](LICENSE-APACHE), at your option.
+
+Bundled third-party icons and fonts are credited in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
