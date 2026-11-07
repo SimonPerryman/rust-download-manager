@@ -16,8 +16,8 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 use rdm::{
-    download, engine::state, parse_rate, Checksum, Control, DownloadRequest, Error, RateLimiter,
-    Summary,
+    download, engine::state, parse_rate, redact_url, Checksum, Control, DownloadRequest, Error,
+    RateLimiter, Summary,
 };
 
 /// Printed when Ctrl-C paused the download.
@@ -129,7 +129,7 @@ async fn main() -> anyhow::Result<ExitCode> {
             eprintln!("{PAUSED_MESSAGE}");
             Ok(ExitCode::from(INTERRUPTED))
         }
-        Err(e) => Err(e).with_context(|| format!("failed to download {}", req.url)),
+        Err(e) => Err(e).with_context(|| format!("failed to download {}", redact_url(&req.url))),
     }
 }
 

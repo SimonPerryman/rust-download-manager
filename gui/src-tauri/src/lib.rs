@@ -339,6 +339,24 @@ fn install_logging(dir: &std::path::Path, filter: tracing_subscriber::EnvFilter)
     }
 }
 
+/// Create `dir` (and its parents) if missing. On Unix it is made owner-only
+/// (0700): its state file and logs hold full download URLs, which may carry
+/// credentials or signed query strings.
+fn create_private_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)?;
+        // A dir made by an older rdm keeps its old mode otherwise.
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+    }
+    #[cfg(not(unix))]
+    std::fs::create_dir_all(dir)
+}
+
 /// Build the `Manager` over `~/.rdm/state.json` (or `$RDM_HOME/state.json`) and
 /// spawn the snapshot bridge.
 fn init_manager(app: &tauri::AppHandle) -> Result<Arc<Manager>, Box<dyn std::error::Error>> {
@@ -346,7 +364,7 @@ fn init_manager(app: &tauri::AppHandle) -> Result<Arc<Manager>, Box<dyn std::err
         Some(dir) => dir,
         None => app.path().home_dir()?.join(".rdm"),
     };
-    std::fs::create_dir_all(&dir)?;
+    create_private_dir(&dir)?;
     init_logging(&dir);
     let store = JsonStore::new(dir.join("state.json"));
 
@@ -467,6 +485,25 @@ mod tests {
         let text = std::fs::read_to_string(&log).unwrap();
         let _ = std::fs::remove_file(&log);
         assert_eq!(text, "open /dl/a.iso\nreveal /dl/b.iso\n");
+    }
+
+    /// The state/log dir is created owner-only, and an existing one tightened.
+    #[cfg(unix)]
+    #[test]
+    fn state_dir_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("rdm-gui-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join(".rdm");
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+
+        super::create_private_dir(&dir).unwrap();
+        assert_eq!(mode(&dir), 0o700);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        super::create_private_dir(&dir).unwrap();
+        let tightened = mode(&dir);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(tightened, 0o700);
     }
 
     /// The log goes to a dated `rdm.YYYY-MM-DD.log` (daily rotation), not one

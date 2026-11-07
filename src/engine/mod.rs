@@ -21,6 +21,7 @@ pub mod limit;
 pub mod manager;
 pub mod progress;
 mod ramp;
+mod redact;
 pub mod retry;
 mod segment;
 pub mod state;
@@ -33,6 +34,7 @@ pub use manager::{AddOptions, DownloadSnapshot, Manager};
 pub use progress::{Progress, SpeedMeter};
 #[doc(hidden)]
 pub use ramp::Ramping;
+pub use redact::redact_url;
 pub use retry::RetryPolicy;
 pub use segment::Segment;
 pub use state::DownloadState;
@@ -225,8 +227,9 @@ pub struct Summary {
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// The request itself failed (DNS, connection, TLS, mid-stream read, ...).
+    /// Built via `From`, which strips the URL so it can't leak into messages.
     #[error("request failed: {0}")]
-    Http(#[from] reqwest::Error),
+    Http(reqwest::Error),
     /// The server answered with a non-success status.
     #[error("server returned HTTP {0}")]
     Status(u16),
@@ -273,6 +276,12 @@ pub enum Error {
     InvalidRequest(String),
 }
 
+impl From<reqwest::Error> for Error {
+    fn from(e: reqwest::Error) -> Self {
+        Self::Http(e.without_url())
+    }
+}
+
 /// Engine result alias.
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -285,7 +294,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// across parallel connections), so a frontend can render a live readout. `control` steers the in-flight
 /// download (cancel/pause).
 // Error level so the identity survives any filter that still shows errors.
-#[tracing::instrument(name = "download", level = "error", skip_all, fields(url = %req.url))]
+#[tracing::instrument(name = "download", level = "error", skip_all, fields(url = %redact_url(&req.url)))]
 pub async fn download(
     req: &DownloadRequest,
     control: &Control,
