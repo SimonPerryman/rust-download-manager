@@ -31,6 +31,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M2 | GUI (first post-MVP) | done | [[milestone-02-gui]] |
 | M3 | Multi-segment parallel downloads | done | [[milestone-03-multi-segment]] |
 | M4 | Queue & throughput management | done | [[milestone-04-queue-throughput]] |
+| M5 | GUI rethink — Console layout | todo | [[milestone-05-gui-rethink]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 
