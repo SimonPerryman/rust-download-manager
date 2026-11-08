@@ -26,6 +26,9 @@
 //!   1 KiB chunk every [`GATED_TRICKLE`] until the test releases it through
 //!   [`TestServer::gate`] (keyed by arrival order, shared with `/seg-gated`),
 //!   then ends.
+//! - `GET /huge`      — advertises a [`HUGE_LEN`] `Content-Length`, no
+//!   `Accept-Ranges`, then trickles a 1 KiB chunk every [`GATED_TRICKLE`]
+//!   until the client hangs up (a big download that never finishes).
 //! - `GET /norange`   — always 200, full body, never honours `Range`.
 //! - `GET /liar`      — advertises `Accept-Ranges` but ignores `Range` (200).
 //! - `GET /flaky`     — supports ranges; drops the connection mid-body for the
@@ -135,6 +138,10 @@ pub const GATED_TRICKLE: Duration = Duration::from_millis(20);
 
 /// `/gated`: bytes per trickled chunk.
 const GATED_CHUNK: usize = 1024;
+
+/// `/huge`: the advertised length, just under 1024 MiB (the GUI shows it as
+/// `1023.9 MB`, its widest size string).
+pub const HUGE_LEN: u64 = 1_073_636_967;
 
 /// `/seg-gated`: bytes per trickled chunk while held (a 1 MiB segment takes
 /// over a minute, far longer than any test holds it).
@@ -808,6 +815,24 @@ async fn gated_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         .unwrap()
 }
 
+/// `/huge`: a [`HUGE_LEN`] header, then a trickle that never ends.
+async fn huge_handler() -> Response {
+    let chunk = Bytes::from(vec![0x48; GATED_CHUNK]);
+    let s = futures_util::stream::unfold((), move |()| {
+        let chunk = chunk.clone();
+        async move {
+            tokio::time::sleep(GATED_TRICKLE).await;
+            Some((Ok::<_, std::io::Error>(chunk), ()))
+        }
+    });
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(header::CONTENT_LENGTH, HUGE_LEN)
+        .body(Body::from_stream(s))
+        .unwrap()
+}
+
 /// A 429, with `Retry-After: <secs>` if given.
 fn too_many_requests(retry_after: Option<u64>) -> Response {
     let mut resp = StatusCode::TOO_MANY_REQUESTS.into_response();
@@ -1373,6 +1398,7 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/slow", get(slow_handler))
         .route("/crawl", get(crawl_handler))
         .route("/gated", get(gated_handler))
+        .route("/huge", get(huge_handler))
         .route("/norange", get(norange_handler))
         .route("/liar", get(liar_handler))
         .route("/flaky", get(flaky_handler))
