@@ -65,10 +65,9 @@ needs M5's details pane, context menu and multi-select, and comes after M6.
 - **GUI desktop integration (cut from M5)**: a free-space readout in the
   status bar (needs a `free_space(dir)` command), native OS notifications
   (Tauri notification plugin), tray icon, start with the system.
-- **Code signing and in-app updates (cut from M6)**: sign the Windows
-  binaries and installers (e.g. Azure Trusted Signing) and sign and notarise
-  the macOS app (Apple Developer Program), so SmartScreen and Gatekeeper stop
-  warning; then the Tauri updater plugin, which needs signed updates.
+- **Code signing (cut from M6)**: sign the Windows binaries and installers
+  (e.g. Azure Trusted Signing) and sign and notarise the macOS app (Apple
+  Developer Program), so SmartScreen and Gatekeeper stop warning.
 - **Archive and tag automation (cut from M7)**: auto-archive finished
   downloads after N days; auto-tag rules by host or file type; tag rename,
   merge and colours.
