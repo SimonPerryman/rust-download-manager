@@ -20,7 +20,8 @@ command-line tool and a desktop app.
 - **See it work (GUI):** live connection lanes, a speed graph and a per-download log.
 - **One engine:** the CLI and the desktop app share it.
 
-[How it works →](docs/how-it-works.md)
+For the details behind each of these, see
+[How rdm works](docs/how-it-works.md).
 
 ## Install
 
