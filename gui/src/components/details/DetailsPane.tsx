@@ -4,6 +4,7 @@ import { filterKeyOf } from "../../lib/filters";
 import type { DownloadSnapshot } from "../../lib/types";
 import { X } from "../icons/X";
 import { StatusGlyph } from "../table/StatusGlyph";
+import { LogTab } from "./LogTab";
 import { OverviewTab, type QueueSpot } from "./OverviewTab";
 import { PANEL_ID, PaneTabs, tabId } from "./PaneTabs";
 import { SpeedTab } from "./SpeedTab";
@@ -101,11 +102,19 @@ export function DetailsPane({
         </button>
       </div>
       <PaneTabs tab={tab} onTab={onTab} />
-      <div className="pane-body" id={PANEL_ID} role="tabpanel" aria-labelledby={tabId(tab)}>
+      {/* Keyed by tab so each tab opens scrolled to its own top (Log scrolls to its end). */}
+      <div
+        key={tab}
+        className="pane-body"
+        id={PANEL_ID}
+        role="tabpanel"
+        aria-labelledby={tabId(tab)}
+      >
         {tab === "overview" && (
           <OverviewTab d={d} onReveal={onReveal} spot={spot} onMove={onMove} />
         )}
         {tab === "speed" && <SpeedTab d={d} samples={samples} globalLimit={globalLimit} />}
+        {tab === "log" && <LogTab key={d.id} id={d.id} />}
       </div>
     </section>
   );

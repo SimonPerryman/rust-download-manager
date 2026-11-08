@@ -1,7 +1,7 @@
 ---
 id: M5
 title: GUI rethink — Console layout
-status: in-progress
+status: done
 depends-on: [M2, M3, M4]
 tags: [gui, engine, testing]
 ---
@@ -84,6 +84,8 @@ speed for graphs, and sorting and filtering the snapshot list.
     average 44 MB/s, checksum verified"), a Verify checksum control, and
     queue up/down buttons for waiting downloads (PR D).
   - **Speed:** a 60 s throughput graph with the limit drawn as a dashed line.
+  - **Log:** the download's last 200 engine log lines, polled while the tab
+    is open (PR E).
 - **Stop asks first.** "Keep the partial file to resume later" is the
   default; "Delete the partial file" is the alternative.
 - **Batch add:** one URL per line, with a preview list that flags non-links
@@ -104,7 +106,6 @@ speed for graphs, and sorting and filtering the snapshot list.
 **Out (deferred):**
 - The "Key" origin overlay. It's a mockup-only comparison tool and doesn't
   ship.
-- Log tab in the details pane: decided for a follow-up PR E (open question 2).
 - Free-space readout in the status bar (open question 1).
 - Native OS notifications, tray, and start with the system (backlog).
 - Per-type categories and auto-organise (backlog: scheduling and automation).
@@ -174,11 +175,13 @@ can start in parallel on today's snapshot. E (the Log tab) follows C.
   PR D, with the other reorder controls (they use `move_queued` too).
 
 ### PR E — Log tab
-- [ ] Engine: a tracing layer that keeps the last ~200 lines per download,
-  keyed by the existing `task` span id in `src/engine/manager.rs`.
-- [ ] A thin `download_log(id)` Tauri command over it.
-- [ ] A Log tab in the details pane, polled while it's open.
-- [ ] An engine test for the per-download buffer and an e2e spec for the tab.
+- [x] Engine: a tracing layer that keeps the last ~200 lines per download,
+  keyed by the existing `task` span id in `src/engine/manager.rs`. (200
+  INFO-and-up lines, in memory only, dropped when the download is removed or
+  cleared; its level doesn't follow `RUST_LOG`.)
+- [x] A thin `download_log(id)` Tauri command over it.
+- [x] A Log tab in the details pane, polled while it's open.
+- [x] An engine test for the per-download buffer and an e2e spec for the tab.
 
 ### PR D — batch add and power features
 - [x] Batch add dialog with preview, Ctrl+V intake for several lines, and the
@@ -213,7 +216,13 @@ apply here without being restated. E2E specs follow AGENTS.md's WebKitGTK rules
   without overlap, `done` never decreases within a segment, and the sum of
   `done` equals `downloaded`. (`tests/segments.rs`)
 
-**GUI (B–D):** Vitest unit tests for the pure logic (filters, counts,
+**Engine (E):**
+- [x] Each download keeps only its own log lines, at most 200 (oldest dropped
+  first), with no URL secrets; they go when it's removed or cleared, and a
+  download restored from the store has none. (`tests/download_log.rs`, and
+  the bound in `src/engine/download_log.rs`)
+
+**GUI (B–E):** Vitest unit tests for the pure logic (filters, counts,
 folder derivation, sorting, URL-list parsing, the lane bucketing rule), plus
 these e2e specs against the fixture server:
 - [x] **Finish moment:** a download that completes stays in the All view with
@@ -241,6 +250,10 @@ these e2e specs against the fixture server:
 - [x] **Reorder:** with a cap of 1, moving the last waiting row to the top
   with Alt+↑ marks it Next up, and it starts next. Assert on Manager status.
   (`specs/queue.e2e.ts`, extended)
+- [x] **Log tab:** a download that fails against `/seg-403` shows its error
+  lines in its Log tab; the tab follows the pane to another download, keeps
+  polling while open, and its list goes when the tab changes or the pane
+  closes. (`specs/log.e2e.ts`)
 - [x] Existing specs (`downloads`, `queue`, `ramping`) are updated to the new
   layout and pass.
 

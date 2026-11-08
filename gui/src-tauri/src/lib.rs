@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use rdm::{AddOptions, Checksum, DownloadSnapshot, JsonStore, Manager, Settings, Status};
+use rdm::{AddOptions, Checksum, DownloadSnapshot, JsonStore, LogLine, Manager, Settings, Status};
 use tauri::{Emitter, Manager as _, State};
 use tauri_plugin_opener::OpenerExt;
 
@@ -185,6 +185,12 @@ fn parse_sha256(input: &str) -> Result<Checksum, String> {
     }
 }
 
+/// Download `id`'s recent log lines, oldest first (empty for an unknown id).
+#[tauri::command]
+fn download_log(state: State<'_, AppState>, id: u64) -> Vec<LogLine> {
+    state.manager.download_log(id)
+}
+
 /// Remove a download from the list entirely.
 #[tauri::command]
 fn remove(state: State<'_, AppState>, id: u64) {
@@ -327,18 +333,25 @@ fn default_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 /// Install the tracing subscriber: human-readable logs to stderr (visible when
 /// run via `tauri dev`) and to `<dir>/rdm.<date>.log`, rotated daily (UTC) with
-/// the last 7 files kept. The engine emits the events (download start, each
-/// retry with its reason, failures), each tagged with its download's id; the
-/// default level is `info`, overridable with `RUST_LOG`. Best-effort: logging
-/// must never stop the app from starting.
-fn init_logging(dir: &std::path::Path) {
+/// the last 7 files kept, plus `logs` (the engine's per-download lines for the
+/// Log tab, with its own level). The engine emits the events (download start,
+/// each retry with its reason, failures, finishes), each tagged with its download's id;
+/// the default level is `info`, overridable with `RUST_LOG`. Best-effort:
+/// logging must never stop the app from starting.
+fn init_logging<L>(dir: &std::path::Path, logs: L)
+where
+    L: tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync + 'static,
+{
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-    install_logging(dir, filter);
+    install_logging(dir, filter, logs);
 }
 
 /// [`init_logging`] with an explicit filter.
-fn install_logging(dir: &std::path::Path, filter: tracing_subscriber::EnvFilter) {
+fn install_logging<L>(dir: &std::path::Path, filter: tracing_subscriber::EnvFilter, logs: L)
+where
+    L: tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync + 'static,
+{
     use tracing_appender::rolling::{Builder, Rotation};
     use tracing_subscriber::prelude::*;
 
@@ -358,18 +371,37 @@ fn install_logging(dir: &std::path::Path, filter: tracing_subscriber::EnvFilter)
         Err(e) => (None, Some(e)),
     };
 
-    let _ = tracing_subscriber::registry()
-        .with(filter)
-        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
-        .with(file_writer.map(|writer| {
+    let _ = logging_subscriber(filter, logs, std::io::stderr, file_writer).try_init();
+    if let Some(e) = file_error {
+        tracing::warn!(dir = %dir.display(), error = %e, "file logging disabled");
+    }
+}
+
+/// The subscriber [`install_logging`] installs: `logs`, plus `stderr` and the
+/// optional `file` output. `filter` applies to the outputs only, so the Log
+/// tab's layer keeps its own level whatever `RUST_LOG` says.
+fn logging_subscriber<L, E, F>(
+    filter: tracing_subscriber::EnvFilter,
+    logs: L,
+    stderr: E,
+    file: Option<F>,
+) -> impl tracing::Subscriber + Send + Sync + 'static
+where
+    L: tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync + 'static,
+    E: for<'w> tracing_subscriber::fmt::MakeWriter<'w> + Send + Sync + 'static,
+    F: for<'w> tracing_subscriber::fmt::MakeWriter<'w> + Send + Sync + 'static,
+{
+    use tracing_subscriber::prelude::*;
+
+    let output = tracing_subscriber::fmt::layer()
+        .with_writer(stderr)
+        .and_then(file.map(|writer| {
             tracing_subscriber::fmt::layer()
                 .with_ansi(false)
                 .with_writer(writer)
         }))
-        .try_init();
-    if let Some(e) = file_error {
-        tracing::warn!(dir = %dir.display(), error = %e, "file logging disabled");
-    }
+        .with_filter(filter);
+    tracing_subscriber::registry().with(logs).with(output)
 }
 
 /// Create `dir` (and its parents) if missing. On Unix it is made owner-only
@@ -398,7 +430,6 @@ fn init_manager(app: &tauri::AppHandle) -> Result<Arc<Manager>, Box<dyn std::err
         None => app.path().home_dir()?.join(".rdm"),
     };
     create_private_dir(&dir)?;
-    init_logging(&dir);
     let store = JsonStore::new(dir.join("state.json"));
 
     // The engine spawns each download on a Tokio runtime. Tauri's synchronous
@@ -413,6 +444,8 @@ fn init_manager(app: &tauri::AppHandle) -> Result<Arc<Manager>, Box<dyn std::err
     Box::leak(Box::new(runtime));
 
     let manager = Arc::new(Manager::load(Box::new(store), handle)?);
+    // After the Manager, whose layer it installs; loading logs nothing.
+    init_logging(&dir, manager.log_layer());
 
     // Bridge the manager's watch channel to a webview event. The receiver
     // always holds the latest coalesced snapshot, so a slow webview never
@@ -476,6 +509,7 @@ pub fn run() {
             move_queued,
             clear,
             verify_checksum,
+            download_log,
             remove,
             pause_all,
             resume_all,
@@ -567,6 +601,50 @@ mod tests {
         assert_eq!(tightened, 0o700);
     }
 
+    /// `RUST_LOG` (the outputs' filter) doesn't reach the Log tab: with the
+    /// outputs at `error`, a download's INFO lines still land in its log.
+    #[test]
+    fn log_tab_keeps_info_lines_whatever_the_filter() {
+        let dir = std::env::temp_dir().join(format!("rdm-gui-logtab-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let store = rdm::JsonStore::new(dir.join("state.json"));
+        let mgr = rdm::Manager::load(Box::new(store), runtime.handle().clone()).unwrap();
+        let subscriber = super::logging_subscriber(
+            tracing_subscriber::EnvFilter::new("error"),
+            mgr.log_layer(),
+            std::io::sink,
+            None::<fn() -> std::io::Sink>,
+        );
+
+        // A link nothing serves: its start is logged at once; no need to wait
+        // for it to fail.
+        let lines = tracing::subscriber::with_default(subscriber, || {
+            runtime.block_on(async {
+                let id = mgr.add("http://127.0.0.1:9/f.bin", &dir, None, None);
+                let deadline = Instant::now() + Duration::from_secs(10);
+                loop {
+                    let lines = mgr.download_log(id);
+                    if !lines.is_empty() || Instant::now() >= deadline {
+                        mgr.remove(id);
+                        break lines;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+        });
+        drop(mgr);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            lines.iter().any(|l| l.message == "download started"),
+            "{lines:#?}"
+        );
+    }
+
     /// The log goes to a dated `rdm.YYYY-MM-DD.log` (daily rotation), not one
     /// ever-growing `rdm.log`.
     #[test]
@@ -574,7 +652,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rdm-gui-log-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         // An explicit filter: an ambient `RUST_LOG=error` would hide the probe.
-        super::install_logging(&dir, tracing_subscriber::EnvFilter::new("info"));
+        super::install_logging(
+            &dir,
+            tracing_subscriber::EnvFilter::new("info"),
+            tracing_subscriber::layer::Identity::new(),
+        );
         tracing::warn!("daily rotation probe");
 
         let deadline = Instant::now() + Duration::from_secs(5);

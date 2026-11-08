@@ -15,6 +15,7 @@
 //! checkpointed in its v2 sidecar, re-fetching only the missing ranges.
 
 pub mod control;
+mod download_log;
 pub mod filename;
 pub mod integrity;
 pub mod limit;
@@ -28,6 +29,7 @@ pub mod state;
 pub mod store;
 
 pub use control::{Control, Flow};
+pub use download_log::{LogLevel, LogLine, LOG_LINES};
 pub use integrity::{Algo, Checksum};
 pub use limit::{parse_rate, RateLimiter};
 pub use manager::{AddOptions, DownloadSnapshot, Manager};
@@ -347,7 +349,12 @@ pub async fn download(
         };
         let e = match result {
             Ok((status, final_path, bytes)) => {
-                return finalize(req, &final_path, bytes, status).await;
+                let finished = finalize(req, &final_path, bytes, status).await;
+                match &finished {
+                    Ok(summary) => tracing::info!(bytes = summary.bytes, "download finished"),
+                    Err(e) => tracing::error!(error = %error_detail(e), "download failed"),
+                }
+                return finished;
             }
             Err(e) => e,
         };

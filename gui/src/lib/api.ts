@@ -5,7 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { SettingsPatch } from "./settings";
-import type { DownloadSnapshot, Settings, Status } from "./types";
+import type { DownloadSnapshot, LogLine, Settings, Status } from "./types";
 
 /** One-shot snapshot of every download, in display order. */
 export const list = () => invoke<DownloadSnapshot[]>("list");
@@ -64,6 +64,8 @@ export const clear = (statuses: Status[], ids?: number[] | null) =>
  */
 export const verifyChecksum = (id: number, checksum: string) =>
   invoke<void>("verify_checksum", { id, checksum });
+/** A download's recent log lines, oldest first (empty for an unknown id). */
+export const downloadLog = (id: number) => invoke<LogLine[]>("download_log", { id });
 export const remove = (id: number) => invoke<void>("remove", { id });
 export const pauseAll = () => invoke<void>("pause_all");
 /** Resume every paused download (stopped ones stay stopped). */

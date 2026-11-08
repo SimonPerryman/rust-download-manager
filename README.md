@@ -41,8 +41,9 @@ built on the same download engine.
   restarts, and has light and dark themes.
 - **See each connection at work (GUI).** A multi-connection download draws its
   pieces as lanes, one per range of the file. A details pane shows the lanes
-  full size, a graph of the last minute's speed, and the checksum, with a
-  button to verify a finished file against a SHA-256 you paste.
+  full size, a graph of the last minute's speed, the checksum (with a button
+  to verify a finished file against a SHA-256 you paste) and the download's
+  own log lines.
 - **Built for many downloads at once (GUI).** Paste a list of links to add
   them in one go, select several rows to act on together, right-click a row
   for its actions, reorder the queue by dragging, and drive the table from the
@@ -173,9 +174,11 @@ the log level.
   full size (hover one for details), the link, the folder and the checksum. A
   finished download gets a summary such as "5.8 GB in 2 min 14 s, average
   44 MB/s, checksum verified" and **Verify checksum**. **Speed** graphs the
-  last 60 seconds, with the speed limit as a dashed line. A finished
-  download's lanes are kept only until the app closes; after a restart the
-  pane shows the summary alone.
+  last 60 seconds, with the speed limit as a dashed line. **Log** shows the
+  download's last 200 log lines (start, each retry with its reason, failure,
+  finish), updating while the tab is open. A finished download's lanes and
+  log lines are kept only until the app closes; after a restart the pane
+  shows the summary alone.
 - **Finished** downloads stay where they are, marked Done, with **Open** and
   **Show in folder**. **Clear finished** removes Done and Stopped rows from the
   list (with Undo); downloaded files stay on disk.
@@ -189,7 +192,9 @@ the log level.
 ![The details pane's Speed tab for a running download: speed now, average and peak, and a graph of the last minute, under a table whose rows draw their lanes](docs/screenshots/details.png)
 
 The download list and settings are stored in `~/.rdm/state.json`. The GUI also
-writes a daily log in `~/.rdm` (`rdm.YYYY-MM-DD.log`, the last 7 kept). Logged
+writes a daily log in `~/.rdm` (`rdm.YYYY-MM-DD.log`, the last 7 kept), with
+its level set by `RUST_LOG` (default `info`); the Log tab always shows
+informational lines and up, whatever `RUST_LOG` says. Logged
 URLs and error messages omit any `user:password@`, query string or fragment, so
 they're safer to paste into a bug report. `RDM_HOME` relocates `~/.rdm`, and
 `RDM_DOWNLOAD_DIR` changes the Add dialog's default folder.
@@ -227,12 +232,10 @@ and the tickets in [`milestones/`](milestones/).
 
 - **Done:** M0 walking skeleton; M1 robust single-connection downloads
   (resume, retries, checksums); M2 desktop GUI; M3 multi-segment parallel
-  downloads; M4 queue, speed limits and connection ramping.
-- **In progress:** M5, a GUI redesign. The new layout (sidebar, table, status
-  bar, stop and clear-finished flows), the details pane, lanes and speed
-  graphs, batch add, the row menu, multi-select, keyboard shortcuts and queue
-  reorder have shipped. What remains is a per-download Log tab in the details
-  pane.
+  downloads; M4 queue, speed limits and connection ramping; M5 GUI redesign
+  (sidebar, table and status bar, the details pane with lanes, speed graph
+  and log, batch add, the row menu, multi-select, keyboard shortcuts and
+  queue reorder).
 - **Next:** M6, prebuilt binaries and installers on GitHub Releases.
 
 CI builds and tests on Linux and Windows. macOS isn't tested yet.

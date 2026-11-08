@@ -5,6 +5,7 @@ export const PANE_ID = "details-pane";
 export const PANE_TABS = [
   { key: "overview", label: "Overview" },
   { key: "speed", label: "Speed" },
+  { key: "log", label: "Log" },
 ] as const;
 
 export type PaneTab = (typeof PANE_TABS)[number]["key"];
