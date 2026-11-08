@@ -140,6 +140,36 @@ describe("rdm GUI", () => {
     await removeAll([first, second]);
   });
 
+  // /huge advertises 1023.9 MiB, the widest string the Size column formats.
+  it("fits a large size in the Size column while downloading and paused", async () => {
+    const id = await addThroughDialog(`${baseUrl}/huge`);
+    ids.push(id);
+    // Not getText(): the cell ellipsises, and WebKitGTK's driver reads that as "".
+    const sizeCell = () =>
+      browser.execute((sel) => {
+        const cell = document.querySelector(`${sel} td.c-size`) as HTMLElement | null;
+        return cell
+          ? { text: cell.innerText, scroll: cell.scrollWidth, client: cell.clientWidth }
+          : null;
+      }, rowSelector(id));
+    const expectFits = async () => {
+      const cell = await sizeCell();
+      expect(cell?.text).toBe("1023.9 MB");
+      expect(cell!.scroll).toBeLessThanOrEqual(cell!.client);
+    };
+
+    await waitForStatus(id, "downloading");
+    await browser.waitUntil(async () => (await sizeCell())?.text !== "", {
+      timeoutMsg: "the Size cell never showed the advertised length",
+    });
+    await expectFits();
+
+    await clickRowAction(id, "Pause");
+    await waitForStatus(id, "paused");
+    await expectFits();
+    await removeAll([id]);
+  });
+
   // Across a reload, not a restart: msedgedriver gives every session a fresh
   // throwaway webview profile, so localStorage can't outlive a session there.
   it("keeps the theme choice across a reload, from Settings and from the toolbar toggle", async () => {

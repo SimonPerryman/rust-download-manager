@@ -287,8 +287,9 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
+  /* Fits "1023.9 MB", the widest size formatBytes makes, with room for wider Linux fonts. */
   .c-size {
-    width: 76px;
+    width: 100px;
   }
   .c-prog {
     width: 148px;
