@@ -36,6 +36,13 @@ async function laneCount(scope: string, size: "cell" | "pane"): Promise<number> 
   }
 }
 
+/** The height in px of the first lane under `scope` (0 when its size rule is missing). */
+async function laneHeight(scope: string, size: "cell" | "pane"): Promise<number> {
+  return $(`${scope} [data-testid="lanes"][data-size="${size}"] [data-testid="lane"]`).getSize(
+    "height",
+  );
+}
+
 async function waitForLanes(scope: string, size: "cell" | "pane", n: number): Promise<void> {
   await browser.waitUntil(async () => (await laneCount(scope, size)) === n, {
     timeout: 20_000,
@@ -86,6 +93,8 @@ describe("rdm GUI lanes and details pane", () => {
     await waitForStatus(id, "downloading", 30_000);
 
     await waitForLanes(rowSelector(id), "cell", 4);
+    // Drawn, not just in the DOM: the size classes set the lanes' line height.
+    expect(await laneHeight(rowSelector(id), "cell")).toBeGreaterThan(0);
 
     await openDetails(id);
     const pane = paneSelector(id);
@@ -94,6 +103,7 @@ describe("rdm GUI lanes and details pane", () => {
       "true",
     );
     await waitForLanes(pane, "pane", 4);
+    expect(await laneHeight(pane, "pane")).toBeGreaterThan(0);
     // The gate holds every piece, so the tiling is still the 4-way plan.
     await expect(rowById(id)).toHaveAttribute("data-status", "downloading");
     expect(await laneCount(rowSelector(id), "cell")).toBe(4);
