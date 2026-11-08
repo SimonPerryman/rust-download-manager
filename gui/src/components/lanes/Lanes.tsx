@@ -24,7 +24,8 @@ export function Lanes({ d, size, converged = false, onHover }: Props) {
   const pct = Math.floor(precisePercent(d) ?? 0);
   const cls = [
     "lanes",
-    `lanes-${size}`,
+    // Spelled out in full: Tailwind drops a components-layer class it never sees literally.
+    size === "cell" ? "lanes-cell" : "lanes-pane",
     n > 4 ? "dense" : "",
     MUTED.has(d.status) ? "muted" : "",
     converged ? "converged" : "",

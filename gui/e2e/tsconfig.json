@@ -11,5 +11,12 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["wdio.conf.ts", "helpers.ts", "specs"]
+  "include": [
+    "wdio.conf.ts",
+    "wdio.screenshots.conf.ts",
+    "launch.ts",
+    "helpers.ts",
+    "specs",
+    "screenshots"
+  ]
 }

@@ -17,6 +17,7 @@
 //!   hostile name), no `Content-Disposition`.
 //! - `GET /redirect`  — 307 to `/file`.
 //! - `GET /missing`   — 404.
+//! - `GET /missing/{*name}` — 404 under any file name.
 //! - `GET /ranged`    — payload, full+correct `Range`/`If-Range` support.
 //! - `GET /slow`      — like `/ranged` but streamed slowly (a kill/pause window).
 //! - `GET /named-slow` — `/slow` plus `/named`'s `Content-Disposition`.
@@ -40,6 +41,8 @@
 //! streamed in 32 KiB chunks) with a strong ETag + `Last-Modified` and closed
 //! (`bytes=s-e`) or open (`bytes=s-`) `Range` support, unless stated:
 //! - `GET /seg`        — per-chunk delay [`FixtureConfig::seg_chunk_delay`].
+//! - `GET /seg/{len}/{*name}` — `/seg` cut to its first `len` bytes (at most
+//!   [`FixtureConfig::seg_len`]), under any file name.
 //! - `GET /seg-flaky`  — the first ranged request aborts mid-body.
 //! - `GET /seg-flaky-tail` — the first ranged request for the final byte
 //!   aborts mid-body once it is the only response still streaming (so it is
@@ -108,7 +111,7 @@ use std::time::{Duration, Instant};
 
 use axum::{
     body::{Body, Bytes},
-    extract::State,
+    extract::{Path, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Redirect, Response},
     routing::{get, MethodRouter},
@@ -1026,7 +1029,7 @@ fn seg_route(kind: Seg) -> MethodRouter<Arc<AppState>> {
                 tokio::time::sleep(FORBIDDEN_DELAY).await;
                 return StatusCode::FORBIDDEN.into_response();
             }
-            seg_response(&state, &headers, kind)
+            seg_response(&state, &headers, kind, state.seg.clone())
         },
     )
 }
@@ -1042,7 +1045,18 @@ fn parse_range(headers: &HeaderMap) -> Option<(usize, Option<usize>)> {
     Some((start.trim().parse().ok()?, end))
 }
 
-fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg) -> Response {
+/// `/seg/{len}/{*name}`: `/seg` over the first `len` bytes of its payload.
+async fn seg_sized_handler(
+    State(state): State<Arc<AppState>>,
+    Path((len, _name)): Path<(usize, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let data = state.seg.slice(..len.min(state.seg.len()));
+    seg_response(&state, &headers, Seg::Plain, data)
+}
+
+/// Serve `data`, a `/seg*` resource, the way route `kind` does.
+fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg, data: Bytes) -> Response {
     let stats = state.stats(kind.route());
     let ranged_index = stats.record(headers);
     let rate_limited = match (kind, ranged_index) {
@@ -1068,7 +1082,6 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg) -> Response {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     }
 
-    let data = state.seg.clone();
     let total = data.len();
     let etag = if kind == Seg::WeakEtag {
         SEG_WEAK_ETAG
@@ -1318,7 +1331,7 @@ async fn seg_signed_handler(
         stats.refuse();
         return StatusCode::FORBIDDEN.into_response();
     }
-    seg_response(&state, &headers, Seg::Signed)
+    seg_response(&state, &headers, Seg::Signed, state.seg.clone())
 }
 
 /// A running test server. The background task is aborted on drop.
@@ -1394,6 +1407,7 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/any/{*name}", get(file_handler))
         .route("/redirect", get(redirect_handler))
         .route("/missing", get(missing_handler))
+        .route("/missing/{*name}", get(missing_handler))
         .route("/ranged", get(ranged_handler))
         .route("/slow", get(slow_handler))
         .route("/crawl", get(crawl_handler))
@@ -1405,6 +1419,7 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/mutable", get(mutable_handler))
         .route("/mutable/bump", get(mutable_bump_handler))
         .route("/seg", seg_route(Seg::Plain))
+        .route("/seg/{len}/{*name}", get(seg_sized_handler))
         .route("/seg-flaky", seg_route(Seg::Flaky))
         .route("/seg-flaky-tail", seg_route(Seg::FlakyTail))
         .route("/seg-noaccept", seg_route(Seg::NoAccept))

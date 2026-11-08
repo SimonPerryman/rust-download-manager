@@ -1,323 +1,249 @@
 # rdm
 
-A download manager in Rust. `rdm` downloads files from a URL — on the command
-line or through a desktop GUI — streaming to disk with a live progress readout.
+A download manager written in Rust, with a command-line tool and a desktop GUI
+built on the same download engine.
 
-> **Status: early.** M0 + M1 are a robust single-connection CLI download
-> (pause/resume, resume-after-restart, retry, integrity checking); M2 adds a
-> desktop GUI over the same engine; M3 adds multi-segment parallel downloads;
-> M4 adds a download queue, speed limits (CLI `--limit-rate`, and global +
-> per-download limits in the GUI) and throughput-driven connection ramping.
+![The rdm desktop app: a sidebar of status and folder filters, and a table of downloads that are done, downloading, waiting, paused and failed](docs/screenshots/main-light.png)
+
+<sub>A dark theme is included too: [screenshot](docs/screenshots/main-dark.png).</sub>
 
 ## Features
 
-- Download over HTTP/HTTPS, streamed to disk chunk-by-chunk (no full buffering).
-- Parallel segments: a large file (≥ 2 MiB) on a server that supports range
-  requests, sends a strong `ETag` or a `Last-Modified`, and doesn't set a
-  `Content-Encoding` is split into byte ranges fetched in parallel over up to
-  N connections (4 by default, `-c` to change), added while measured speed
-  keeps rising; idle connections take over half of the largest remaining
-  range. Servers without range support fall back to one connection
-  automatically.
-- Follows redirects and handles common HTTP status codes.
-- Derives the output filename from `Content-Disposition` or the URL, or takes
-  an explicit path. A derived name is made safe on every OS: characters
-  Windows forbids (`<>:"|?*`), control and bidi-override characters become
-  `_`; leading/trailing dots and spaces are dropped (so no hidden dotfiles);
-  device names like `CON` or `nul.txt` get a `_` prefix; names are capped at
-  200 bytes. A derived name always lands inside the download folder.
-- Live progress bar with size, speed, ETA, and the live connection count
-  (`N conn` while more than one is open).
-- Resumable: data streams to a `<file>.part` with a `<file>.rdm` sidecar;
-  re-running the same command continues where an interrupted download left off
-  (via HTTP range requests, validated against `ETag`/`Last-Modified`). A
-  multi-segment download re-fetches only the ranges that were still missing.
-- Retries transient failures (timeouts, dropped connections, 5xx/408/429) with
-  exponential backoff. A rate-limited host (429/503) is backed off from, never
-  hammered with new connections, and its `Retry-After` (up to 60 s) is
-  honoured. A request that can't connect within 20 s, gets no response within
-  30 s, or whose download goes 30 s without receiving data is dropped and
-  retried; time spent under your own speed limit doesn't count.
-- Verifies the finished file's size, and an optional `--checksum sha256:<hex>`,
-  before moving it into place; never clobbers an existing file (`name (1).ext`).
-- Speed limits: `--limit-rate` on the CLI; in the GUI, a global limit and an
-  optional per-download limit, set when adding or changed from the download's
-  row (both applied live).
-- Download queue (GUI): at most 3 downloads stream at once by default
-  (configurable); the rest wait as *Waiting* and start in order as slots free.
-- Optional **desktop GUI** (Tauri + React): manage many downloads at once in
-  one sortable table with status and folder filters — add/pause/resume/stop,
-  live progress/speed/time left and connection count, a download queue with a
-  concurrency cap, global and per-download speed limits, a clear "done" moment
-  when a download finishes, and a list that persists across restarts. The GUI is an *additive* frontend; the CLI and
-  engine stay fully functional headless (no webview/Node needed).
+- **Parallel segmented downloads.** A large file (2 MiB or more) on a server
+  that supports range requests is split into byte ranges fetched over up to 4
+  connections by default (1–16 with `-c`). Connections are added while the
+  measured speed keeps rising, and an idle connection takes over half of the
+  largest remaining range. Servers without range support fall back to one
+  connection automatically.
+- **Resume after a crash or restart.** Data streams to `<file>.part`, with a
+  `<file>.rdm` sidecar that records progress. Running the same command again
+  continues where it stopped, re-fetching only the missing ranges, and only if
+  the server's `ETag` or `Last-Modified` still matches.
+- **Pause, resume and stop.** Ctrl-C pauses a CLI download. In the GUI you can
+  pause, resume or stop any download, and choose whether a stop keeps the
+  partial file.
+- **Speed limits.** `--limit-rate` on the CLI. In the GUI, a global limit and
+  an optional per-download limit, both changeable while a download runs.
+- **A download queue (GUI).** At most 3 downloads run at once by default
+  (configurable). The rest wait and start in order as slots free up.
+- **Polite retries.** Timeouts, dropped connections and 5xx/408/429 responses
+  are retried with exponential backoff. A host that rate-limits (429/503) is
+  backed off from rather than sent more connections, and its `Retry-After`
+  (up to 60 s) is honoured.
+- **Integrity checks.** The finished file's size is always checked, and an
+  optional SHA-256 checksum (`--checksum sha256:<hex>`) is verified before the
+  file is moved into place.
+- **Safe file names.** A name taken from the server or the URL is made safe on
+  every OS and always lands inside the download folder. An existing file is
+  never overwritten; the new one is saved as `name (1).ext`.
+- **CLI and GUI.** The `rdm` CLI needs no webview or Node.js. The GUI (Tauri +
+  React) shows every download in one sortable table, keeps the list across
+  restarts, and has light and dark themes.
+- **See each connection at work (GUI).** A multi-connection download draws its
+  pieces as lanes, one per range of the file. A details pane shows the lanes
+  full size, a graph of the last minute's speed, and the checksum, with a
+  button to verify a finished file against a SHA-256 you paste.
+- **Built for many downloads at once (GUI).** Paste a list of links to add
+  them in one go, select several rows to act on together, right-click a row
+  for its actions, reorder the queue by dragging, and drive the table from the
+  keyboard.
 
-## Installation
+## Install
 
-`rdm` is built from source with [Rust](https://www.rust-lang.org/tools/install)
-(stable; MSVC toolchain on Windows).
+Prebuilt binaries aren't available yet. They're planned for the next
+milestone, [M6](milestones/milestone-06-releases-install.md), and will be
+published on
+[GitHub Releases](https://github.com/SimonPerryman/rust-download-manager/releases).
+Until then, build from source.
+
+### CLI
+
+You need [Rust](https://www.rust-lang.org/tools/install) (stable; the MSVC
+toolchain on Windows, which needs the Visual Studio C++ Build Tools).
 
 ```sh
-# Clone, then install the binary onto your PATH:
-cargo install --path .
-
-# …or just build it (binary lands in target/release/):
-cargo build --release
+cargo install --locked --git https://github.com/SimonPerryman/rust-download-manager rdm
 ```
 
-## Usage
+This builds the `rdm` binary and puts it in `~/.cargo/bin`. The trailing `rdm`
+picks the CLI package out of the repository's workspace. From a clone,
+`cargo install --locked --path .` does the same.
+
+### Desktop GUI
+
+The GUI lives in [`gui/`](gui/). You need:
+
+- Rust (as above);
+- [Node.js](https://nodejs.org/) and [pnpm](https://pnpm.io/);
+- the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your
+  OS. On Windows that's the Visual Studio C++ Build Tools and the WebView2
+  runtime, which ships with Windows 11.
 
 ```sh
-# Download into the current directory (filename derived from the server):
+git clone https://github.com/SimonPerryman/rust-download-manager.git
+cd rust-download-manager/gui
+pnpm install
+pnpm tauri build    # release build; the app and installers land in ../target/release/
+```
+
+On Windows, run the build from a Developer PowerShell for VS so the MSVC
+linker is on `PATH`.
+
+## Quick start
+
+```sh
+# Download into the current directory (the file name comes from the server):
 rdm https://example.com/big-file.zip
 
-# Choose the output path:
+# Choose where to save it:
 rdm https://example.com/big-file.zip -o ~/Downloads/archive.zip
 
-# Verify the download against a SHA-256 checksum:
-rdm https://example.com/big-file.zip --checksum sha256:<hex>
-
-# Use up to 8 connections, added while measured speed keeps rising (-c 1 for one):
+# Use up to 8 connections (-c 1 for a single connection):
 rdm https://example.com/big-file.zip -c 8
 
 # Cap the speed at 2 MiB/s:
 rdm https://example.com/big-file.zip --limit-rate 2M
 
-# Interrupted? Re-run the same command to resume from where it stopped.
+# Verify the result against a SHA-256 checksum:
+rdm https://example.com/big-file.zip --checksum sha256:<hex>
 ```
 
-Ctrl-C pauses: rdm saves its progress, prints `Paused — run the same command
-again to resume`, and exits with code 130; a second Ctrl-C quits at once. The
-partial download stays on disk as `<file>.part` plus a `<file>.rdm` sidecar; to
-discard it instead of resuming, delete both files. With
-`--checksum`, the final line says the checksum was verified, e.g.
-`Downloaded 1048576 bytes to archive.zip (sha256 verified)`.
+Interrupted, or pressed Ctrl-C? Run the same command again to resume. Ctrl-C
+saves progress, prints `Paused — run the same command again to resume`, and
+exits with code 130; a second Ctrl-C quits at once. To discard a partial
+download instead, delete its `<file>.part` and `<file>.rdm`.
 
-Engine warnings (each retry with its reason, a failed progress save) print to
-stderr; `-v` also shows informational events such as a fallback to one
-connection. A failed download is reported once, as `Error: failed to download
-…`. `RUST_LOG` (e.g. `RUST_LOG=debug`) overrides the level and also shows the
-engine's own error lines.
+To start the GUI, run the app that `pnpm tauri build` produced, or
+`pnpm tauri dev` from `gui/` during development.
+
+## CLI reference
+
+```
+rdm [OPTIONS] <URL>
+```
 
 | Argument | Description |
 |---|---|
 | `<url>` | The URL to download (required). |
-| `-o, --output <path>` | Output file path. Defaults to a name derived from the URL/headers, saved in the current directory. |
-| `--checksum <algo:hex>` | Verify the finished file against a checksum (e.g. `sha256:…`). |
-| `-c, --connections <n>` | Max parallel connections, 1–16 (default 4): starts on one and adds more, up to `n`, while measured speed keeps rising. Used only for files ≥ 2 MiB on servers that support range requests; `1` forces a single connection. |
-| `--limit-rate <rate>` | Cap the download speed in bytes/s, with an optional `K`/`M`/`G` suffix (×1024), e.g. `500K` or `2M`. Shared across all connections of the download. |
+| `-o, --output <path>` | Output file path. Defaults to a name derived from the URL or headers, saved in the current directory. |
+| `--checksum <algo:hex>` | Verify the finished file against a checksum, e.g. `sha256:…`. |
+| `-c, --connections <n>` | Max parallel connections, 1–16 (default 4). Starts on one and adds more, up to `n`, while measured speed keeps rising. Used only for files of 2 MiB or more on servers that support range requests. |
+| `--limit-rate <rate>` | Cap the download speed in bytes/s, with an optional `K`/`M`/`G` suffix (×1024), e.g. `500K` or `2M`. Shared across all of the download's connections. |
 | `-v, --verbose` | Also log informational engine events (download start, fallbacks) to stderr. |
+| `-h, --help` / `-V, --version` | Print help or the version. |
 
-Run `rdm --help` for the full, generated help, and `rdm --version` for the
-version.
+Retries and warnings print to stderr. A failed download is reported once, as
+`Error: failed to download …`. `RUST_LOG` (e.g. `RUST_LOG=debug`) overrides
+the log level.
 
-## Desktop GUI
+## Using the GUI
 
-The GUI lives in [`gui/`](gui/) as a separate Tauri app (the `rdm-gui`
-workspace crate) that drives the same engine — so the CLI and engine never
-depend on Tauri, Node, or a webview, and a headless server build stays fully
-functional. Your download list and history are stored in `~/.rdm/state.json`.
+- **Add** downloads with the **Add** button, by dragging a link onto the
+  window, or by pressing Ctrl/Cmd+V (outside a text box) with one or more
+  links on the clipboard. The dialog takes one link per line and previews each
+  file's name and site, skipped lines and links already in your list before
+  anything starts ("Add 3 downloads"); Ctrl+Enter adds. The folder starts at
+  the one you used last. Under **More options** you can give a SHA-256
+  checksum and a speed limit.
+- **Filter** with the sidebar (by status, or by destination folder) or by name
+  from the toolbar. Click a column header to sort. The sidebar also shows the
+  total speed with a graph of the last minute. In a window narrower than about
+  760 px the sidebar shrinks to an icon rail (hover an icon for its name) and
+  less important columns hide.
+- **Select** a row by clicking it; Ctrl+click adds or removes rows and
+  Shift+click selects a range. With two or more selected, the toolbar offers
+  the actions that apply to them all (Open, Pause, Resume, Stop, Retry, Remove
+  from list).
+- **Right-click** a row (or press Shift+F10 or the menu key) for every action
+  that fits it, such as Show in folder, Copy link, Download again, Delete
+  partial file and Remove from list.
+- **Keyboard:** with the table focused, ↑/↓ move (Shift extends the
+  selection), Home/End jump, Ctrl+A selects all, Space pauses or resumes,
+  Enter opens a finished file, Delete removes from the list and Escape clears
+  the selection.
+- **Queue order:** waiting downloads start in order, and the first says **Next
+  up**. Drag a waiting row by its handle, press Alt+↑/Alt+↓, or use **Start
+  next**, **Move up** and **Move down** from its menu or the details pane.
+- **Density:** the toolbar toggles compact 32 px rows (the default) and
+  comfortable 48 px rows that also show each file's site.
+- **Lanes:** a multi-connection download draws one line per piece of the file
+  in the Progress column, showing where the piece sits and how far it has got.
+- **Details:** click a row to open the details pane under the table; it then
+  follows the row you select (drag its top edge to resize). **Overview** shows sizes, speed, time left, the lanes
+  full size (hover one for details), the link, the folder and the checksum. A
+  finished download gets a summary such as "5.8 GB in 2 min 14 s, average
+  44 MB/s, checksum verified" and **Verify checksum**. **Speed** graphs the
+  last 60 seconds, with the speed limit as a dashed line. A finished
+  download's lanes are kept only until the app closes; after a restart the
+  pane shows the summary alone.
+- **Finished** downloads stay where they are, marked Done, with **Open** and
+  **Show in folder**. **Clear finished** removes Done and Stopped rows from the
+  list (with Undo); downloaded files stay on disk.
+- **Failed** downloads are pinned to the top with the reason in plain words and
+  a **Retry** button.
+- **Settings** (the sliders button) holds the theme, the max number of
+  concurrent downloads, the global speed limit and the max connections per
+  download. The status bar shows the total speed, and you can click the global
+  limit there to change it.
 
-The window has a sidebar of filters, a toolbar, one table of every download
-and a status bar:
+![The details pane's Speed tab for a running download: speed now, average and peak, and a graph of the last minute, under a table whose rows draw their lanes](docs/screenshots/details.png)
 
-- **Sidebar:** status filters (All, Downloading, Waiting, Paused, Done, Failed,
-  Stopped) and one filter per destination folder, each with a live count, and
-  the total speed now with a graph of the last minute.
-- **Toolbar:** filter by name (matches the filename or the site), Pause all /
-  Resume all, **Clear finished**, **Add**, a row-density toggle (compact
-  32 px rows by default, or comfortable 48 px rows that also show each file's
-  site; remembered), a light/dark theme toggle and **Settings**.
-- **Table:** click a column header to sort by it (click again to reverse).
-  Downloads stay where they are when they finish. A multi-connection download
-  draws its **lanes** in the Progress column: one line per piece of the file,
-  showing where the piece sits and how far it has got.
-- **Details pane:** click a row (or its filename) to open it under the table;
-  it then follows the row you select (drag its top edge to resize). **Overview** shows sizes, speed, time left, the full-size lanes
-  (hover one for details), the link, the folder and the checksum; for a
-  finished download, a summary such as "5.8 GB in 2 min 14 s, average
-  44 MB/s, checksum verified" and **Verify checksum**, which checks the file
-  against a SHA-256 you paste; for a waiting download, its place in the queue
-  with **Move up** and **Move down**. **Speed** graphs the last 60 seconds, with the
-  speed limit as a dashed line. The pieces of a finished download are kept
-  only until the app closes, so after a restart it shows the summary alone.
-- **Status bar:** total speed, how many are downloading and waiting, and the
-  global speed limit — click it to change it in place.
+The download list and settings are stored in `~/.rdm/state.json`. The GUI also
+writes a daily log in `~/.rdm` (`rdm.YYYY-MM-DD.log`, the last 7 kept). Logged
+URLs and error messages omit any `user:password@`, query string or fragment, so
+they're safer to paste into a bug report. `RDM_HOME` relocates `~/.rdm`, and
+`RDM_DOWNLOAD_DIR` changes the Add dialog's default folder.
 
-Below about 760 px wide the sidebar shrinks to an icon rail (hover a filter for
-its name; its count sits on the icon) and lower-priority columns hide, so the
-window still works at its 640 px minimum.
+## Building and testing from source
 
-When a download finishes, its row turns green for a few seconds and keeps a
-faint tint and a solid **Open** button until you open the file once (remembered
-across restarts). A notification in the corner offers **Open** and **Show in
-folder**. A finished row shows a check, "Done", and never moves or disappears
-by itself.
-
-A failed download is pinned to the top of All with the reason in plain words
-under it and a **Retry** button; with two or more failed, **Retry all failed**
-restarts them all.
-
-**Stop** asks first: keep the partial file to resume later (the default), or
-delete it. A stopped download with its partial kept offers **Resume** and
-**Delete partial file**; one without offers **Download again**.
-
-**Clear finished** removes Done and Stopped downloads from the list (in every
-folder), with **Undo** for about 5 seconds; nothing is removed until that
-window ends. Downloaded files stay on disk, and so do kept partial files.
-A row's **Remove from list** takes just that download off the list, at once
-(no Undo), by the same rule for files.
-
-To add downloads, click **Add**, drag a link (or the address bar's URL) from
-your browser onto the window, or press Ctrl/Cmd+V anywhere outside a text box
-with one or more `http(s)` links on the clipboard — the latter two open the Add
-dialog pre-filled. The dialog takes one link per line and previews what it
-found before anything starts: each link's filename and site, lines that aren't
-links (skipped), links already in your list, and a count ("Add 3 downloads").
-Ctrl+Enter adds. The destination starts at the folder you used last.
-
-Click a row to select it (and show its details); Ctrl+click adds or removes rows and Shift+click
-selects a range. With two or more selected, the toolbar shows what applies to
-them (Open, Pause, Resume, Stop, Retry, Remove from list). Right-click a row,
-or press Shift+F10 or the menu key, for every action that fits it: Open, Show
-in folder, Pause/Resume, Stop, Retry, Copy link, Download again, Delete partial
-file and Remove from list (which says what stays on disk).
-
-With the table focused, the keyboard works it too: ↑/↓ move (Shift extends
-the selection), Home/End jump, Ctrl+A selects all, Space pauses or resumes,
-Enter (or a double-click) opens a finished file, Delete removes from the list, and Escape clears
-the selection.
-
-Waiting downloads start in queue order, and the first one says **Next up**.
-To change the order, drag a waiting row by its handle (shown on hover, and
-always in the Waiting view), press Alt+↑/Alt+↓ on it, or use **Start next**,
-**Move up** and **Move down** in its menu. The order is kept across restarts.
-
-Speed limits in the GUI are a number plus a unit picker (KB/s or MB/s, ×1024);
-an empty box means no limit, and 0 is rejected. Under **More options**, the Add
-dialog takes a checksum and a **Speed limit** for that download.
-
-A download with its own limit shows a speedometer in its Speed column (the
-limit itself while it isn't streaming). To set, change or remove a download's
-limit while it's downloading, paused or waiting, click the row's speedometer
-button, then press Enter or click away. The change applies at once, without restarting the download, and is
-kept across restarts. Escape discards the edit, and ✕ removes the limit. A
-download's own limit can be higher than the global one, but the lower limit
-wins, and the editor says so.
-
-The sliders button in the toolbar opens **Settings**:
-
-- **Display** — theme (System — follows your OS — Light, or Dark).
-  Remembered per machine in the webview's local storage.
-- **Downloads** — stored with your download list in `~/.rdm/state.json`:
-  - *Max concurrent downloads* (default 3): more downloads than this wait as
-    **Waiting** and start in the order added as running
-    ones finish or are paused. Lowering it never interrupts a running download.
-    A waiting download can be paused or stopped.
-  - *Global speed limit*: a cap on all downloads combined (empty = no
-    limit); applies live, alongside any per-download limit (the lower one
-    wins).
-  - *Max connections per download* (1–16, default 4): applies the next time a
-    download starts.
-
-Values are applied when you press Enter or leave the field; an invalid value
-shows an error under it.
-
-Prerequisites: [Node.js](https://nodejs.org/) + [pnpm](https://pnpm.io/), and the
-[Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) for your
-OS (on Windows, the WebView2 runtime, which ships with Windows 11).
+The repository is a Cargo workspace: the `rdm` engine library and CLI at the
+root, and the GUI's Rust crate (`rdm-gui`) under `gui/src-tauri`. All download
+logic lives in the engine; the CLI and the GUI are thin frontends over it.
 
 ```sh
+cargo build                  # the engine and CLI
+cargo test                   # fast, offline test suite
+cargo test -- --ignored      # also run the live network smoke tests
+cargo clippy -- -D warnings  # lint
+cargo fmt --all --check      # format check
+
 cd gui
-pnpm install
-pnpm tauri dev          # run the app in development
-pnpm tauri build        # produce a release bundle/installer
-
-pnpm lint               # lint the frontend (oxlint)
-pnpm format             # format the frontend (oxfmt); pnpm format:check to verify
-pnpm test               # frontend unit tests (vitest)
+pnpm test                    # frontend unit tests
+pnpm lint                    # frontend lint
 ```
 
-Troubleshooting: the GUI logs to stderr and to a daily file in `~/.rdm`
-(`rdm.YYYY-MM-DD.log`, the last 7 kept; dates and rotation are in UTC):
-download starts, each retry with its reason, and failures, each line tagged
-with its download's `id` and file name. Set `RUST_LOG=debug` for more detail.
-An `rdm.log` left by older versions isn't pruned and can be deleted.
-Log lines and error messages (CLI and GUI) show a download's URL without its
-`user:password@` part, query string or fragment (`?<redacted>`), so they're
-safer to paste into a bug report; `~/.rdm` itself keeps full URLs for resume
-and is owner-only (0700) on Linux and macOS.
+The default tests run offline against a local HTTP server. The GUI also has an
+end-to-end suite that drives the real app with WebdriverIO; see the
+[`gui/e2e` package](gui/e2e/package.json) (`pnpm e2e`), which needs
+`tauri-driver` and, on Windows, Microsoft Edge WebDriver. `pnpm screenshots` in
+the same package regenerates the images in [`docs/screenshots`](docs/screenshots/).
 
-Two environment variables relocate the GUI's files, mainly for automated runs:
-`RDM_HOME` replaces `~/.rdm` (state, log, and — except on macOS — the webview's
-local storage), and `RDM_DOWNLOAD_DIR` replaces the OS download folder as the
-Add dialog's default destination (used until you add to another folder).
+Contributor conventions are in [AGENTS.md](AGENTS.md).
 
-### GUI end-to-end tests
+## Project status
 
-`gui/e2e/` holds a [WebdriverIO](https://webdriver.io/) suite that drives the
-real app through [tauri-driver](https://v2.tauri.app/develop/tests/webdriver/):
-adding a download through the Add dialog (and seeing its `Content-Disposition`
-name), pause/resume to completion with the bytes checked on disk, a paused
-download surviving an app restart, display settings, paste/drop URL intake,
-batch add (a pasted list previewed and added, the remembered folder), the
-download queue (a cap of 1 queues a second download until the first is
-paused; Alt+↑ and a drag move a waiting one to the front) and per-download
-limits, connection ramping, the finish moment, the sidebar filters, failed
-downloads and Retry all failed, the Stop dialog, Clear finished with Undo, the
-lanes and details pane (with Verify checksum), and the power features (the
-right-click menu, multi-select and the selection toolbar, the keyboard, row
-density, the narrow-window rail). It downloads only from the repo's own fixture server
-(`cargo run --example fixture_server`) on loopback, and keeps all app state in
-a throwaway temp dir via `RDM_HOME`/`RDM_DOWNLOAD_DIR`; `RDM_OPEN_LOG` makes
-Open and Show in folder write `open <path>` / `reveal <path>` lines to that
-file instead of launching anything. It is a separate pnpm
-package and not part of `cargo test` or `pnpm test`; CI runs it on Linux.
+Early, but usable. Work is planned in milestones; see the [roadmap](roadmap.md)
+and the tickets in [`milestones/`](milestones/).
 
-One-time setup:
+- **Done:** M0 walking skeleton; M1 robust single-connection downloads
+  (resume, retries, checksums); M2 desktop GUI; M3 multi-segment parallel
+  downloads; M4 queue, speed limits and connection ramping.
+- **In progress:** M5, a GUI redesign. The new layout (sidebar, table, status
+  bar, stop and clear-finished flows), the details pane, lanes and speed
+  graphs, batch add, the row menu, multi-select, keyboard shortcuts and queue
+  reorder have shipped. What remains is a per-download Log tab in the details
+  pane.
+- **Next:** M6, prebuilt binaries and installers on GitHub Releases.
 
-- `cargo install tauri-driver --locked`
-- Windows: [Microsoft Edge WebDriver](https://developer.microsoft.com/microsoft-edge/tools/webdriver/)
-  matching your WebView2 runtime version; put `msedgedriver.exe` on `PATH` or
-  point `MSEDGEDRIVER_PATH` at it.
-- Linux: `webkit2gtk-driver` (provides `WebKitWebDriver`), plus `xvfb` when
-  headless.
+CI builds and tests on Linux and Windows. macOS isn't tested yet.
 
-```sh
-cd gui/e2e
-pnpm install
-pnpm e2e                # build the app + fixture server, then run the suite
-pnpm test               # re-run against the existing build
-xvfb-run -a pnpm test   # headless Linux
-```
+## Security
 
-On Windows, build from a shell with the MSVC environment loaded.
+Please report vulnerabilities privately through GitHub's
+[Report a vulnerability](https://github.com/SimonPerryman/rust-download-manager/security/advisories/new)
+form, not in a public issue.
 
-## Development
-
-The architecture is an **engine/frontend split**: all download logic lives in
-the `rdm` library crate (the `engine` module) with a clean API; both the `rdm`
-CLI binary and the GUI are thin frontends over it. The repo is a Cargo
-workspace — `rdm` at the root, `rdm-gui` under `gui/src-tauri` — with
-`default-members = ["."]` so the commands below build and test only the
-engine/CLI (fast, no webview deps). See [`AGENTS.md`](AGENTS.md) for the
-conventions and the [roadmap](roadmap.md) for what's planned.
-
-```sh
-cargo build                 # build the engine + CLI
-cargo test                  # fast, offline test suite (the default gate)
-cargo test -- --ignored     # add the live network smoke tests
-cargo clippy -- -D warnings # lint (warnings are errors)
-cargo fmt --all --check     # formatting check (all workspace crates)
-cargo build -p rdm-gui      # build the GUI's Rust crate (needs gui/ deps built)
-```
-
-Tests are deterministic and offline by default — they drive the engine against
-an in-process HTTP server (including the `Manager` the GUI uses, in
-`tests/manager.rs`). Two `#[ignore]`d live smoke tests exercise real network
-downloads (single-connection and multi-segment) against pinned public assets.
-
-## License
+## Licence
 
 Dual-licensed under either [MIT](LICENSE-MIT) or
 [Apache-2.0](LICENSE-APACHE), at your option.

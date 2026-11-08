@@ -3,8 +3,9 @@
 //! single-sourced; an example (not a bin) so it never ships in the CLI.
 //!
 //! Usage: `cargo run --example fixture_server -- [--port N] [--slow-delay-ms N]
-//! [--seg-delay-ms N]` (port 0, the default, picks a free one; the delays are
-//! per chunk for `/slow`-style routes and `/seg` respectively). Prints
+//! [--seg-delay-ms N] [--seg-len BYTES]` (port 0, the default, picks a free
+//! one; the delays are per chunk for `/slow`-style routes and `/seg`
+//! respectively; `--seg-len` sizes the `/seg*` payload). Prints
 //! `listening on <base-url>` once bound.
 
 #[path = "../tests/common/mod.rs"]
@@ -24,6 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--port" => port = value.parse()?,
             "--slow-delay-ms" => cfg.slow_chunk_delay = Duration::from_millis(value.parse()?),
             "--seg-delay-ms" => cfg.seg_chunk_delay = Duration::from_millis(value.parse()?),
+            "--seg-len" => cfg.seg_len = value.parse()?,
             other => return Err(format!("unknown argument: {other}").into()),
         }
     }
