@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  addedMessage,
+  copiedMessage,
+  deletedPartialsMessage,
   emptyCopy,
+  queuePlace,
+  removedManyMessage,
+  stoppedManyMessage,
+  stopTitle,
   globalLimitLabel,
   removedMessage,
   removeTitle,
@@ -103,5 +110,41 @@ describe("globalLimitLabel", () => {
   it("reads as a phrase", () => {
     expect(globalLimitLabel(null)).toBe("No speed limit");
     expect(globalLimitLabel(2 * MB)).toBe("Limit 2.00 MB/s");
+  });
+});
+
+describe("bulk and queue copy", () => {
+  it("counts in titles and toasts", () => {
+    expect(stopTitle(1)).toBe("Stop this download?");
+    expect(stopTitle(3)).toBe("Stop 3 downloads?");
+    expect(stoppedManyMessage(2, true)).toBe("Stopped 2 downloads.");
+    expect(stoppedManyMessage(2, false)).toBe(
+      "Stopped 2 downloads and deleted their partial files.",
+    );
+    expect(addedMessage(3)).toBe("Added 3 downloads.");
+    expect(copiedMessage(1)).toBe("Copied the link.");
+    expect(copiedMessage(2)).toBe("Copied 2 links.");
+    expect(deletedPartialsMessage(2)).toBe("Deleted 2 partial files.");
+  });
+
+  it("says files stay on disk only when some do", () => {
+    expect(removedManyMessage([snap({ status: "failed" }), snap({ status: "failed" })])).toBe(
+      "Removed 2 downloads from the list.",
+    );
+    expect(removedManyMessage([snap({ status: "failed" }), snap({ status: "completed" })])).toBe(
+      "Removed 2 downloads from the list. Files stay on disk.",
+    );
+    expect(
+      removedManyMessage([
+        snap({ status: "cancelled", partial_kept: true }),
+        snap({ status: "failed" }),
+      ]),
+    ).toBe("Removed 2 downloads from the list. Files stay on disk.");
+  });
+
+  it("names a waiting row's place", () => {
+    expect(queuePlace(0)).toBe("Starts next");
+    expect(queuePlace(1)).toBe("Waiting behind 1 other");
+    expect(queuePlace(3)).toBe("Waiting behind 3 others");
   });
 });

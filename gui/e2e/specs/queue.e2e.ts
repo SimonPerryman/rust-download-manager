@@ -3,7 +3,8 @@
 // is promoted as soon as the first one stops streaming; a queued download can
 // be paused and carries its speed limit; a running download's own limit is
 // set, rejected and cleared from its row; bad rates are rejected in place; the
-// status bar's global limit stays in sync with the Settings popover.
+// status bar's global limit stays in sync with the Settings popover; Alt+Up
+// moves a waiting download to the front of the queue, and it starts next.
 // Shares the app state dir with the other specs (see wdio.conf.ts), so it
 // restores the cap and removes its downloads when done.
 
@@ -12,11 +13,15 @@ import {
   ADD_DIALOG,
   CONCURRENCY_INPUT,
   Key,
+  LINKS,
   baseUrl,
+  clickRow,
   clickRowAction,
   dismissOverlays,
   engineRows,
   invoke,
+  openAddDialog,
+  pressOnTable,
   removeAll,
   retype,
   rowById,
@@ -24,6 +29,8 @@ import {
   selectFilter,
   setMaxConcurrent,
   settingsButton,
+  shownIds,
+  waitForAttr,
   waitForGone,
   waitForStatus,
 } from "../helpers";
@@ -52,10 +59,8 @@ type Rate = { amount: string; unit: "K" | "M" };
 
 /** Opens the Add dialog and submits `url` (and an optional speed limit). */
 async function submitAddDialog(url: string, limit?: Rate): Promise<void> {
-  await $('[data-testid="add-button"]').click();
-  const dialog = addDialog();
-  await dialog.waitForDisplayed();
-  await dialog.$('input[aria-label="URL"]').setValue(url);
+  const dialog = await openAddDialog();
+  await dialog.$(LINKS).setValue(url);
   if (limit) {
     await dialog.$('button[aria-controls="add-more-options"]').click();
     await dialog.$('input[aria-label="Speed limit"]').setValue(limit.amount);
@@ -117,7 +122,8 @@ describe("rdm GUI download queue", () => {
 
     await waitForStatus(first, "downloading");
     await expect(rowById(second)).toHaveAttribute("data-status", "queued");
-    await expect(rowById(second)).toHaveText("Waiting", { containing: true });
+    // The only waiting download starts next, and says so.
+    await expect(rowById(second)).toHaveAttribute("data-next-up", "true");
 
     await clickRowAction(first, "Pause");
     await waitForStatus(first, "paused");
@@ -319,5 +325,87 @@ describe("rdm GUI download queue", () => {
     await expect(statusLimit()).toHaveText("Limit 20.0 KB/s", { containing: true });
     await setGlobalLimit("");
     await expect(statusLimit()).toHaveText("No speed limit", { containing: true });
+  });
+
+  it("moves the last waiting download to the front with Alt+Up, and it starts next", async () => {
+    await setMaxConcurrent(1);
+    for (const id of ids) await invoke("pause", { id });
+    const runner = await add(`${baseUrl}/crawl`);
+    await waitForStatus(runner, "downloading");
+    const a = await add(`${baseUrl}/crawl`);
+    const b = await add(`${baseUrl}/crawl`);
+    const c = await add(`${baseUrl}/crawl`);
+    for (const id of [a, b, c]) await waitForStatus(id, "queued");
+    await expect(rowById(a)).toHaveAttribute("data-next-up", "true");
+
+    /** The waiting rows in table order, which follows the engine's queue. */
+    const waitingOrder = async () => {
+      const queued = new Set(
+        (await engineRows()).filter((d) => d.status === "queued").map((d) => d.id),
+      );
+      return (await shownIds()).filter((id) => queued.has(id));
+    };
+
+    await clickRow(c);
+    await expect(rowById(c)).toHaveAttribute("aria-selected", "true");
+    await pressOnTable("ArrowUp", { altKey: true });
+    await browser.waitUntil(async () => (await waitingOrder()).join() === [a, c, b].join(), {
+      timeoutMsg: "Alt+Up never moved the last waiting download up one place",
+    });
+    await pressOnTable("ArrowUp", { altKey: true });
+    await waitForAttr(c, "data-next-up", "true");
+    await expect(rowById(a)).not.toHaveAttribute("data-next-up");
+    expect(await waitingOrder()).toEqual([c, a, b]);
+
+    // Freeing the slot starts the moved download, not the one that was first.
+    await invoke("pause", { id: runner });
+    await waitForStatus(c, "downloading");
+    const status = async (id: number) => (await engineRows()).find((d) => d.id === id)?.status;
+    expect(await status(a)).toBe("queued");
+    expect(await status(b)).toBe("queued");
+
+    // Dragging b's grip above a puts b first. Pointer events are dispatched:
+    // the drag listens on the window, and drivers differ on pointer actions.
+    await selectFilter("waiting");
+    await browser.execute(
+      (from, onto) => {
+        const grip = document.querySelector(`${from} .grip`) as HTMLElement;
+        const start = grip.getBoundingClientRect();
+        const target = (document.querySelector(onto) as HTMLElement).getBoundingClientRect();
+        const at = (y: number) => ({
+          bubbles: true,
+          clientX: start.left + 4,
+          clientY: y,
+          button: 0,
+        });
+        grip.dispatchEvent(new PointerEvent("pointerdown", at(start.top + 4)));
+        window.dispatchEvent(new PointerEvent("pointermove", at(target.top + 2)));
+        window.dispatchEvent(new PointerEvent("pointerup", at(target.top + 2)));
+      },
+      rowSelector(b),
+      rowSelector(a),
+    );
+    await waitForAttr(b, "data-next-up", "true");
+    expect(await waitingOrder()).toEqual([b, a]);
+
+    // The details pane's Move up does the same for the row it shows.
+    await clickRow(a);
+    const pane = `[data-testid="details-pane"][data-id="${a}"]`;
+    await $(pane).waitForDisplayed();
+    await $(pane).$("button=Move up").click();
+    await waitForAttr(a, "data-next-up", "true");
+    expect(await waitingOrder()).toEqual([a, b]);
+    await expect($(pane).$("button=Move up")).toHaveAttribute("aria-disabled", "true");
+    // The button that just turned itself off keeps focus.
+    expect(
+      await browser.execute(
+        (sel) => document.querySelector(sel)?.contains(document.activeElement) ?? false,
+        pane,
+      ),
+    ).toBe(true);
+
+    await pressOnTable("Escape");
+    await waitForGone('[data-testid="details-pane"]');
+    await selectFilter("all");
   });
 });

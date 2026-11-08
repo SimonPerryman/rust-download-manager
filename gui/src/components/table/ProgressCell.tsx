@@ -20,8 +20,8 @@ const TONE = {
 // The row's lanes (one hairline per piece of the file) with the percentage, a
 // single bar when there is no tiling to draw, or a quiet word for rows that
 // aren't moving. A row that finishes while watched merges its lanes into one
-// bar for a moment first.
-export function ProgressCell({ d }: { d: DownloadSnapshot }) {
+// bar for a moment first. "Next up" marks the waiting row that starts first.
+export function ProgressCell({ d, nextUp }: { d: DownloadSnapshot; nextUp: boolean }) {
   const view = progressView(d);
   const lanes = showsCellLanes(d);
   const [settling, setSettling] = useState(false);
@@ -42,6 +42,7 @@ export function ProgressCell({ d }: { d: DownloadSnapshot }) {
     return () => clearTimeout(t);
   }, [settling]);
 
+  if (nextUp) return <span className="next-up">Next up</span>;
   if ((lanes && view.kind === "bar") || merging) {
     const muted = view.kind === "bar" && view.muted;
     return (

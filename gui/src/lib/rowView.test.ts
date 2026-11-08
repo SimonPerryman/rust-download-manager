@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  isPausable,
+  isRemovable,
+  isResumable,
   isStoppable,
+  continues,
+  toResume,
   pauseAllMode,
   precisePercent,
   progressView,
@@ -153,5 +158,37 @@ describe("isStoppable", () => {
     expect(isStoppable(snap({ status: "completed" }))).toBe(false);
     expect(isStoppable(snap({ status: "cancelled" }))).toBe(false);
     expect(isStoppable(undefined)).toBe(false);
+  });
+});
+
+describe("isPausable / isResumable / isRemovable", () => {
+  const all = ["queued", "downloading", "paused", "completed", "failed", "cancelled"] as const;
+  const which = (f: (d: DownloadSnapshot) => boolean) =>
+    all.filter((status) => f(snap({ status })));
+
+  it("sorts each status into the actions that apply", () => {
+    expect(which(isPausable)).toEqual(["queued", "downloading"]);
+    expect(which(isResumable)).toEqual(["paused", "cancelled"]);
+    expect(which(isRemovable)).toEqual(["completed", "failed", "cancelled"]);
+  });
+});
+
+describe("toResume", () => {
+  it("restarts a lone stopped row but never a stopped row in a bulk Resume", () => {
+    const fresh = snap({ id: 1, status: "cancelled" });
+    const kept = snap({ id: 2, status: "cancelled", partial_kept: true });
+    const paused = snap({ id: 3, status: "paused" });
+    expect(toResume([fresh]).map((d) => d.id)).toEqual([1]);
+    expect(toResume([fresh, kept, paused]).map((d) => d.id)).toEqual([2, 3]);
+    expect(toResume([fresh, snap({ id: 4, status: "completed" })])).toEqual([]);
+  });
+});
+
+describe("continues", () => {
+  it("is true only where a Resume picks up where it left off", () => {
+    expect(continues(snap({ status: "paused" }))).toBe(true);
+    expect(continues(snap({ status: "cancelled", partial_kept: true }))).toBe(true);
+    expect(continues(snap({ status: "cancelled" }))).toBe(false);
+    expect(continues(snap({ status: "completed" }))).toBe(false);
   });
 });

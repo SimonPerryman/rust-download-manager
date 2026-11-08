@@ -4,6 +4,8 @@ import indexHtml from "../../index.html?raw";
 import {
   applyPrefs,
   DEFAULT_PREFS,
+  LAST_DIR_KEY,
+  loadLastDir,
   loadPaneHeight,
   loadPrefs,
   loadUnopened,
@@ -11,6 +13,7 @@ import {
   parsePrefs,
   PREFS_KEY,
   resolveTheme,
+  saveLastDir,
   savePaneHeight,
   savePrefs,
   saveUnopened,
@@ -55,6 +58,10 @@ function fakeRoot() {
 }
 
 describe("parsePrefs", () => {
+  it("defaults to compact rows and the system theme", () => {
+    expect(DEFAULT_PREFS).toEqual({ theme: "system", density: "compact" });
+  });
+
   it("returns defaults for missing, corrupt, or non-object values", () => {
     for (const raw of [null, "", "not json", "null", "42", '"dark"', "[]"]) {
       expect(parsePrefs(raw)).toEqual(DEFAULT_PREFS);
@@ -62,13 +69,21 @@ describe("parsePrefs", () => {
   });
 
   it("falls back per field, keeping valid fields", () => {
-    expect(parsePrefs(JSON.stringify({ theme: "neon", density: "compact" }))).toEqual({
+    expect(parsePrefs(JSON.stringify({ theme: "neon", rows: "compact" }))).toEqual({
       theme: "system",
       density: "compact",
     });
-    expect(parsePrefs(JSON.stringify({ theme: "dark", density: 3 }))).toEqual({
+    expect(parsePrefs(JSON.stringify({ theme: "dark", rows: 3 }))).toEqual({
       theme: "dark",
-      density: "comfortable",
+      density: "compact",
+    });
+    expect(parsePrefs(JSON.stringify({ rows: "comfortable" })).density).toBe("comfortable");
+  });
+
+  it("ignores the older density field, saved before rows could be switched", () => {
+    expect(parsePrefs(JSON.stringify({ theme: "dark", density: "comfortable" }))).toEqual({
+      theme: "dark",
+      density: "compact",
     });
   });
 });
@@ -158,6 +173,22 @@ describe("resolveTheme / applyPrefs", () => {
   });
 });
 
+describe("loadLastDir / saveLastDir", () => {
+  it("round-trips the Add dialog's last folder", () => {
+    const storage = memoryStorage();
+    expect(loadLastDir(storage)).toBeNull();
+    expect(saveLastDir("/data/isos", storage)).toBe(true);
+    expect(storage.data[LAST_DIR_KEY]).toBe("/data/isos");
+    expect(loadLastDir(storage)).toBe("/data/isos");
+  });
+
+  it("treats a blank value or failing storage as none", () => {
+    expect(loadLastDir(memoryStorage({ [LAST_DIR_KEY]: "  " }))).toBeNull();
+    expect(loadLastDir(throwing)).toBeNull();
+    expect(saveLastDir("/x", throwing)).toBe(false);
+  });
+});
+
 // index.html applies prefs before first paint with a hand-written mirror of
 // parsePrefs + applyPrefs; run it against fakes to keep the two in step.
 describe("index.html pre-paint script", () => {
@@ -185,9 +216,10 @@ describe("index.html pre-paint script", () => {
     [null, true],
     [null, false],
     ["garbage", true],
-    [JSON.stringify({ theme: "light", density: "compact" }), true],
+    [JSON.stringify({ theme: "light", rows: "compact" }), true],
+    [JSON.stringify({ theme: "dark", rows: "comfortable" }), false],
     [JSON.stringify({ theme: "dark", density: "comfortable" }), false],
-    [JSON.stringify({ theme: "neon", density: "tiny" }), true],
+    [JSON.stringify({ theme: "neon", rows: "tiny" }), true],
   ];
   it.each(cases)("matches applyPrefs for stored %s (system dark: %s)", (stored, systemDark) => {
     const expected = fakeRoot();
@@ -199,6 +231,6 @@ describe("index.html pre-paint script", () => {
 
   it("falls back to defaults when storage throws", () => {
     const root = runInline(null, false, true);
-    expect(root.dataset).toEqual({ theme: "system", density: "comfortable" });
+    expect(root.dataset).toEqual({ theme: "system", density: "compact" });
   });
 });

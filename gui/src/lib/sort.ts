@@ -80,7 +80,9 @@ export function rankOf(ds: DownloadSnapshot[], sort: SortState): Map<number, num
 /**
  * The table's row order: by `sort`, or by `frozen` rank when given (rows added
  * since the freeze go first, newest first); `pinFailed` lifts failed rows to
- * the top, keeping their order.
+ * the top, keeping their order. Waiting rows keep the slots the order gives
+ * them but fill those slots in `ds`'s own order (the engine's queue), so a
+ * reorder shows under any sort.
  */
 export function arrangeRows(
   ds: DownloadSnapshot[],
@@ -95,7 +97,10 @@ export function arrangeRows(
         return ra - rb;
       }
     : comparator(opts.sort);
-  const rows = [...ds].sort(order);
+  const sorted = [...ds].sort(order);
+  const queue = ds.filter((d) => d.status === "queued");
+  let next = 0;
+  const rows = sorted.map((d) => (d.status === "queued" ? queue[next++] : d));
   if (!opts.pinFailed) return rows;
   return [
     ...rows.filter((d) => d.status === "failed"),

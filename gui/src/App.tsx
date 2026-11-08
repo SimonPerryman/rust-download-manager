@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./lib/api";
 import {
+  addedMessage,
   deletedPartialMessage,
   emptyCopy,
   openFailedMessage,
   removedMessage,
   retryAllMessage,
+  stoppedManyMessage,
   stoppedMessage,
   viewTitle,
 } from "./lib/copy";
@@ -13,14 +15,20 @@ import { matchesFilter, matchesQuery, statusCounts, type ViewFilter } from "./li
 import { deriveFolders, folderOf } from "./lib/folders";
 import { planBatch } from "./lib/pendingClear";
 import { focusIsFree } from "./lib/focus";
-import { isStoppable, pauseAllMode, totalSpeed } from "./lib/rowView";
+import { keyCommand } from "./lib/keymap";
+import { menuItems, selectionActions, type MenuCommand, type MenuEntry } from "./lib/menu";
+import { dropIndex, queueOrder, stepIndex } from "./lib/queue";
+import { continues, isPausable, isStoppable, pauseAllMode, totalSpeed } from "./lib/rowView";
+import { selectedInOrder, type Modifiers } from "./lib/selection";
 import { arrangeRows, DEFAULT_SORT, isVolatile, nextSort, rankOf, type SortKey } from "./lib/sort";
 import type { DownloadSnapshot } from "./lib/types";
+import { useBulkCommands } from "./lib/useBulkCommands";
 import { useDownloads } from "./lib/useDownloads";
 import { useFinishMoment } from "./lib/useFinishMoment";
 import { usePendingClear } from "./lib/usePendingClear";
 import { usePrefs } from "./lib/usePrefs";
 import { usePaneHeight } from "./lib/usePaneHeight";
+import { useSelection } from "./lib/useSelection";
 import { useSettings } from "./lib/useSettings";
 import { useSpeedHistory } from "./lib/useSpeedHistory";
 import { useToast } from "./lib/useToast";
@@ -36,12 +44,19 @@ import { Sidebar } from "./components/sidebar/Sidebar";
 import { StatusBar } from "./components/statusbar/StatusBar";
 import type { RowHandlers } from "./components/table/rowHandlers";
 import { DownloadTable } from "./components/table/DownloadTable";
+import { RowMenu } from "./components/table/RowMenu";
 import { Toolbar } from "./components/toolbar/Toolbar";
 
 const ALL: ViewFilter = { kind: "status", status: "all" };
 
 // How long a confirmed stop may take to land before focus gives up on the row.
 const REFOCUS_MS = 2_000;
+
+/** The keyboard opens the menu this far in from the focused row's left edge. */
+const MENU_INSET_PX = 48;
+
+const scrollToRow = (id: number) =>
+  document.getElementById(`row-${id}`)?.scrollIntoView({ block: "nearest" });
 
 // State wiring only: every download fact comes from the engine's snapshots,
 // and every action is a thin api call.
@@ -60,18 +75,29 @@ export default function App() {
   const [sort, setSort] = useState(DEFAULT_SORT);
   const [frozen, setFrozen] = useState<Map<number, number> | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [prefillUrl, setPrefillUrl] = useState("");
-  const [stopTarget, setStopTarget] = useState<number | null>(null);
+  const [prefillText, setPrefillText] = useState("");
+  const [stopIds, setStopIds] = useState<number[] | null>(null);
   const [refocusId, setRefocusId] = useState<number | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  // The row in the details pane. Kept apart from the selection so the pane stays
+  // when its row leaves the view (it finishes, or a search hides it).
+  const [detailsId, setDetailsId] = useState<number | null>(null);
   const [paneTab, setPaneTab] = useState<PaneTab>("overview");
-  const tableRef = useRef<HTMLDivElement>(null);
+  // The menu's items are fixed when it opens, so a row changing under it can't
+  // unmount the focused item; each command still acts only where it applies.
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    ids: number[];
+    entries: MenuEntry[];
+  } | null>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
 
-  const openAdd = useCallback((url = "") => {
-    setPrefillUrl(url);
+  const openAdd = useCallback((text = "") => {
+    setMenu(null);
+    setPrefillText(text);
     setAddOpen(true);
   }, []);
-  const draggingUrl = useUrlIntake(openAdd, !addOpen && stopTarget == null);
+  const draggingUrl = useUrlIntake(openAdd, !addOpen && stopIds == null);
 
   // Rows hidden by a pending clear are left out of every view and count.
   const shown = useMemo(
@@ -99,11 +125,19 @@ export default function App() {
     [shown, view, query, sort, frozen],
   );
   const failed = useMemo(() => shown.filter((d) => d.status === "failed"), [shown]);
+  const visibleIds = useMemo(() => visible.map((d) => d.id), [visible]);
+  const selection = useSelection(visibleIds);
+  const sel = selection.selection;
+  const queue = useMemo(() => queueOrder(downloads), [downloads]);
+  // Keyed on the URLs themselves so the Add preview doesn't re-parse on every tick.
+  const urlKey = JSON.stringify(downloads.map((d) => d.url));
+  const existingUrls = useMemo(() => new Set<string>(JSON.parse(urlKey)), [urlKey]);
+  const byId = useCallback((id: number) => downloads.find((d) => d.id === id), [downloads]);
   // The pane follows the live row and closes once it's gone (removed or cleared).
-  const selected = shown.find((d) => d.id === selectedId);
+  const detailsRow = shown.find((d) => d.id === detailsId);
   useEffect(() => {
-    if (selectedId != null && seeded && !selected) setSelectedId(null);
-  }, [selectedId, seeded, selected]);
+    if (detailsId != null && seeded && !detailsRow) setDetailsId(null);
+  }, [detailsId, seeded, detailsRow]);
   const title = viewTitle(view, folders);
 
   const onSort = (key: SortKey) => {
@@ -144,7 +178,7 @@ export default function App() {
     () => ({
       pause: (d) => api.pause(d.id).catch(fail),
       resume: (d) => api.resume(d.id).catch(fail),
-      stop: (d) => setStopTarget(d.id),
+      stop: (d) => setStopIds([d.id]),
       open: openDownload,
       reveal: revealDownload,
       remove: (d) =>
@@ -162,48 +196,194 @@ export default function App() {
     [fail, notify, openDownload, revealDownload, retryAll],
   );
 
-  // The dialog follows the live row and closes itself once the row can't be stopped.
-  const stopRow = downloads.find((d) => d.id === stopTarget);
-  const stopOpen = isStoppable(stopRow);
+  const run = useBulkCommands({
+    downloads,
+    queue,
+    notify,
+    fail,
+    open: openDownload,
+    reveal: revealDownload,
+    retryAll,
+    askStop: setStopIds,
+  });
+
+  // The dialog follows the live rows and closes itself once none can be stopped.
+  const stopRows = useMemo(() => (stopIds ?? []).map(byId).filter(isStoppable), [stopIds, byId]);
+  const stopOpen = stopRows.length > 0;
   useEffect(() => {
-    if (stopTarget == null || stopOpen) return;
-    const id = stopTarget;
-    setStopTarget(null);
-    // The row finished or failed under the dialog: give focus back to that row.
+    if (stopIds == null || stopOpen) return;
+    const id = stopIds.length === 1 ? stopIds[0] : null;
+    setStopIds(null);
+    // The rows finished or failed under the dialog: give focus back to the row (or the table).
     setTimeout(() => {
       if (!focusIsFree()) return;
-      const button = document.querySelector<HTMLButtonElement>(
-        `[data-testid="download-row"][data-id="${id}"] .c-act button`,
-      );
+      const button =
+        id != null
+          ? document.querySelector<HTMLButtonElement>(
+              `[data-testid="download-row"][data-id="${id}"] .c-act button`,
+            )
+          : null;
       (button ?? tableRef.current)?.focus();
     });
-  }, [stopTarget, stopOpen]);
+  }, [stopIds, stopOpen]);
 
   const cancelStop = useCallback(() => {
-    const id = stopTarget;
-    setStopTarget(null);
-    if (id == null) return;
-    setTimeout(() =>
-      document
-        .querySelector<HTMLButtonElement>(
-          `[data-testid="download-row"][data-id="${id}"] button[aria-label="Stop"]`,
-        )
-        ?.focus(),
-    );
-  }, [stopTarget]);
+    const ids = stopIds;
+    setStopIds(null);
+    if (ids == null) return;
+    setTimeout(() => {
+      const button =
+        ids.length === 1
+          ? document.querySelector<HTMLButtonElement>(
+              `[data-testid="download-row"][data-id="${ids[0]}"] button[aria-label="Stop"]`,
+            )
+          : null;
+      (button ?? tableRef.current)?.focus();
+    });
+  }, [stopIds]);
 
   const confirmStop = (keep: boolean) => {
-    const d = stopRow;
-    setStopTarget(null);
-    if (!isStoppable(d)) return;
-    api
-      .stop(d.id, keep)
+    const rows = stopRows;
+    setStopIds(null);
+    if (rows.length === 0) return;
+    Promise.all(rows.map((d) => api.stop(d.id, keep)))
       .then(() => {
-        notify(stoppedMessage(d, keep));
-        setRefocusId(d.id);
+        if (rows.length === 1) {
+          notify(stoppedMessage(rows[0], keep));
+          setRefocusId(rows[0].id);
+        } else {
+          notify(stoppedManyMessage(rows.length, keep));
+          setTimeout(() => focusIsFree() && tableRef.current?.focus());
+        }
       })
       .catch(fail);
   };
+
+  // ---- selection, menu and keyboard ----
+  const selectedIds = useMemo(() => selectedInOrder(sel, visibleIds), [sel, visibleIds]);
+  const selectedRows = useMemo(
+    () => selectedIds.flatMap((id) => byId(id) ?? []),
+    [selectedIds, byId],
+  );
+  const { click: selectRow, clear: clearSelection } = selection;
+
+  // A plain click selects the row alone and shows its details; Ctrl and Shift only select.
+  const onSelect = useCallback(
+    (id: number, mods: Modifiers) => {
+      selectRow(id, mods);
+      if (!mods.ctrl && !mods.shift) setDetailsId(id);
+      tableRef.current?.focus({ preventScroll: true });
+    },
+    [selectRow],
+  );
+
+  // The filename button toggles the row's details. A mouse press hands focus to
+  // the table so the keyboard map works; a key press leaves it on the button.
+  const onDetails = useCallback(
+    (id: number, viaPointer: boolean) => {
+      if (detailsId === id) {
+        setDetailsId(null);
+      } else {
+        selectRow(id, {});
+        setDetailsId(id);
+      }
+      if (viaPointer) tableRef.current?.focus({ preventScroll: true });
+    },
+    [detailsId, selectRow],
+  );
+
+  // The menu acts on the selection when opened on a selected row, else selects that row alone.
+  const openMenu = useCallback(
+    (id: number, x: number, y: number) => {
+      const onSelected = sel.selected.has(id);
+      if (!onSelected) selectRow(id, {});
+      const ids = onSelected ? selectedIds : [id];
+      const rows = ids.flatMap((i) => byId(i) ?? []);
+      if (rows.length) setMenu({ x, y, ids, entries: menuItems(rows, queue, failed.length) });
+    },
+    [sel, selectedIds, selectRow, byId, queue, failed.length],
+  );
+
+  const closeMenu = useCallback(() => {
+    setMenu(null);
+    setTimeout(() => focusIsFree() && tableRef.current?.focus({ preventScroll: true }));
+  }, []);
+
+  const runMenu = (cmd: MenuCommand) => {
+    const ids = menu?.ids ?? [];
+    closeMenu();
+    run(cmd, ids);
+  };
+
+  const moveInQueue = useCallback(
+    (id: number, index: number | null) => {
+      if (index != null) api.moveQueued(id, index).catch(fail);
+    },
+    [fail],
+  );
+
+  const onTableKey = (e: React.KeyboardEvent<HTMLTableElement>) => {
+    // Keys on a row's own buttons and editors are theirs.
+    if (e.target !== e.currentTarget) return;
+    const c = keyCommand(e);
+    if (!c) return;
+    const cursor = sel.cursor != null ? byId(sel.cursor) : undefined;
+    switch (c.kind) {
+      case "move": {
+        e.preventDefault();
+        const id = selection.move(c.to, c.extend);
+        if (id != null) scrollToRow(id);
+        // An open pane follows the cursor.
+        if (id != null && !c.extend && detailsId != null) setDetailsId(id);
+        return;
+      }
+      case "selectAll":
+        e.preventDefault();
+        return selection.selectAll();
+      case "pauseOrResume":
+        e.preventDefault();
+        if (selectedRows.some(isPausable)) return run("pause", selectedIds);
+        // Space never restarts a stopped download from zero; the menu's "Download again" does.
+        if (selectedRows.some(continues))
+          return run(
+            "resume",
+            selectedIds.filter((id) => continues(byId(id)!)),
+          );
+        return;
+      case "open":
+        if (cursor?.status === "completed") openDownload(cursor);
+        return;
+      case "remove":
+        return run("remove", selectedIds);
+      case "menu": {
+        e.preventDefault();
+        const row = cursor && document.getElementById(`row-${cursor.id}`);
+        if (!cursor || !row) return;
+        const r = row.getBoundingClientRect();
+        openMenu(cursor.id, r.left + MENU_INSET_PX, r.bottom);
+        return;
+      }
+      case "reorder":
+        e.preventDefault();
+        if (cursor?.status === "queued") {
+          moveInQueue(cursor.id, stepIndex(queue, cursor.id, c.delta));
+        }
+        return;
+      case "clear":
+        if (sel.selected.size || detailsId != null) {
+          e.preventDefault();
+          clearSelection();
+          setDetailsId(null);
+        }
+        return;
+    }
+  };
+
+  const onQueueDrop = useCallback(
+    (id: number, target: number, after: boolean) =>
+      moveInQueue(id, dropIndex(queue, id, target, after)),
+    [moveInQueue, queue],
+  );
 
   // If the stopped row never shows up as Stopped here (filtered out, say), focus the table.
   useEffect(() => {
@@ -218,9 +398,9 @@ export default function App() {
 
   // Closing the pane from inside it hands focus back to the row that opened it.
   const closeDetails = useCallback(() => {
-    const id = selectedId;
+    const id = detailsId;
     const hadFocus = document.activeElement?.closest('[data-testid="details-pane"]') != null;
-    setSelectedId(null);
+    setDetailsId(null);
     if (!hadFocus || id == null) return;
     setTimeout(() => {
       const button = document.querySelector<HTMLButtonElement>(
@@ -228,7 +408,7 @@ export default function App() {
       );
       (button ?? tableRef.current)?.focus();
     });
-  }, [selectedId]);
+  }, [detailsId]);
 
   return (
     <div className="app">
@@ -263,6 +443,21 @@ export default function App() {
           resolved={resolved}
           onPrefs={updatePrefs}
           onSettingsApplied={applySettings}
+          selection={
+            selectedRows.length >= 2
+              ? { count: selectedRows.length, actions: selectionActions(selectedRows) }
+              : null
+          }
+          onSelectionCommand={(cmd) => {
+            run(cmd, selectedIds);
+            // The clicked button may go (Pause turns into Resume, Remove ends the selection).
+            setTimeout(() => focusIsFree() && tableRef.current?.focus({ preventScroll: true }));
+          }}
+          onClearSelection={() => {
+            clearSelection();
+            setDetailsId(null);
+            tableRef.current?.focus({ preventScroll: true });
+          }}
         />
         <DownloadTable
           rows={visible}
@@ -276,22 +471,35 @@ export default function App() {
           onRefocused={onRefocused}
           empty={emptyCopy(view, title, query)}
           onAdd={() => openAdd()}
-          wrapRef={tableRef}
-          selectedId={selected?.id ?? null}
-          onSelect={setSelectedId}
+          tableRef={tableRef}
+          selection={sel}
+          queue={queue}
+          queueView={view.kind === "status" && view.status === "waiting"}
+          onSelect={onSelect}
+          onMenu={openMenu}
+          onKeyDown={onTableKey}
+          onQueueDrop={onQueueDrop}
+          detailsId={detailsRow?.id ?? null}
+          onDetails={onDetails}
         />
-        {selected && (
+        {detailsRow && (
           <DetailsPane
-            d={selected}
+            d={detailsRow}
             tab={paneTab}
             onTab={setPaneTab}
             height={pane.height}
             maxHeight={pane.maxHeight}
             onResize={pane.resize}
             onClose={closeDetails}
-            samples={history.byId.get(selected.id) ?? []}
+            samples={history.byId.get(detailsRow.id) ?? []}
             globalLimit={settings?.global_limit ?? null}
             onReveal={revealDownload}
+            spot={
+              detailsRow.status === "queued" && queue.includes(detailsRow.id)
+                ? { index: queue.indexOf(detailsRow.id), count: queue.length }
+                : null
+            }
+            onMove={(delta) => moveInQueue(detailsRow.id, stepIndex(queue, detailsRow.id, delta))}
           />
         )}
       </main>
@@ -303,8 +511,17 @@ export default function App() {
         applySettings={applySettings}
       />
 
-      {stopOpen && <StopDialog d={stopRow} onCancel={cancelStop} onConfirm={confirmStop} />}
-      <AddDialog open={addOpen} initialUrl={prefillUrl} onClose={() => setAddOpen(false)} />
+      {stopOpen && <StopDialog ds={stopRows} onCancel={cancelStop} onConfirm={confirmStop} />}
+      {menu && (
+        <RowMenu entries={menu.entries} x={menu.x} y={menu.y} onRun={runMenu} onClose={closeMenu} />
+      )}
+      <AddDialog
+        open={addOpen}
+        initialText={prefillText}
+        existingUrls={existingUrls}
+        onClose={() => setAddOpen(false)}
+        onAdded={(n) => n > 1 && notify(addedMessage(n))}
+      />
       <Toasts
         pending={clear.pending}
         onUndo={clear.undo}

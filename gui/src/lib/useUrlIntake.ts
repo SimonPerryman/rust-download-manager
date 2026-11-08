@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { dragMayCarryUrl, urlFromTransfer } from "./url";
+import { dragMayCarryUrl, linksFromTransfer, urlFromTransfer } from "./url";
 
 function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -7,15 +7,15 @@ function isEditable(target: EventTarget | null): boolean {
 }
 
 /**
- * Window-wide URL intake: a URL dropped on the window, or pasted while no text
- * field is focused, is handed to `onUrl`. Returns whether a URL drag is
- * currently over the window (for the drop overlay).
+ * Window-wide link intake: a URL dropped on the window, or text holding links
+ * pasted while no text field is focused, is handed to `onLinks`. Returns
+ * whether a URL drag is currently over the window (for the drop overlay).
  */
-export function useUrlIntake(onUrl: (url: string) => void, enabled: boolean): boolean {
+export function useUrlIntake(onLinks: (text: string) => void, enabled: boolean): boolean {
   const [dragging, setDragging] = useState(false);
   const depth = useRef(0);
-  const onUrlRef = useRef(onUrl);
-  onUrlRef.current = onUrl;
+  const onLinksRef = useRef(onLinks);
+  onLinksRef.current = onLinks;
 
   useEffect(() => {
     const reset = () => {
@@ -47,14 +47,14 @@ export function useUrlIntake(onUrl: (url: string) => void, enabled: boolean): bo
       if (isEditable(e.target)) return;
       e.preventDefault();
       const url = urlFromTransfer(e.dataTransfer);
-      if (enabled && url) onUrlRef.current(url);
+      if (enabled && url) onLinksRef.current(url);
     };
     const onPaste = (e: ClipboardEvent) => {
       if (!enabled || isEditable(document.activeElement)) return;
-      const url = urlFromTransfer(e.clipboardData);
-      if (!url) return;
+      const links = linksFromTransfer(e.clipboardData);
+      if (!links) return;
       e.preventDefault();
-      onUrlRef.current(url);
+      onLinksRef.current(links);
     };
 
     window.addEventListener("dragenter", onDragEnter);

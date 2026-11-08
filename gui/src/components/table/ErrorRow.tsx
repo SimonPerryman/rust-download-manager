@@ -9,14 +9,21 @@ export function ErrorRow({
   d,
   failedCount,
   handlers,
+  selected,
 }: {
   d: DownloadSnapshot;
   /** How many downloads are failed; "Retry all failed" shows from two. */
   failedCount: number;
   handlers: RowHandlers;
+  /** Its download row is selected: the pair reads as one. */
+  selected: boolean;
 }) {
   return (
-    <tr data-testid="download-error" data-id={d.id} className="err-row">
+    <tr
+      data-testid="download-error"
+      data-id={d.id}
+      className={`err-row${selected ? " selected" : ""}`}
+    >
       <td colSpan={8}>
         <div className="err-msg">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />

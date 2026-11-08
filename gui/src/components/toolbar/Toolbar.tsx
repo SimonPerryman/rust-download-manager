@@ -1,3 +1,4 @@
+import type { MenuCommand } from "../../lib/menu";
 import type { Prefs } from "../../lib/prefs";
 import type { SettingsField } from "../../lib/settings";
 import type { Settings } from "../../lib/types";
@@ -7,7 +8,9 @@ import { Play } from "../icons/Play";
 import { Plus } from "../icons/Plus";
 import { Retry } from "../icons/Retry";
 import { SettingsMenu } from "../settings/SettingsMenu";
+import { DensityToggle } from "./DensityToggle";
 import { NameFilter } from "./NameFilter";
+import { SelectionBar } from "./SelectionBar";
 import { ThemeToggle } from "./ThemeToggle";
 
 type Props = {
@@ -28,12 +31,29 @@ type Props = {
   resolved: "light" | "dark";
   onPrefs: (patch: Partial<Prefs>) => void;
   onSettingsApplied: (applied: Settings, fields: SettingsField[]) => void;
+  /** Two or more rows selected: the toolbar turns into their actions. */
+  selection: { count: number; actions: MenuCommand[] } | null;
+  onSelectionCommand: (cmd: MenuCommand) => void;
+  onClearSelection: () => void;
 };
 
 // The view's heading and the window-wide actions; Add is the one solid primary.
+// With several rows selected it shows what applies to them instead.
 export function Toolbar(p: Props) {
+  if (p.selection) {
+    return (
+      <header className="toolbar selecting flex min-w-0 items-center gap-3 pl-4 pr-3">
+        <SelectionBar
+          count={p.selection.count}
+          actions={p.selection.actions}
+          onRun={p.onSelectionCommand}
+          onClear={p.onClearSelection}
+        />
+      </header>
+    );
+  }
   return (
-    <header className="flex min-w-0 items-center gap-3 pl-4 pr-3">
+    <header className="toolbar flex min-w-0 items-center gap-3 pl-4 pr-3">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <h1 className="truncate text-lg font-semibold tracking-tight">{p.title}</h1>
         <span data-testid="view-count" className="text-sm tabular-nums text-g400">
@@ -74,12 +94,13 @@ export function Toolbar(p: Props) {
           data-testid="add-button"
           className="btn btn-primary"
           onClick={p.onAdd}
-          title="Add a download, or paste a link anywhere"
+          title="Add downloads, or paste links anywhere with Ctrl+V"
         >
           <Plus />
           Add
         </button>
         <span className="mx-1 h-5 w-px bg-line-strong" />
+        <DensityToggle density={p.prefs.density} onPrefs={p.onPrefs} />
         <ThemeToggle resolved={p.resolved} onPrefs={p.onPrefs} />
         <SettingsMenu prefs={p.prefs} onPrefs={p.onPrefs} onApplied={p.onSettingsApplied} />
       </div>

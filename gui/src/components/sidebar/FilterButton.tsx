@@ -40,7 +40,7 @@ export function FilterButton({
       className="f-item flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm font-medium text-g600 hover:bg-hover hover:text-ink"
     >
       <span className="f-icon shrink-0">{icon}</span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="f-label min-w-0 flex-1 truncate">{label}</span>
       <span ref={countRef} data-testid="filter-count" className={`f-count${alert ? " alert" : ""}`}>
         {count}
       </span>

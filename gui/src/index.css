@@ -59,6 +59,9 @@
     --lane-done: #1f8a5b;
     color-scheme: light;
   }
+  :root[data-density="comfortable"] {
+    --row-h: 48px;
+  }
   :root.dark {
     --ink: #eeece7;
     --g600: #aba69c;
@@ -130,7 +133,8 @@
   .btn {
     @apply inline-flex h-8 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-sm font-medium;
   }
-  .btn:disabled {
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
     cursor: default;
     opacity: 0.45;
   }
@@ -152,7 +156,7 @@
   .btn-ghost {
     color: var(--g600);
   }
-  .btn-ghost:hover:not(:disabled) {
+  .btn-ghost:hover:not(:disabled, [aria-disabled="true"]) {
     background: var(--hover);
     color: var(--ink);
   }
@@ -232,8 +236,13 @@
     background: var(--raised);
     border-top: 1px solid var(--line);
   }
-  .list-wrap:focus {
+  table.dl:focus {
     outline: none;
+  }
+  /* The keyboard's row is outlined while the table has focus; with no row yet, the table is. */
+  table.dl:focus-visible:not(:has(.row.cursor)) {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
   table.dl {
     width: 100%;
@@ -313,20 +322,115 @@
     position: relative;
     overflow: visible;
   }
+  .row {
+    cursor: default;
+    user-select: none;
+  }
   .row:hover td {
     background: var(--hover);
   }
   .row.linger td {
     background: var(--success-linger);
   }
-  .row.selected td {
-    background: var(--sel);
-  }
   /* The finish moment: a success tint that holds, then settles to the linger tint.
      The negative delay resumes it mid-way when the row remounts. */
   .row.fresh td {
     animation: freshTint 7.5s ease-out both;
     animation-delay: var(--fresh-delay, 0s);
+  }
+  /* An image layer, so it shows over the finish tint's animated background colour. */
+  .row.selected td,
+  .err-row.selected td {
+    background-image: linear-gradient(var(--sel), var(--sel));
+  }
+  .row.selected td:first-child {
+    box-shadow:
+      inset 3px 0 0 var(--accent),
+      inset 0 -1px 0 var(--line);
+  }
+  table.dl:focus-visible .row.cursor td {
+    box-shadow:
+      inset 0 2px 0 var(--accent),
+      inset 0 -2px 0 var(--accent);
+  }
+  table.dl:focus-visible .row.cursor td:first-child {
+    box-shadow:
+      inset 2px 0 0 var(--accent),
+      inset 0 2px 0 var(--accent),
+      inset 0 -2px 0 var(--accent);
+  }
+  table.dl:focus-visible .row.cursor td:last-child {
+    box-shadow:
+      inset -2px 0 0 var(--accent),
+      inset 0 2px 0 var(--accent),
+      inset 0 -2px 0 var(--accent);
+  }
+  .row.dragging td {
+    opacity: 0.45;
+  }
+  .row.drop-before td {
+    box-shadow:
+      inset 0 2px 0 var(--accent),
+      inset 0 -1px 0 var(--line);
+  }
+  .row.drop-after td {
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .row.selected.drop-before td:first-child {
+    box-shadow:
+      inset 3px 0 0 var(--accent),
+      inset 0 2px 0 var(--accent),
+      inset 0 -1px 0 var(--line);
+  }
+  .row.selected.drop-after td:first-child {
+    box-shadow:
+      inset 3px 0 0 var(--accent),
+      inset 0 -2px 0 var(--accent);
+  }
+
+  /* The waiting rows' drag handle stands in for the status icon when it's wanted. */
+  .grip {
+    display: none;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    flex: none;
+    border-radius: 4px;
+    color: var(--g400);
+    cursor: grab;
+    touch-action: none;
+  }
+  .grip:hover {
+    color: var(--ink);
+    background: var(--hover);
+  }
+  .grip:active {
+    cursor: grabbing;
+  }
+  .st-waiting:hover .grip,
+  .st-waiting.selected .grip,
+  .st-waiting:focus-within .grip,
+  .queue-view .st-waiting .grip,
+  .row.dragging .grip {
+    display: inline-grid;
+  }
+  .st-waiting:hover .st-ico,
+  .st-waiting.selected .st-ico,
+  .st-waiting:focus-within .st-ico,
+  .queue-view .st-waiting .st-ico,
+  .row.dragging .st-ico {
+    display: none;
+  }
+  .next-up {
+    @apply inline-flex h-5 items-center whitespace-nowrap rounded-[10px] px-2 text-xs font-medium;
+    background: var(--primary-soft);
+    color: var(--primary-ink);
+  }
+
+  .nm {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
   }
   .fn {
     @apply min-w-0 truncate font-medium;
@@ -337,6 +441,15 @@
   }
   .fn-btn:hover .fn {
     text-decoration: underline;
+  }
+  /* Comfortable rows also say which site each file comes from. */
+  .host {
+    @apply hidden truncate text-xs;
+    line-height: 1.3;
+    color: var(--g400);
+  }
+  :root[data-density="comfortable"] .host {
+    display: block;
   }
   .st-waiting .fn,
   .st-stopped .fn {
@@ -537,6 +650,9 @@
     @apply mb-4 flex flex-wrap items-baseline;
     gap: 8px 32px;
   }
+  .queue-moves {
+    @apply flex gap-1;
+  }
   .stat .big,
   .summary .big {
     @apply text-xl font-semibold tabular-nums;
@@ -669,6 +785,49 @@
   .choice:has(input:checked) .choice-hint {
     color: var(--primary-ink);
   }
+  .row-menu {
+    @apply fixed z-50 rounded-lg bg-raised p-1;
+    min-width: 216px;
+    box-shadow:
+      var(--sh-pop),
+      0 0 0 1px var(--line);
+  }
+  .row-menu button {
+    @apply flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left text-sm;
+    color: var(--ink);
+  }
+  .row-menu button svg {
+    color: var(--g400);
+  }
+  .row-menu button:hover,
+  .row-menu button:focus {
+    outline: none;
+    background: var(--primary-soft);
+    color: var(--primary-ink);
+  }
+  .row-menu button:hover svg,
+  .row-menu button:focus svg {
+    color: var(--primary-ink);
+  }
+  .row-menu kbd {
+    @apply text-xs;
+    font-family: inherit;
+    color: var(--g400);
+  }
+  .row-menu hr {
+    @apply my-1 h-px border-0;
+    background: var(--line);
+  }
+  .row-menu-note {
+    @apply -mt-1 pb-2 pl-8 pr-2 pt-1 text-xs;
+    color: var(--g400);
+  }
+  .toolbar.selecting {
+    background: var(--primary-soft);
+  }
+  .toolbar.selecting .btn-ghost {
+    color: var(--primary-ink);
+  }
   .toast {
     @apply pointer-events-auto flex min-h-10 items-center gap-4 rounded-lg py-2 pl-4 pr-2 text-sm shadow-pop;
     max-width: min(560px, calc(100vw - 32px));
@@ -700,7 +859,7 @@
     width: 192px;
   }
 
-  /* ---------- narrow windows: keep 640px usable (the icon rail is PR D) ---------- */
+  /* ---------- narrow windows: keep 640px usable ---------- */
   @media (max-width: 1099px) {
     .c-conn {
       display: none;
@@ -732,6 +891,48 @@
       width: 128px;
     }
   }
+  /* Under 760px the sidebar becomes an icon rail: each filter's label is its tooltip
+     and its count a corner badge. Row and toolbar buttons keep their icons only. */
+  @media (max-width: 759px) {
+    .app {
+      grid-template-columns: 56px minmax(0, 1fr);
+    }
+    .brand-name,
+    .f-label,
+    .side-head {
+      display: none;
+    }
+    .folder-list {
+      margin-top: 12px;
+      padding-top: 12px;
+      box-shadow: inset 0 1px 0 var(--line-strong);
+    }
+    .f-count {
+      position: absolute;
+      top: 0;
+      right: 0;
+      min-width: 16px;
+      padding: 0 4px;
+      line-height: 16px;
+      background: var(--sidebar);
+    }
+    .c-size {
+      width: 72px;
+    }
+    .c-speed {
+      width: 88px;
+    }
+    .c-left {
+      width: 76px;
+    }
+    .c-act {
+      width: 112px;
+    }
+    .act-label,
+    .sel-label {
+      display: none;
+    }
+  }
   @media (max-width: 679px) {
     .sb-counts {
       display: none;
@@ -739,13 +940,28 @@
   }
 }
 
+/* Outside the layers so the icon rail beats the sidebar's own utility classes. */
+@media (max-width: 759px) {
+  .brand {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .f-item {
+    position: relative;
+    justify-content: center;
+    height: 40px;
+    padding: 0;
+  }
+}
+
 @keyframes freshTint {
   0%,
   80% {
-    background: var(--success-soft);
+    background-color: var(--success-soft);
   }
   100% {
-    background: var(--success-linger);
+    background-color: var(--success-linger);
   }
 }
 @keyframes bump {

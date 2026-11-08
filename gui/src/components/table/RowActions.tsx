@@ -113,7 +113,7 @@ function ActionButton({
       className={`btn btn-sm ${action.style === "primary" ? "btn-primary" : "btn-soft"}`}
     >
       <Icon size={14} />
-      {action.label}
+      <span className="act-label">{action.label}</span>
     </button>
   );
 }

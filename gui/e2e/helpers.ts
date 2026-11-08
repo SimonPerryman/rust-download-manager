@@ -19,7 +19,12 @@ export const Key = {
 };
 
 export const ROW = 'tr[data-testid="download-row"]';
-export const ADD_DIALOG = '[role="dialog"][aria-label="Add download"]';
+export const ADD_DIALOG = '[role="dialog"][aria-label="Add downloads"]';
+/** The Add dialog's link list (one link per line). */
+export const LINKS = 'textarea[aria-label="Links"]';
+export const DEST = 'input[aria-label="Destination folder"]';
+export const TABLE = 'table[aria-label="Downloads"]';
+export const ROW_MENU = '[data-testid="row-menu"]';
 export const STOP_DIALOG = '[data-testid="stop-dialog"]';
 export const NOTIFICATION = '[data-testid="finish-notification"]';
 export const TOAST = '[data-testid="toast"]';
@@ -38,6 +43,7 @@ const TERMINAL = ["completed", "failed", "cancelled"];
 /** What the specs read from the engine's `list` (a subset of `DownloadSnapshot`). */
 export interface EngineRow {
   id: number;
+  url: string;
   filename: string;
   target: string;
   final_path: string | null;
@@ -276,23 +282,49 @@ export async function shownIds(): Promise<number[]> {
 }
 
 /**
- * Opens the Add dialog from the toolbar, submits `url` (into `dir` if given)
- * and returns the new download's id.
+ * Waits for the open Add dialog's destination to settle, then sets it to `dir`.
+ * It starts at the folder the last add used, or else is filled with the OS
+ * download dir asynchronously (a late fill would overwrite a typed path).
  */
-export async function addThroughDialog(url: string, dir?: string): Promise<number> {
-  const before = new Set((await engineRows()).map((d) => d.id));
+export async function setDestination(dir: string = downloadDir): Promise<void> {
+  const dest = $(ADD_DIALOG).$(DEST);
+  await browser.waitUntil(async () => (await dest.getValue()) !== "", {
+    timeoutMsg: "the Add dialog never filled its destination",
+  });
+  if ((await dest.getValue()) !== dir) await retype(dest, dir, { enter: false });
+  await expect(dest).toHaveValue(dir);
+}
+
+/** Opens the Add dialog from the toolbar with its destination set to `dir`. */
+export async function openAddDialog(dir: string = downloadDir): Promise<ReturnType<typeof $>> {
   await $('[data-testid="add-button"]').click();
   const dialog = $(ADD_DIALOG);
   await dialog.waitForDisplayed();
-  // The dialog fills its default destination asynchronously; a late fill
-  // would overwrite a typed path, so wait for it first.
-  const dest = dialog.$('input[aria-label="Destination folder"]');
-  await expect(dest).toHaveValue(downloadDir);
-  if (dir !== undefined) {
-    await retype(dest, dir, { enter: false });
-    await expect(dest).toHaveValue(dir);
-  }
-  await dialog.$('input[aria-label="URL"]').setValue(url);
+  await setDestination(dir);
+  return dialog;
+}
+
+/** Ids the engine has now that aren't in `before`, waiting until there are `n`. */
+export async function newIds(before: ReadonlySet<number>, n: number): Promise<number[]> {
+  let fresh: number[] = [];
+  await browser.waitUntil(
+    async () => {
+      fresh = (await engineRows()).map((d) => d.id).filter((i) => !before.has(i));
+      return fresh.length >= n;
+    },
+    { timeoutMsg: `${n} new downloads never appeared` },
+  );
+  return fresh.sort((a, b) => a - b);
+}
+
+/**
+ * Opens the Add dialog from the toolbar, submits `url` (into `dir`, default
+ * the download dir) and returns the new download's id.
+ */
+export async function addThroughDialog(url: string, dir?: string): Promise<number> {
+  const before = new Set((await engineRows()).map((d) => d.id));
+  const dialog = await openAddDialog(dir);
+  await dialog.$(LINKS).setValue(url);
   await dialog.$("button=Add download").click();
   await waitForGone(ADD_DIALOG);
 
@@ -387,6 +419,70 @@ export async function dismissOverlays(): Promise<void> {
     }
     await waitForGone(selector, `${selector} never went away after Dismiss`);
   }
+}
+
+/**
+ * Dispatches a keydown on the downloads table (focusing it first). Modifiers go
+ * on the event: WebKitGTK's driver drops modifier keys sent as key actions.
+ */
+export async function pressOnTable(
+  key: string,
+  mods: { altKey?: boolean; shiftKey?: boolean; ctrlKey?: boolean } = {},
+): Promise<void> {
+  await browser.execute(
+    (sel, k, m) => {
+      const table = document.querySelector(sel) as HTMLElement;
+      table.focus();
+      table.dispatchEvent(
+        new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...m }),
+      );
+    },
+    TABLE,
+    key,
+    mods,
+  );
+}
+
+/**
+ * Clicks a row outside its controls (its size cell), selecting it; a plain
+ * click also opens its details. Modifiers go on a dispatched event:
+ * WebKitGTK's driver drops modifier keys held during a click.
+ */
+export async function clickRow(
+  id: number,
+  mods: { ctrlKey?: boolean; shiftKey?: boolean } = {},
+): Promise<void> {
+  await dismissOverlays();
+  if (!mods.ctrlKey && !mods.shiftKey) {
+    await rowById(id).$("td.c-size").click();
+    return;
+  }
+  await browser.execute(
+    (sel, m) => {
+      const cell = document.querySelector(`${sel} td.c-size`) as HTMLElement;
+      cell.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...m }));
+    },
+    rowSelector(id),
+    mods,
+  );
+}
+
+/** Opens the right-click menu on a row (a dispatched contextmenu event at its name). */
+export async function openRowMenu(id: number): Promise<void> {
+  await dismissOverlays();
+  await browser.execute((sel) => {
+    const cell = document.querySelector(`${sel} td.c-name .fn`) as HTMLElement;
+    const r = cell.getBoundingClientRect();
+    cell.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: r.left + 8,
+        clientY: r.top + r.height / 2,
+      }),
+    );
+  }, rowSelector(id));
+  await $(ROW_MENU).waitForDisplayed();
 }
 
 /** Clicks a row action (by its aria-label), clearing overlays first. */

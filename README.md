@@ -125,22 +125,28 @@ and a status bar:
   Stopped) and one filter per destination folder, each with a live count, and
   the total speed now with a graph of the last minute.
 - **Toolbar:** filter by name (matches the filename or the site), Pause all /
-  Resume all, **Clear finished**, **Add**, a light/dark theme toggle and
-  **Settings**.
+  Resume all, **Clear finished**, **Add**, a row-density toggle (compact
+  32 px rows by default, or comfortable 48 px rows that also show each file's
+  site; remembered), a light/dark theme toggle and **Settings**.
 - **Table:** click a column header to sort by it (click again to reverse).
   Downloads stay where they are when they finish. A multi-connection download
   draws its **lanes** in the Progress column: one line per piece of the file,
   showing where the piece sits and how far it has got.
-- **Details pane:** click a row to open it under the table (drag its top edge
-  to resize). **Overview** shows sizes, speed, time left, the full-size lanes
+- **Details pane:** click a row (or its filename) to open it under the table;
+  it then follows the row you select (drag its top edge to resize). **Overview** shows sizes, speed, time left, the full-size lanes
   (hover one for details), the link, the folder and the checksum; for a
   finished download, a summary such as "5.8 GB in 2 min 14 s, average
   44 MB/s, checksum verified" and **Verify checksum**, which checks the file
-  against a SHA-256 you paste. **Speed** graphs the last 60 seconds, with the
+  against a SHA-256 you paste; for a waiting download, its place in the queue
+  with **Move up** and **Move down**. **Speed** graphs the last 60 seconds, with the
   speed limit as a dashed line. The pieces of a finished download are kept
   only until the app closes, so after a restart it shows the summary alone.
 - **Status bar:** total speed, how many are downloading and waiting, and the
   global speed limit — click it to change it in place.
+
+Below about 760 px wide the sidebar shrinks to an icon rail (hover a filter for
+its name; its count sits on the icon) and lower-priority columns hide, so the
+window still works at its 640 px minimum.
 
 When a download finishes, its row turns green for a few seconds and keeps a
 faint tint and a solid **Open** button until you open the file once (remembered
@@ -162,9 +168,30 @@ window ends. Downloaded files stay on disk, and so do kept partial files.
 A row's **Remove from list** takes just that download off the list, at once
 (no Undo), by the same rule for files.
 
-To add a download, click **Add**, drag a link (or the address bar's
-URL) from your browser onto the window, or press Ctrl/Cmd+V with an `http(s)`
-URL on the clipboard — the latter two open the Add dialog pre-filled.
+To add downloads, click **Add**, drag a link (or the address bar's URL) from
+your browser onto the window, or press Ctrl/Cmd+V anywhere outside a text box
+with one or more `http(s)` links on the clipboard — the latter two open the Add
+dialog pre-filled. The dialog takes one link per line and previews what it
+found before anything starts: each link's filename and site, lines that aren't
+links (skipped), links already in your list, and a count ("Add 3 downloads").
+Ctrl+Enter adds. The destination starts at the folder you used last.
+
+Click a row to select it (and show its details); Ctrl+click adds or removes rows and Shift+click
+selects a range. With two or more selected, the toolbar shows what applies to
+them (Open, Pause, Resume, Stop, Retry, Remove from list). Right-click a row,
+or press Shift+F10 or the menu key, for every action that fits it: Open, Show
+in folder, Pause/Resume, Stop, Retry, Copy link, Download again, Delete partial
+file and Remove from list (which says what stays on disk).
+
+With the table focused, the keyboard works it too: ↑/↓ move (Shift extends
+the selection), Home/End jump, Ctrl+A selects all, Space pauses or resumes,
+Enter (or a double-click) opens a finished file, Delete removes from the list, and Escape clears
+the selection.
+
+Waiting downloads start in queue order, and the first one says **Next up**.
+To change the order, drag a waiting row by its handle (shown on hover, and
+always in the Waiting view), press Alt+↑/Alt+↓ on it, or use **Start next**,
+**Move up** and **Move down** in its menu. The order is kept across restarts.
 
 Speed limits in the GUI are a number plus a unit picker (KB/s or MB/s, ×1024);
 an empty box means no limit, and 0 is rejected. Under **More options**, the Add
@@ -224,7 +251,7 @@ and is owner-only (0700) on Linux and macOS.
 Two environment variables relocate the GUI's files, mainly for automated runs:
 `RDM_HOME` replaces `~/.rdm` (state, log, and — except on macOS — the webview's
 local storage), and `RDM_DOWNLOAD_DIR` replaces the OS download folder as the
-Add dialog's default destination.
+Add dialog's default destination (used until you add to another folder).
 
 ### GUI end-to-end tests
 
@@ -233,11 +260,14 @@ real app through [tauri-driver](https://v2.tauri.app/develop/tests/webdriver/):
 adding a download through the Add dialog (and seeing its `Content-Disposition`
 name), pause/resume to completion with the bytes checked on disk, a paused
 download surviving an app restart, display settings, paste/drop URL intake,
-the download queue (a cap of 1 queues a second download until the first is
-paused) and per-download limits, connection ramping, the finish moment, the
-sidebar filters, failed downloads and Retry all failed, the Stop dialog,
-Clear finished with Undo, and the lanes and details pane (with Verify
-checksum). It downloads only from the repo's own fixture server
+batch add (a pasted list previewed and added, the remembered folder), the
+download queue (a cap of 1 queues a second download until the first is
+paused; Alt+↑ and a drag move a waiting one to the front) and per-download
+limits, connection ramping, the finish moment, the sidebar filters, failed
+downloads and Retry all failed, the Stop dialog, Clear finished with Undo, the
+lanes and details pane (with Verify checksum), and the power features (the
+right-click menu, multi-select and the selection toolbar, the keyboard, row
+density, the narrow-window rail). It downloads only from the repo's own fixture server
 (`cargo run --example fixture_server`) on loopback, and keeps all app state in
 a throwaway temp dir via `RDM_HOME`/`RDM_DOWNLOAD_DIR`; `RDM_OPEN_LOG` makes
 Open and Show in folder write `open <path>` / `reveal <path>` lines to that
