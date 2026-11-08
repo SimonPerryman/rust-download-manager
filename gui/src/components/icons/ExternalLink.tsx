@@ -1,3 +1,4 @@
+// From Lucide (ISC); see THIRD-PARTY-NOTICES.md.
 import { svg, type Props } from "./svg";
 
 export const ExternalLink = (p: Props) =>
