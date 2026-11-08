@@ -1,6 +1,7 @@
 // Cosmetic GUI preferences (theme + row density), the finish moment's
-// "not opened yet" ids and the details pane's height, kept in localStorage. Pure apart from the
-// storage/root handles passed in, so it is unit-testable.
+// "not opened yet" ids, the details pane's height and the Add dialog's last
+// folder, kept in localStorage. Pure apart from the storage/root handles
+// passed in, so it is unit-testable.
 // The inline script in index.html mirrors `parsePrefs` + `applyPrefs` to apply
 // them before first paint; keep the two in step.
 
@@ -14,7 +15,7 @@ export type Density = (typeof DENSITIES)[number];
 export type Prefs = { theme: ThemePref; density: Density };
 
 export const PREFS_KEY = "rdm.gui.prefs";
-export const DEFAULT_PREFS: Prefs = { theme: "system", density: "comfortable" };
+export const DEFAULT_PREFS: Prefs = { theme: "system", density: "compact" };
 
 type ReadStorage = Pick<Storage, "getItem">;
 type WriteStorage = Pick<Storage, "setItem">;
@@ -23,7 +24,11 @@ function oneOf<T extends string>(allowed: readonly T[], value: unknown, fallback
   return allowed.includes(value as T) ? (value as T) : fallback;
 }
 
-/** Validates a stored JSON string field-by-field; anything unknown falls back to the default. */
+/**
+ * Validates a stored JSON string field-by-field; anything unknown falls back to
+ * the default. Density is stored as `rows`: an older `density` field was saved
+ * whenever the theme changed, before rows could be switched, so it isn't a choice.
+ */
 export function parsePrefs(raw: string | null): Prefs {
   let obj: unknown = null;
   try {
@@ -34,7 +39,7 @@ export function parsePrefs(raw: string | null): Prefs {
   const rec = obj !== null && typeof obj === "object" ? (obj as Record<string, unknown>) : {};
   return {
     theme: oneOf(THEMES, rec.theme, DEFAULT_PREFS.theme),
-    density: oneOf(DENSITIES, rec.density, DEFAULT_PREFS.density),
+    density: oneOf(DENSITIES, rec.rows, DEFAULT_PREFS.density),
   };
 }
 
@@ -62,7 +67,7 @@ export function savePrefs(
 ): boolean {
   try {
     if (!storage) return false;
-    storage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    storage.setItem(PREFS_KEY, JSON.stringify({ theme: prefs.theme, rows: prefs.density }));
     return true;
   } catch {
     return false;
@@ -94,6 +99,33 @@ export function saveUnopened(
   }
 }
 
+/** The folder the last Add saved to, so the next one starts there. */
+export const LAST_DIR_KEY = "rdm.gui.lastDir";
+
+/** The remembered folder, or null when none is stored (or storage is unavailable). */
+export function loadLastDir(storage: ReadStorage | undefined = defaultStorage()): string | null {
+  try {
+    const dir = storage?.getItem(LAST_DIR_KEY) ?? null;
+    return dir && dir.trim() ? dir : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remembers `dir`; returns false (and changes nothing) if storage is unavailable. */
+export function saveLastDir(
+  dir: string,
+  storage: WriteStorage | undefined = defaultStorage(),
+): boolean {
+  try {
+    if (!storage) return false;
+    storage.setItem(LAST_DIR_KEY, dir);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function resolveTheme(theme: ThemePref, systemDark: boolean): "light" | "dark" {
   if (theme === "system") return systemDark ? "dark" : "light";
   return theme;
@@ -105,10 +137,10 @@ type Root = {
 };
 
 /**
- * Stamps prefs onto the document root: `data-theme` / `data-density` record the
- * choice (rows are a fixed 32 px until the density toggle returns, so nothing
- * reads `data-density` yet), and the `.dark` class that Tailwind's
- * `dark:` variants and the dark palette key off reflects the resolved theme.
+ * Stamps prefs onto the document root: `data-theme` records the choice,
+ * `data-density` sets the row height (index.css), and the `.dark` class that
+ * Tailwind's `dark:` variants and the dark palette key off reflects the
+ * resolved theme.
  */
 export function applyPrefs(prefs: Prefs, root: Root, systemDark: boolean): void {
   root.dataset.theme = prefs.theme;

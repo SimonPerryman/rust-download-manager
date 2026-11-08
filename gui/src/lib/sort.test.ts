@@ -9,9 +9,11 @@ import {
   type SortKey,
   type SortState,
 } from "./sort";
-import { snap } from "./testSnapshot";
+import { snap as queuedSnap } from "./testSnapshot";
 import type { DownloadSnapshot } from "./types";
 
+// Paused unless a test says otherwise: queued rows fill their slots in queue order.
+const snap = (o: Partial<DownloadSnapshot> = {}) => queuedSnap({ status: "paused", ...o });
 const ids = (ds: DownloadSnapshot[]) => ds.map((d) => d.id);
 const arrange = (ds: DownloadSnapshot[], sort: SortState, pinFailed = false) =>
   ids(arrangeRows(ds, { sort, frozen: null, pinFailed }));
@@ -171,5 +173,25 @@ describe("a finishing row keeps its place (R2)", () => {
     const before = arrange(rows("downloading"), DEFAULT_SORT, true);
     const after = arrange(rows("completed"), DEFAULT_SORT, true);
     expect(after.indexOf(2)).toBe(before.indexOf(2));
+  });
+});
+
+describe("waiting rows in queue order", () => {
+  const q = (id: number, added_at: number) => queuedSnap({ id, status: "queued", added_at });
+
+  it("fills the waiting rows' slots in the engine's order under any sort", () => {
+    // Engine order: 3 waits first, then 1, then 2.
+    const ds = [q(3, 30), snap({ id: 9, status: "downloading", added_at: 25 }), q(1, 10), q(2, 20)];
+    expect(arrange(ds, DEFAULT_SORT)).toEqual([3, 9, 1, 2]);
+    expect(arrange(ds, { key: "added", dir: "asc" })).toEqual([3, 1, 9, 2]);
+  });
+
+  it("also under a frozen order", () => {
+    const ds = [q(2, 20), q(1, 10)];
+    const frozen = new Map([
+      [1, 0],
+      [2, 1],
+    ]);
+    expect(ids(arrangeRows(ds, { sort: DEFAULT_SORT, frozen, pinFailed: false }))).toEqual([2, 1]);
   });
 });

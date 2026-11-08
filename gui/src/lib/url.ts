@@ -35,6 +35,27 @@ export function urlFromTransfer(data: Pick<DataTransfer, "getData"> | null): str
   );
 }
 
+/**
+ * What a paste hands the Add dialog: every line of the pasted text when any
+ * line is a link (or several, space-separated; the dialog flags the other
+ * lines), else null. A `text/uri-list` payload gives just its links.
+ */
+export function linksFromTransfer(data: Pick<DataTransfer, "getData"> | null): string | null {
+  if (!data) return null;
+  const uris = data
+    .getData("text/uri-list")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(isHttpUrl);
+  if (uris.length) return uris.join("\n");
+  const text = data.getData("text/plain").trim();
+  const hasLink = text.split(/\r?\n/).some((line) => {
+    const words = line.trim().split(/\s+/);
+    return words[0] !== "" && words.every(isHttpUrl);
+  });
+  return hasLink ? text : null;
+}
+
 /** Whether a drag carries text we might read a URL from (not just files). */
 export function dragMayCarryUrl(types: readonly string[]): boolean {
   return types.includes("text/uri-list") || types.includes("text/plain");

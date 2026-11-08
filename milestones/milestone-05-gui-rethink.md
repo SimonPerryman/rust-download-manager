@@ -181,12 +181,13 @@ can start in parallel on today's snapshot. E (the Log tab) follows C.
 - [ ] An engine test for the per-download buffer and an e2e spec for the tab.
 
 ### PR D — batch add and power features
-- [ ] Batch add dialog with preview, Ctrl+V intake for several lines, and the
+- [x] Batch add dialog with preview, Ctrl+V intake for several lines, and the
   remembered destination.
-- [ ] Context menu, multi-select and the contextual toolbar.
-- [ ] Keyboard map; waiting-row reorder by drag and Alt+↑/↓ (uses A's
+- [x] Context menu, multi-select and the contextual toolbar.
+- [x] Keyboard map; waiting-row reorder by drag and Alt+↑/↓ (uses A's
   `move_queued`).
-- [ ] Density toggle at the new 32/48 px row sizes; narrow-window layout.
+- [x] Density toggle at the new 32/48 px row sizes; narrow-window layout.
+- [x] The details pane's Move up / Move down for a waiting download (`move_queued`).
 
 ## Acceptance criteria
 _Standing gates (fmt/clippy/test/CI) live in AGENTS.md's Definition of Done and
@@ -235,9 +236,9 @@ these e2e specs against the fixture server:
   lanes in its row and in the details pane. Assert on DOM lane count, not
   progress bytes. (`specs/lanes.e2e.ts`; `/gated` has no length or ranges, so
   it can't be multi-connection: `/seg-gated` is `/seg` held by the same gate.)
-- [ ] **Batch add:** pasting three lines (two URLs and one non-link) previews
+- [x] **Batch add:** pasting three lines (two URLs and one non-link) previews
   "Add 2 downloads" and adds two rows. (`specs/batch-add.e2e.ts`)
-- [ ] **Reorder:** with a cap of 1, moving the last waiting row to the top
+- [x] **Reorder:** with a cap of 1, moving the last waiting row to the top
   with Alt+↑ marks it Next up, and it starts next. Assert on Manager status.
   (`specs/queue.e2e.ts`, extended)
 - [x] Existing specs (`downloads`, `queue`, `ramping`) are updated to the new

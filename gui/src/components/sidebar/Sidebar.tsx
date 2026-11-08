@@ -59,12 +59,12 @@ export function Sidebar({
   }, [bumpSeq]);
 
   return (
-    <aside className="flex min-h-0 flex-col overflow-y-auto bg-sidebar px-2 py-3">
-      <div className="flex items-center gap-2 px-2 pb-4 pt-1 text-lg font-bold tracking-tight">
+    <aside className="sidebar flex min-h-0 flex-col overflow-y-auto bg-sidebar px-2 py-3">
+      <div className="brand flex items-center gap-2 px-2 pb-4 pt-1 text-lg font-bold tracking-tight">
         <span className="grid h-6 w-6 place-items-center rounded-md bg-btn text-on-btn">
           <DownloadMark size={14} strokeWidth={2} />
         </span>
-        rdm
+        <span className="brand-name">rdm</span>
       </div>
       <nav aria-label="Filter downloads">
         <ul className="grid gap-0.5">
@@ -89,10 +89,13 @@ export function Sidebar({
         </ul>
         {folders.length > 0 && (
           <>
-            <h2 id="folders-head" className="px-2 pb-2 pt-6 text-xs font-semibold text-g400">
+            <h2
+              id="folders-head"
+              className="side-head px-2 pb-2 pt-6 text-xs font-semibold text-g400"
+            >
               Folders
             </h2>
-            <ul className="grid gap-0.5" aria-labelledby="folders-head">
+            <ul className="folder-list grid gap-0.5" aria-labelledby="folders-head">
               {folders.map((f) => {
                 const view: ViewFilter = { kind: "folder", dir: f.dir };
                 return (

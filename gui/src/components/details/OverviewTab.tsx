@@ -1,4 +1,5 @@
 import { datesLine, summaryParts } from "../../lib/details";
+import { queuePlace } from "../../lib/copy";
 import { describeError } from "../../lib/errors";
 import { folderOf } from "../../lib/folders";
 import { formatBytes, formatLeft, formatSpeed } from "../../lib/format";
@@ -11,7 +12,16 @@ import { Link } from "../icons/Link";
 import { ChecksumFact } from "./ChecksumFact";
 import { LanesMap } from "./LanesMap";
 
-type Props = { d: DownloadSnapshot; onReveal: (d: DownloadSnapshot) => void };
+/** A waiting download's place in the queue (0 starts next) and how many wait. */
+export type QueueSpot = { index: number; count: number };
+
+type Props = {
+  d: DownloadSnapshot;
+  onReveal: (d: DownloadSnapshot) => void;
+  spot: QueueSpot | null;
+  /** Moves the download `delta` places in the queue (negative is sooner). */
+  onMove: (delta: number) => void;
+};
 
 function Stat({ big, sec }: { big: string; sec?: string }) {
   return (
@@ -22,7 +32,21 @@ function Stat({ big, sec }: { big: string; sec?: string }) {
   );
 }
 
-function Stats({ d }: { d: DownloadSnapshot }) {
+function MoveButton({ label, off, onClick }: { label: string; off: boolean; onClick: () => void }) {
+  return (
+    <button
+      className="btn btn-ghost btn-sm"
+      aria-disabled={off}
+      onClick={() => {
+        if (!off) onClick();
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function Stats({ d, spot, onMove }: Pick<Props, "d" | "spot" | "onMove">) {
   const of = d.total != null ? `of ${formatBytes(d.total)}` : "so far";
   switch (d.status) {
     case "downloading":
@@ -56,7 +80,21 @@ function Stats({ d }: { d: DownloadSnapshot }) {
       return (
         <div className="stats">
           <Stat big="Waiting for a free slot" />
-          <span className="text-g600">Starts when a running download finishes.</span>
+          <span className="text-g600">
+            {spot ? queuePlace(spot.index) : "Starts when a running download finishes."}
+          </span>
+          {spot && spot.count > 1 && (
+            // aria-disabled, not disabled: a button that disables itself under
+            // the keyboard would drop focus to the page.
+            <span className="queue-moves">
+              <MoveButton label="Move up" off={spot.index === 0} onClick={() => onMove(-1)} />
+              <MoveButton
+                label="Move down"
+                off={spot.index === spot.count - 1}
+                onClick={() => onMove(1)}
+              />
+            </span>
+          )}
         </div>
       );
     default:
@@ -65,7 +103,7 @@ function Stats({ d }: { d: DownloadSnapshot }) {
 }
 
 // Overview: where the download stands, its pieces, and the facts about it.
-export function OverviewTab({ d, onReveal }: Props) {
+export function OverviewTab({ d, onReveal, spot, onMove }: Props) {
   const done = d.status === "completed";
   const summary = done ? summaryParts(d) : null;
   const dates = datesLine(d);
@@ -84,7 +122,7 @@ export function OverviewTab({ d, onReveal }: Props) {
             <span className="rest">{summary.rest}</span>
           </div>
         )}
-        <Stats d={d} />
+        <Stats d={d} spot={spot} onMove={onMove} />
         {hasLanes(d) && <LanesMap d={d} />}
       </div>
       <div className="facts">

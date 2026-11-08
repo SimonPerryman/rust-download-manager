@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { stopDeleteHint, stopKeepHint } from "../../lib/copy";
+import { stopDeleteHint, stopKeepHint, stopTitle } from "../../lib/copy";
 import type { DownloadSnapshot } from "../../lib/types";
+import { trapTab } from "./trapTab";
 
 type Props = {
-  /** The live row; App closes the dialog once it's no longer stoppable. */
-  d: DownloadSnapshot;
+  /** The live rows still stoppable; App closes the dialog once none is. */
+  ds: DownloadSnapshot[];
   onCancel: () => void;
   onConfirm: (keep: boolean) => void;
 };
@@ -12,7 +13,9 @@ type Props = {
 // "Stop asks first": keep the partial file to resume later (the default) or
 // delete it. Deliberately no entry animation, so its buttons never move under
 // a click.
-export function StopDialog({ d, onCancel, onConfirm }: Props) {
+export function StopDialog({ ds, onCancel, onConfirm }: Props) {
+  const downloaded = ds.reduce((sum, d) => sum + d.downloaded, 0);
+  const names = ds.map((d) => d.filename).join(", ");
   const [keep, setKeep] = useState(true);
   const keepRadio = useRef<HTMLInputElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
@@ -45,10 +48,10 @@ export function StopDialog({ d, onCancel, onConfirm }: Props) {
       >
         <div className="px-6 pt-6">
           <h2 id="stop-title" className="text-xl font-semibold tracking-tight">
-            Stop this download?
+            {stopTitle(ds.length)}
           </h2>
-          <p className="mt-1 truncate text-g600" title={d.filename}>
-            {d.filename}
+          <p className="mt-1 truncate text-g600" title={names}>
+            {names}
           </p>
         </div>
         <div className="grid gap-1 px-6 py-4">
@@ -58,14 +61,14 @@ export function StopDialog({ d, onCancel, onConfirm }: Props) {
             checked={keep}
             onChange={() => setKeep(true)}
             title="Keep the partial file to resume later"
-            hint={stopKeepHint(d.downloaded)}
+            hint={stopKeepHint(downloaded)}
           />
           <Choice
             value="delete"
             checked={!keep}
             onChange={() => setKeep(false)}
             title="Delete the partial file"
-            hint={stopDeleteHint(d.downloaded)}
+            hint={stopDeleteHint(downloaded)}
           />
         </div>
         <div className="flex items-center justify-end gap-2 rounded-b-lg bg-surface px-6 py-4">
@@ -82,26 +85,6 @@ export function StopDialog({ d, onCancel, onConfirm }: Props) {
       </div>
     </div>
   );
-}
-
-// aria-modal promises the page behind is out of reach, so Tab cycles inside the
-// dialog (the checked radio stands for its group, as the browser's Tab does).
-function trapTab(e: KeyboardEvent, root: HTMLElement | null) {
-  if (!root) return;
-  const stops = Array.from(
-    root.querySelectorAll<HTMLElement>('input[type="radio"]:checked, button:not([disabled])'),
-  );
-  if (stops.length === 0) return;
-  const first = stops[0];
-  const last = stops[stops.length - 1];
-  const inside = root.contains(document.activeElement);
-  if (e.shiftKey && (document.activeElement === first || !inside)) {
-    e.preventDefault();
-    last.focus();
-  } else if (!e.shiftKey && (document.activeElement === last || !inside)) {
-    e.preventDefault();
-    first.focus();
-  }
 }
 
 function Choice({

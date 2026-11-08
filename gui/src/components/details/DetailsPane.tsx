@@ -4,7 +4,7 @@ import { filterKeyOf } from "../../lib/filters";
 import type { DownloadSnapshot } from "../../lib/types";
 import { X } from "../icons/X";
 import { StatusGlyph } from "../table/StatusGlyph";
-import { OverviewTab } from "./OverviewTab";
+import { OverviewTab, type QueueSpot } from "./OverviewTab";
 import { PANEL_ID, PaneTabs, tabId } from "./PaneTabs";
 import { SpeedTab } from "./SpeedTab";
 import { PANE_ID, type PaneTab } from "./tabs";
@@ -25,6 +25,9 @@ type Props = {
   samples: readonly number[];
   globalLimit: number | null;
   onReveal: (d: DownloadSnapshot) => void;
+  /** Where a waiting download sits in the queue, else null. */
+  spot: QueueSpot | null;
+  onMove: (delta: number) => void;
 };
 
 // The selected download's details, under the table: a resize handle, the
@@ -40,6 +43,8 @@ export function DetailsPane({
   samples,
   globalLimit,
   onReveal,
+  spot,
+  onMove,
 }: Props) {
   const drag = useRef<{ y: number; h: number } | null>(null);
 
@@ -97,7 +102,9 @@ export function DetailsPane({
       </div>
       <PaneTabs tab={tab} onTab={onTab} />
       <div className="pane-body" id={PANEL_ID} role="tabpanel" aria-labelledby={tabId(tab)}>
-        {tab === "overview" && <OverviewTab d={d} onReveal={onReveal} />}
+        {tab === "overview" && (
+          <OverviewTab d={d} onReveal={onReveal} spot={spot} onMove={onMove} />
+        )}
         {tab === "speed" && <SpeedTab d={d} samples={samples} globalLimit={globalLimit} />}
       </div>
     </section>

@@ -121,3 +121,44 @@ export function openFailedMessage(d: DownloadSnapshot, error: unknown): string {
 export function globalLimitLabel(limit: number | null): string {
   return limit == null ? "No speed limit" : `Limit ${formatSpeed(limit)}`;
 }
+
+/** The Stop dialog's heading. */
+export function stopTitle(n: number): string {
+  return n > 1 ? `Stop ${n} downloads?` : "Stop this download?";
+}
+
+/** The toast after stopping several downloads at once. */
+export function stoppedManyMessage(n: number, keep: boolean): string {
+  return keep
+    ? `Stopped ${n} downloads.`
+    : `Stopped ${n} downloads and deleted their partial files.`;
+}
+
+/** The toast after removing several downloads at once; finished files and kept partials stay. */
+export function removedManyMessage(ds: readonly DownloadSnapshot[]): string {
+  const stays = ds.some(
+    (d) => d.status === "completed" || (d.status === "cancelled" && d.partial_kept),
+  );
+  return `Removed ${ds.length} downloads from the list.${stays ? " Files stay on disk." : ""}`;
+}
+
+/** The toast after deleting several kept partial files at once. */
+export function deletedPartialsMessage(n: number): string {
+  return `Deleted ${n} partial files.`;
+}
+
+/** The toast after a batch add (a single add needs none: its row appears). */
+export function addedMessage(n: number): string {
+  return `Added ${n} downloads.`;
+}
+
+/** The toast after Copy link. */
+export function copiedMessage(n: number): string {
+  return n === 1 ? "Copied the link." : `Copied ${n} links.`;
+}
+
+/** A waiting row's place in the queue, for its tooltip. */
+export function queuePlace(index: number): string {
+  if (index <= 0) return "Starts next";
+  return `Waiting behind ${index} other${index === 1 ? "" : "s"}`;
+}

@@ -17,7 +17,7 @@
           (theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
         var root = document.documentElement;
         root.dataset.theme = theme;
-        root.dataset.density = p.density === "compact" ? "compact" : "comfortable";
+        root.dataset.density = p.rows === "comfortable" ? "comfortable" : "compact";
         root.classList.toggle("dark", dark);
       })();
     </script>

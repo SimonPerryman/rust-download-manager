@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import type { EmptyCopy } from "../../lib/copy";
+import type { Modifiers, Selection } from "../../lib/selection";
 import type { SortKey, SortState } from "../../lib/sort";
 import type { DownloadSnapshot } from "../../lib/types";
 import { EmptyState } from "./EmptyState";
@@ -7,6 +8,7 @@ import { ErrorRow } from "./ErrorRow";
 import type { RowHandlers } from "./rowHandlers";
 import { SortHeader } from "./SortHeader";
 import { TableRow } from "./TableRow";
+import { useQueueDrag } from "./useQueueDrag";
 
 const COLUMNS: { key: SortKey; label: string; col: string; numeric?: boolean }[] = [
   { key: "name", label: "Name", col: "c-name" },
@@ -31,12 +33,24 @@ type Props = {
   onRefocused: () => void;
   empty: EmptyCopy;
   onAdd: () => void;
-  wrapRef: React.RefObject<HTMLDivElement>;
-  selectedId: number | null;
-  onSelect: (id: number | null) => void;
+  tableRef: React.RefObject<HTMLTableElement>;
+  selection: Selection;
+  /** The waiting order, first to start first. */
+  queue: readonly number[];
+  /** The Waiting view: every waiting row shows its drag handle. */
+  queueView: boolean;
+  onSelect: (id: number, mods: Modifiers) => void;
+  onMenu: (id: number, x: number, y: number) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLTableElement>) => void;
+  /** A waiting row dropped beside another. */
+  onQueueDrop: (id: number, target: number, after: boolean) => void;
+  /** The row shown in the details pane, if any. */
+  detailsId: number | null;
+  onDetails: (id: number, viaPointer: boolean) => void;
 };
 
 // Every download in one sortable table; a failed row is followed by its error row.
+// The table takes focus for the keyboard map; rows are selected by click.
 export function DownloadTable({
   rows,
   sort,
@@ -49,13 +63,41 @@ export function DownloadTable({
   onRefocused,
   empty,
   onAdd,
-  wrapRef,
-  selectedId,
+  tableRef,
+  selection,
+  queue,
+  queueView,
   onSelect,
+  onMenu,
+  onKeyDown,
+  onQueueDrop,
+  detailsId,
+  onDetails,
 }: Props) {
+  const drag = useQueueDrag(onQueueDrop);
+  const dragClass = (id: number) =>
+    drag.dragging === id
+      ? "dragging"
+      : drag.over?.id === id
+        ? drag.over.after
+          ? "drop-after"
+          : "drop-before"
+        : null;
+
   return (
-    <div ref={wrapRef} className="list-wrap" tabIndex={-1}>
-      <table className="dl" aria-label="Downloads">
+    <div className={`list-wrap${queueView ? " queue-view" : ""}`}>
+      <table
+        ref={tableRef}
+        className="dl"
+        aria-label="Downloads"
+        role="grid"
+        aria-multiselectable="true"
+        aria-activedescendant={selection.cursor != null ? `row-${selection.cursor}` : undefined}
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+        // Shift+F10 also raises the browser's own menu on the table; the keyboard map opens ours.
+        onContextMenu={(e) => e.target === e.currentTarget && e.preventDefault()}
+      >
         <thead>
           <tr>
             {COLUMNS.map((c) => (
@@ -84,11 +126,23 @@ export function DownloadTable({
                 handlers={handlers}
                 refocus={refocusId === d.id}
                 onRefocused={onRefocused}
-                selected={selectedId === d.id}
+                selected={selection.selected.has(d.id)}
+                cursor={selection.cursor === d.id}
+                queueIndex={d.status === "queued" ? queue.indexOf(d.id) : -1}
+                drag={dragClass(d.id)}
+                details={detailsId === d.id}
                 onSelect={onSelect}
+                onDetails={onDetails}
+                onMenu={onMenu}
+                onGripDown={drag.onGripDown}
               />
               {d.status === "failed" && (
-                <ErrorRow d={d} failedCount={failedCount} handlers={handlers} />
+                <ErrorRow
+                  d={d}
+                  failedCount={failedCount}
+                  handlers={handlers}
+                  selected={selection.selected.has(d.id)}
+                />
               )}
             </Fragment>
           ))}

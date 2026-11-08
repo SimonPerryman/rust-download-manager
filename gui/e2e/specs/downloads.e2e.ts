@@ -7,6 +7,7 @@ import path from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import {
   ADD_DIALOG,
+  LINKS,
   addThroughDialog,
   attr,
   baseUrl,
@@ -182,7 +183,7 @@ describe("rdm GUI", () => {
 
     const dialog = addDialog();
     await dialog.waitForDisplayed();
-    await expect(dialog.$('input[aria-label="URL"]')).toHaveValue(url);
+    await expect(dialog.$(LINKS)).toHaveValue(url);
     await dialog.$("button=Cancel").click();
     await waitForGone(ADD_DIALOG);
   });
@@ -199,7 +200,7 @@ describe("rdm GUI", () => {
 
     const dialog = addDialog();
     await dialog.waitForDisplayed();
-    await expect(dialog.$('input[aria-label="URL"]')).toHaveValue(url);
+    await expect(dialog.$(LINKS)).toHaveValue(url);
     await dialog.$("button=Cancel").click();
     await waitForGone(ADD_DIALOG);
   });

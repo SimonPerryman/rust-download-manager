@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef } from "react";
 import { filterKeyOf } from "../../lib/filters";
 import { focusIsFree } from "../../lib/focus";
-import { formatAdded, formatLeft } from "../../lib/format";
+import { queuePlace } from "../../lib/copy";
+import { formatAdded, formatLeft, host } from "../../lib/format";
+import type { Modifiers } from "../../lib/selection";
 import { sizeText } from "../../lib/rowView";
 import type { DownloadSnapshot } from "../../lib/types";
 import { useLimitEditor } from "../../lib/useLimitEditor";
+import { Grip } from "../icons/Grip";
 import { ProgressCell } from "./ProgressCell";
 import { RowActions } from "./RowActions";
 import type { RowHandlers } from "./rowHandlers";
@@ -22,9 +25,20 @@ type Props = {
   /** Take focus once the stop just confirmed for this row lands. */
   refocus: boolean;
   onRefocused: () => void;
-  /** Shown in the details pane. */
   selected: boolean;
-  onSelect: (id: number | null) => void;
+  /** Shown in the details pane. */
+  details: boolean;
+  /** The keyboard's row (outlined while the table has focus). */
+  cursor: boolean;
+  /** Place in the waiting queue (0 starts next), or -1 when not waiting. */
+  queueIndex: number;
+  /** How a queue drag draws this row, if one is under way. */
+  drag: "dragging" | "drop-before" | "drop-after" | null;
+  onSelect: (id: number, mods: Modifiers) => void;
+  /** The filename button: open or close this row's details. */
+  onDetails: (id: number, viaPointer: boolean) => void;
+  onMenu: (id: number, x: number, y: number) => void;
+  onGripDown: (e: React.PointerEvent<HTMLButtonElement>, id: number) => void;
 };
 
 /** Clicks on these belong to the control, not to selecting the row. */
@@ -41,7 +55,14 @@ export function TableRow({
   refocus,
   onRefocused,
   selected,
+  cursor,
+  queueIndex,
+  drag,
+  details,
   onSelect,
+  onDetails,
+  onMenu,
+  onGripDown,
 }: Props) {
   const editor = useLimitEditor(d);
   const ref = useRef<HTMLTableRowElement>(null);
@@ -54,10 +75,10 @@ export function TableRow({
     [freshAt],
   );
 
-  // Opening the pane shrinks the table, so keep the selected row in view.
+  // Opening the pane shrinks the table, so keep the row it shows in view.
   useEffect(() => {
-    if (selected) ref.current?.scrollIntoView({ block: "nearest" });
-  }, [selected]);
+    if (details) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [details]);
 
   // A keep-stop lands asynchronously, so focus moves once the row shows Stopped.
   useEffect(() => {
@@ -66,9 +87,14 @@ export function TableRow({
     onRefocused();
   }, [d.status, refocus, onRefocused]);
 
+  // Clicks on the row's own controls (or anywhere in its actions cell) act, not select.
+  const onControl = (e: React.MouseEvent) => (e.target as HTMLElement).closest(CONTROLS) != null;
+
   return (
     <tr
       ref={ref}
+      id={`row-${d.id}`}
+      aria-selected={selected}
       data-testid="download-row"
       data-id={d.id}
       data-filename={d.filename}
@@ -78,34 +104,68 @@ export function TableRow({
       data-linger={lingering ? "true" : undefined}
       data-partial-kept={String(d.partial_kept)}
       data-finished-at={d.finished_at ?? ""}
-      data-selected={selected ? "true" : undefined}
-      className={`row st-${filterKeyOf(d.status)}${lingering ? " linger" : ""}${fresh ? " fresh" : ""}${selected ? " selected" : ""}`}
-      onClick={(e) => {
-        if (!(e.target as Element).closest(CONTROLS)) onSelect(d.id);
-      }}
+      data-selected={details ? "true" : undefined}
+      data-next-up={queueIndex === 0 ? "true" : undefined}
+      className={`row st-${filterKeyOf(d.status)}${lingering ? " linger" : ""}${fresh ? " fresh" : ""}${selected ? " selected" : ""}${cursor ? " cursor" : ""}${drag ? ` ${drag}` : ""}`}
       // A negative delay resumes the tint mid-way when the row remounts (a filter change).
       style={fresh ? ({ "--fresh-delay": freshDelay } as React.CSSProperties) : undefined}
+      onMouseDown={(e) => {
+        // Shift-click selects a range; without this it also selects text.
+        if (e.shiftKey && !onControl(e)) e.preventDefault();
+      }}
+      onClick={(e) => {
+        if (onControl(e)) return;
+        onSelect(d.id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey });
+      }}
+      onDoubleClick={(e) => {
+        if (!onControl(e) && d.status === "completed") handlers.open(d);
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onMenu(d.id, e.clientX, e.clientY);
+      }}
     >
       <td className="c-name">
         <div className="flex min-w-0 items-center gap-2">
           <StatusGlyph status={d.status} />
-          {/* The keyboard way into the details pane; a click anywhere else on the row does the same. */}
+          {queueIndex >= 0 && (
+            <button
+              className="grip"
+              aria-label={`Reorder ${d.filename}. Drag, or press Alt+Up and Alt+Down`}
+              title="Drag to change which starts next (Alt+Up, Alt+Down)"
+              tabIndex={-1}
+              onPointerDown={(e) => onGripDown(e, d.id)}
+            >
+              <Grip size={14} />
+            </button>
+          )}
+          {/* The keyboard way into the details pane; a plain click anywhere else on the row does the same. */}
           <button
             type="button"
             className="fn-btn"
             aria-label={`${d.filename}, details`}
-            aria-expanded={selected}
-            aria-controls={selected ? PANE_ID : undefined}
+            aria-expanded={details}
+            aria-controls={details ? PANE_ID : undefined}
             title={`${d.filename}. Show details`}
-            onClick={() => onSelect(selected ? null : d.id)}
+            onClick={(e) => {
+              // With Ctrl or Shift held the filename selects like the rest of the row.
+              if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                onSelect(d.id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey });
+              } else {
+                onDetails(d.id, e.detail > 0);
+              }
+            }}
           >
-            <span className="fn">{d.filename}</span>
+            <span className="nm">
+              <span className="fn">{d.filename}</span>
+              <span className="host">{host(d.url)}</span>
+            </span>
           </button>
         </div>
       </td>
       <td className="c-size num">{sizeText(d)}</td>
-      <td className="c-prog">
-        <ProgressCell d={d} />
+      <td className="c-prog" title={queueIndex >= 0 ? queuePlace(queueIndex) : undefined}>
+        <ProgressCell d={d} nextUp={queueIndex === 0} />
       </td>
       <td className="c-speed num">
         <SpeedCell d={d} editor={editor} />

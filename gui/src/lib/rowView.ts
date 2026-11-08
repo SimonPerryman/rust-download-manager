@@ -113,3 +113,34 @@ export function isStoppable(d: DownloadSnapshot | undefined): d is DownloadSnaps
     d != null && (d.status === "downloading" || d.status === "queued" || d.status === "paused")
   );
 }
+
+/** Running or waiting: Pause applies. */
+export function isPausable(d: DownloadSnapshot): boolean {
+  return d.status === "downloading" || d.status === "queued";
+}
+
+/** Paused or stopped: the engine's `resume` continues it (or, with no partial kept, starts it again). */
+export function isResumable(d: DownloadSnapshot): boolean {
+  return d.status === "paused" || d.status === "cancelled";
+}
+
+/**
+ * The rows a Resume on `list` acts on. One row: any paused or stopped one (a
+ * stopped row with no partial starts again, which its label says). Several:
+ * only what continues where it left off, so a bulk Resume never quietly
+ * restarts a download from zero.
+ */
+export function toResume(list: readonly DownloadSnapshot[]): DownloadSnapshot[] {
+  if (list.length === 1) return list.filter(isResumable);
+  return list.filter(continues);
+}
+
+/** Paused, or stopped with its partial kept: a Resume picks up where it left off. */
+export function continues(d: DownloadSnapshot): boolean {
+  return d.status === "paused" || (d.status === "cancelled" && d.partial_kept);
+}
+
+/** Finished one way or another: Remove from list applies. */
+export function isRemovable(d: DownloadSnapshot): boolean {
+  return d.status === "completed" || d.status === "failed" || d.status === "cancelled";
+}

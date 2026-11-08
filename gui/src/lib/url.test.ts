@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { dragMayCarryUrl, extractHttpUrl, isHttpUrl, urlFromTransfer } from "./url";
+import {
+  dragMayCarryUrl,
+  extractHttpUrl,
+  isHttpUrl,
+  linksFromTransfer,
+  urlFromTransfer,
+} from "./url";
 
 describe("extractHttpUrl", () => {
   it("returns a trimmed bare URL", () => {
@@ -69,5 +75,40 @@ describe("dragMayCarryUrl", () => {
     expect(dragMayCarryUrl(["text/uri-list", "text/html"])).toBe(true);
     expect(dragMayCarryUrl(["text/plain"])).toBe(true);
     expect(dragMayCarryUrl(["Files"])).toBe(false);
+  });
+});
+
+describe("linksFromTransfer", () => {
+  const transfer = (data: Record<string, string>) => ({
+    getData: (type: string) => data[type] ?? "",
+  });
+
+  it("hands over every pasted line when any holds a link", () => {
+    const text = ["https://a.example/x", "not a link", "https://b.example/y", ""].join("\n");
+    expect(linksFromTransfer(transfer({ "text/plain": text }))).toBe(
+      ["https://a.example/x", "not a link", "https://b.example/y"].join("\n"),
+    );
+  });
+
+  it("takes just the links from a uri-list", () => {
+    const list = ["# comment", "https://a.example/x", "https://b.example/y"].join("\r\n");
+    expect(linksFromTransfer(transfer({ "text/uri-list": list, "text/plain": "ignored" }))).toBe(
+      ["https://a.example/x", "https://b.example/y"].join("\n"),
+    );
+  });
+
+  it("ignores prose with a link in it, as the dialog would", () => {
+    expect(linksFromTransfer(transfer({ "text/plain": "get https://a.example/x now" }))).toBeNull();
+  });
+
+  it("takes a line of several space-separated links", () => {
+    const text = "https://a.example/x https://b.example/y";
+    expect(linksFromTransfer(transfer({ "text/plain": text }))).toBe(text);
+  });
+
+  it("returns null with no link at all", () => {
+    expect(linksFromTransfer(transfer({ "text/plain": "hello there" }))).toBeNull();
+    expect(linksFromTransfer(transfer({}))).toBeNull();
+    expect(linksFromTransfer(null)).toBeNull();
   });
 });
