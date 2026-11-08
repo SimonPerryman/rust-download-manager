@@ -82,8 +82,13 @@ instruction sheet for any agent (and human) working in this repo.
 - Inline comments earn their place only for non-obvious *why* (e.g. the chunk
   loop's pause/throttle hook points). Don't narrate what the code already says.
 - Prefer clear names over comments.
-- Keep `README.md` current with user-facing behaviour (install + CLI usage)
-  when it changes.
+- **A user-facing change updates its page under `docs/`: CLI flags →
+  `docs/cli.md`, GUI behaviour → `docs/gui.md`, engine behaviour →
+  `docs/how-it-works.md`. A headline feature also updates the README
+  highlights; the README stays a short landing page, and detail goes in
+  `docs/`. When the main view changes visibly, regenerate the screenshots
+  (`pnpm screenshots` in `gui/e2e`).** Why: the README is the first
+  impression and goes stale quietly.
 
 ## Definition of Done (every change & milestone)
 Standing gates — established in M0, apply to all work, and deliberately NOT
@@ -93,6 +98,7 @@ repeated in each milestone's acceptance criteria:
   gate locally on Windows before each push. Why: Windows Actions minutes bill
   at 2x.
 - New/changed behaviour ships with a runnable test; the engine/CLI split holds.
+- User-facing changes update the README and `docs/` (Comments & docs).
 
 ## Milestones
 Roadmap index: `roadmap.md`. Each milestone is a ticket in `milestones/`

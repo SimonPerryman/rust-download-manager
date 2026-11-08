@@ -8,7 +8,7 @@ tags: [cli, gui, ci]
 
 ## Goal
 A newcomer can install rdm, the CLI or the desktop GUI, from a GitHub
-Release without a Rust toolchain.
+Release without a Rust toolchain, and the GUI keeps itself up to date.
 
 ## Context / rationale
 Today the only install path is `cargo install --path .` from a clone, and the
@@ -24,6 +24,10 @@ to people who already have Rust, Node and pnpm set up.
 - **GUI: the official `tauri-apps/tauri-action`.** It builds the platform
   bundles and uploads them to a GitHub Release.
 - **Both attach to the same release**, created by one tag push.
+- **GUI updates: the official Tauri updater plugin** (`tauri-plugin-updater`),
+  fed by a signed `latest.json` on each release. Its signatures use a
+  dedicated update keypair, separate from OS code signing and free, so it
+  doesn't wait for signing.
 
 The CI pinning rules in [AGENTS.md](../AGENTS.md) (Toolchain) apply to the
 release workflow like any other, and `gui/scripts/guard-ci-pins.mjs` enforces
@@ -43,7 +47,10 @@ them. Roadmap: [roadmap.md](../roadmap.md).
   - shell: `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/SimonPerryman/rust-download-manager/releases/latest/download/rdm-installer.sh | sh`;
   - PowerShell: `powershell -ExecutionPolicy Bypass -c "irm https://github.com/SimonPerryman/rust-download-manager/releases/latest/download/rdm-installer.ps1 | iex"`;
   - Homebrew: `brew install simonperryman/tap/rdm`, a formula dist publishes
-    to the `SimonPerryman/homebrew-tap` repo (owner setup, below).
+    to the existing `SimonPerryman/homebrew-tap` repo. Formulas there live at
+    the repo root (it already holds one), so dist must write `rdm.rb` at the
+    root too: once a `Formula/` folder exists, Homebrew reads only that
+    folder, which would hide the tap's existing formula.
   - Optional: a CLI `.msi` from dist (needs `[package.metadata.wix]` with a
     fixed upgrade GUID). Skip it if the GUI's installer is enough for Windows
     users.
@@ -51,6 +58,32 @@ them. Roadmap: [roadmap.md](../roadmap.md).
   - Windows: NSIS `.exe` setup, and `.msi`;
   - macOS: `.dmg` for arm64 and x64;
   - Linux: AppImage and `.deb`.
+- **In-app updates (GUI)** with `tauri-plugin-updater`:
+  - `bundle.createUpdaterArtifacts: true`, and tauri-action uploads a signed
+    `latest.json` (`includeUpdaterJson`) to each release, signed with
+    `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The
+    public key goes in `tauri.conf.json` (`plugins.updater.pubkey`).
+  - One endpoint, HTTPS GitHub Releases only:
+    `https://github.com/SimonPerryman/rust-download-manager/releases/latest/download/latest.json`.
+    `releases/latest` skips pre-releases, so rc tags are never offered to
+    users.
+  - The check runs Rust-side on start, through rdm's own Tauri commands, as
+    the folder picker and open/reveal already do. The webview gets no
+    `updater:*` permission, and the CSP's `connect-src` stays as it is (the
+    request never leaves Rust). If a JS-side check is ever needed, grant only
+    `updater:allow-check` and `updater:allow-download-and-install`.
+  - Minimal UX: when a newer version exists, a small "Update available:
+    vX.Y.Z" notice with **Install & restart** and a dismiss. No settings and
+    no polling beyond the start-up check. A failed check is logged, not
+    shown.
+  - Formats the updater supports: NSIS and `.msi` on Windows, the `.app`
+    (via `.app.tar.gz`) on macOS, and AppImage on Linux. `.deb` users update
+    by installing the new `.deb`.
+- **CLI updates: no self-updater.** Homebrew users run `brew upgrade`;
+  shell and PowerShell users re-run the installer one-liner, which replaces
+  the binary in place. Why not dist's `install-updater = true`: it ships a
+  second binary (`rdm-update`) with its own download-and-replace path to
+  maintain and secure, for what re-running one command already does.
 - **Tauri identifier** changes from `dev.rdm.gui` to
   `io.github.simonperryman.rdm` before the first release. The identifier
   names the app on each OS (bundle id, install keys, webview data folder),
@@ -67,8 +100,8 @@ them. Roadmap: [roadmap.md](../roadmap.md).
   - `gui/src-tauri/Cargo.toml`: `repository`, matching the root crate.
 - **One version for the CLI and GUI** (see Versioning, below).
 - **Release notes from `CHANGELOG.md`.**
-- **README install section** pointing at real downloads, with an honest note
-  on unsigned builds.
+- **Install docs** pointing at real downloads, with an honest note on
+  unsigned builds: a short README Install section, detail in `docs/`.
 
 **Out (deferred):**
 - **Code signing and notarisation** (backlog). The first release is
@@ -86,8 +119,6 @@ them. Roadmap: [roadmap.md](../roadmap.md).
     developers in your region) and an **Apple Developer Program**
     membership (about US$99/year) for signing and notarising the macOS
     app.
-- **In-app updates** (Tauri updater plugin). It needs signed update
-  manifests and a signing key, so it follows signing (backlog).
 - **Package-manager manifests** beyond Homebrew: winget, scoop (stretch,
   below).
 - **crates.io** publishing: the name is taken. Revisit only if the crate is
@@ -126,6 +157,9 @@ them. Roadmap: [roadmap.md](../roadmap.md).
 - [ ] `dist init` with the targets, installers (`shell`, `powershell`,
   `homebrew`, optionally `msi`) and `tap = "SimonPerryman/homebrew-tap"`,
   `publish-jobs = ["homebrew"]`. Pin `cargo-dist-version`.
+- [ ] Make the `publish-homebrew-formula` job commit `rdm.rb` at the tap's
+  root, not under `Formula/` (a dist setting if the pinned version has one,
+  otherwise an edit to the generated job, kept by `allow-dirty`).
 - [ ] Adjust the generated `.github/workflows/release.yml` to the repo's
   rules, then set `allow-dirty = ["ci"]` so `dist` doesn't regenerate it:
   - every `uses:` pinned to a full commit SHA with a `# vX.Y.Z` comment;
@@ -153,6 +187,21 @@ them. Roadmap: [roadmap.md](../roadmap.md).
   the PR and note why.
 - [ ] `contents: write` is scoped to the upload job only.
 
+### In-app updates (GUI)
+- [ ] Add `tauri-plugin-updater`; set `plugins.updater.pubkey` and the one
+  HTTPS endpoint in `tauri.conf.json`, and `bundle.createUpdaterArtifacts`.
+- [ ] tauri-action uploads `latest.json` to the same release, with the
+  signing key and password passed from Actions secrets to that job only.
+- [ ] Rust commands to check for an update and to install it and restart;
+  the check runs once on start. No `updater:*` permission in
+  `capabilities/default.json`.
+- [ ] The "Update available" notice with **Install & restart**.
+- [ ] A test-only endpoint override (debug builds or a test feature, never a
+  release build) so tests can point the updater at a local fixture.
+- [ ] A release step that verifies every `latest.json` signature against the
+  public key in `tauri.conf.json` (minisign, pinned) before the release is
+  published.
+
 ### Smoke and checks
 - [ ] A `smoke` job in the release workflow, after the build jobs, on each
   CLI target's native runner (`ubuntu-24.04` for gnu and musl,
@@ -172,10 +221,12 @@ them. Roadmap: [roadmap.md](../roadmap.md).
   PR, not a tag.
 
 ### Docs
-- [ ] README **Installation**: the shell, PowerShell and Homebrew one-liners;
-  GUI downloads by platform from the Releases page; the unsigned-build notes
-  for SmartScreen and Gatekeeper; building from source as the last option.
-- [ ] README: how to cut a release (bump PR, then tag), in **Development**.
+- [ ] README **Install**: the shell, PowerShell and Homebrew one-liners and a
+  link to the Releases page. A docs page holds GUI downloads by platform,
+  the unsigned-build notes for SmartScreen and Gatekeeper, how to update
+  (in-app for the GUI, `brew upgrade` or the one-liner for the CLI), and
+  building from source as the last option.
+- [ ] `CONTRIBUTING.md`: how to cut a release (bump PR, then tag).
 
 ### Stretch
 - [ ] winget manifest (`winget-pkgs` PR) and/or a scoop bucket.
@@ -185,12 +236,18 @@ them. Roadmap: [roadmap.md](../roadmap.md).
   the release assets, and drop it if not.
 
 ## Owner setup (before the first non-rc release)
-1. Create the public repo `SimonPerryman/homebrew-tap` (Homebrew's naming:
-   `brew install simonperryman/tap/rdm` reads `homebrew-tap`).
-2. Create a fine-grained token with **Contents: read and write** on
-   `homebrew-tap` only, and add it to this repo's Actions secrets as
+1. The tap, `SimonPerryman/homebrew-tap`, already exists (public, formulas at
+   the root). Create a fine-grained token with **Contents: read and write**
+   on `homebrew-tap` only, and add it to this repo's Actions secrets as
    `HOMEBREW_TAP_TOKEN`. dist's `publish-homebrew-formula` job uses it.
-3. Optional: a `release` environment with required reviewers, so a tag push
+2. Generate the update keypair with `pnpm tauri signer generate` (in `gui/`,
+   with a password). Add the private key and its password to Actions secrets
+   as `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`;
+   the public key goes in `tauri.conf.json` in the PR.
+3. **Back up the private key and its password** outside GitHub (e.g. a
+   password manager). Losing either means installed copies can never be
+   updated in-app again; users would have to reinstall by hand.
+4. Optional: a `release` environment with required reviewers, so a tag push
    waits for approval before the write-scoped jobs run.
 
 ## Acceptance criteria
@@ -226,8 +283,26 @@ and apply here without being restated._
   `brew install simonperryman/tap/rdm && rdm --version`, and on
   `ubuntu-24.04` and `windows-2025-vs2026` runs the shell and PowerShell
   one-liners followed by `rdm --version`.
-- [ ] README's Installation section shows the one-liners and the unsigned
-  build notes, and its links resolve against the `v0.1.0` release.
+- [ ] Pushing `v0.1.0-rc.1` also attaches `latest.json` with an entry and
+  signature for each updatable bundle (Windows, both macOS archs, Linux
+  AppImage), and the release's signature-check step passes against the
+  public key in `tauri.conf.json`.
+- [ ] The signature check fails on a `latest.json` signed with a different
+  key (run it locally with a throwaway keypair).
+- [ ] An e2e or integration test points the updater (via the test-only
+  override) at a local fixture `latest.json` offering a higher version and
+  asserts the "Update available" notice appears; offering the same version,
+  it asserts no notice.
+- [ ] A Rust test serves a fixture update whose signature doesn't match the
+  public key and asserts the install is rejected and the app stays on its
+  version.
+- [ ] A release build ignores the test-only endpoint override (a test or
+  guard asserts it's compiled out).
+- [ ] `capabilities/default.json` grants no `updater:*` permission and the
+  CSP's `connect-src` is unchanged (asserted by a test or guard).
+- [ ] The README's Install section shows the one-liners and links to the
+  install docs, which hold the unsigned-build notes; the links resolve
+  against the `v0.1.0` release.
 
 ## Open questions
 1. **Linux GUI glibc floor:** the AppImage and `.deb` built on
@@ -236,3 +311,6 @@ and apply here without being restated._
 2. **CLI MSI:** ship it, or let the GUI's installers cover Windows?
 3. **GUI and dist ordering:** a dist custom job, or a draft release that
    both upload to (Tasks, GUI release)?
+4. **`latest.json` and a draft release:** if the release stays a draft until
+   a final job publishes it, check that the `releases/latest/download/` URL
+   resolves only once it's published.
