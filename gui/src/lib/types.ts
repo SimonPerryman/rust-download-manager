@@ -49,6 +49,19 @@ export interface DownloadSnapshot {
   active_ms: number | null;
 }
 
+/** Mirrors the engine's `LogLevel`. */
+export type LogLevel = "error" | "warn" | "info" | "debug" | "trace";
+
+/** Mirrors the engine's `LogLine` (see src/engine/download_log.rs): one line a download logged. */
+export interface LogLine {
+  /** Milliseconds since the Unix epoch. */
+  at: number;
+  level: LogLevel;
+  message: string;
+  /** The event's other fields as space-separated `name=value` pairs. */
+  fields: string;
+}
+
 /** Mirrors the engine's manager-wide `Settings` (see src/engine/store.rs). */
 export interface Settings {
   max_concurrent: number;

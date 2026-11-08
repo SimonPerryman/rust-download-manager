@@ -26,3 +26,7 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
+
+[dev-dependencies]
+# Timers for the tests that drive the engine on their own runtime.
+tokio = { version = "1", features = ["rt", "time"] }

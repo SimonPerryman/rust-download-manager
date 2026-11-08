@@ -34,9 +34,10 @@ anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-# The engine only emits events; each frontend installs its own subscriber.
+# The engine emits events; each frontend installs its own subscriber.
 tracing = "0.1"
-# The CLI's stderr subscriber (`RUST_LOG`-filtered).
+# The CLI's stderr subscriber (`RUST_LOG`-filtered), and the engine's
+# per-download log layer that a frontend adds to its subscriber.
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]

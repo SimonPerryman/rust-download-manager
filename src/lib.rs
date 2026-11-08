@@ -10,6 +10,6 @@ pub mod engine;
 pub use engine::{
     download, parse_rate, redact_url, AddOptions, Algo, Checksum, ChecksumState, ClaimTarget,
     Control, DownloadRecord, DownloadRequest, DownloadSnapshot, DownloadState, Error, JsonStore,
-    Manager, Progress, RateLimiter, Result, RetryPolicy, Segment, Settings, Status, Store,
-    StoreData, Summary,
+    LogLevel, LogLine, Manager, Progress, RateLimiter, Result, RetryPolicy, Segment, Settings,
+    Status, Store, StoreData, Summary, LOG_LINES,
 };

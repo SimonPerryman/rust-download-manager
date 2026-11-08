@@ -18,3 +18,12 @@ describe("open and reveal", () => {
     ]);
   });
 });
+
+describe("downloadLog", () => {
+  beforeEach(() => invoke.mockReset().mockResolvedValue([]));
+
+  it("asks for one download's lines by id", async () => {
+    await api.downloadLog(5);
+    expect(invoke.mock.calls).toEqual([["download_log", { id: 5 }]]);
+  });
+});

@@ -752,6 +752,32 @@
     fill: var(--g600);
   }
 
+  .log {
+    @apply grid gap-1 text-sm;
+  }
+  .log li {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 12px;
+    color: var(--ink);
+  }
+  .log time {
+    color: var(--g400);
+    font-variant-numeric: tabular-nums;
+  }
+  .log li > span {
+    overflow-wrap: anywhere;
+  }
+  .log li[data-level="warn"] > span {
+    color: var(--warn-ink);
+  }
+  .log li[data-level="error"] > span {
+    color: var(--danger-ink);
+  }
+  .log-empty {
+    @apply grid gap-1 text-sm;
+  }
+
   /* ---------- sidebar sparkline ---------- */
   .spark {
     margin-top: auto;

@@ -26,8 +26,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
-use tracing::Instrument;
+use tracing::{Instrument, Subscriber};
+use tracing_subscriber::filter::LevelFilter;
+use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::Layer;
 
+use crate::engine::download_log::{DownloadLogs, LogLayer, LogLine, TASK_SPAN};
 use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Store, StoreData};
 use crate::engine::{
     download, filename, single_segment, state, Checksum, Control, DownloadRequest, DownloadState,
@@ -225,6 +229,8 @@ struct Inner {
     closed: AtomicBool,
     /// Shared by every download; unlimited until a global limit is set.
     global: Arc<RateLimiter>,
+    /// Each download's recent log lines, filled by [`Manager::log_layer`].
+    logs: Arc<DownloadLogs>,
 }
 
 impl Inner {
@@ -535,6 +541,7 @@ impl Manager {
             handle,
             closed: AtomicBool::new(false),
             global: Arc::new(RateLimiter::new(settings.global_limit)),
+            logs: Arc::default(),
             state: Mutex::new(st),
         });
         // Prime the channel with the restored list.
@@ -758,6 +765,7 @@ impl Manager {
             if let Some(e) = st.entries.remove(id) {
                 discard_files(st, &e.record);
             }
+            self.inner.logs.forget(*id);
         }
         self.inner.persist(st);
         self.inner.publish(st);
@@ -813,6 +821,7 @@ impl Manager {
         if let Some(task) = e.task {
             task.abort();
         }
+        self.inner.logs.forget(id);
         discard_files(st, &e.record);
         self.inner.schedule(st);
         self.inner.persist(st);
@@ -837,6 +846,26 @@ impl Manager {
             }
         }
         self.inner.persist(st);
+    }
+
+    /// A tracing layer that keeps the last [`LOG_LINES`](crate::engine::LOG_LINES)
+    /// INFO-and-up lines of each download for [`download_log`](Self::download_log);
+    /// a frontend adds it to its subscriber. It has its own level filter, so it
+    /// works whatever `RUST_LOG` says.
+    pub fn log_layer<S>(&self) -> impl Layer<S> + Send + Sync + 'static
+    where
+        S: Subscriber + for<'a> LookupSpan<'a>,
+    {
+        LogLayer {
+            logs: self.inner.logs.clone(),
+        }
+        .with_filter(LevelFilter::INFO)
+    }
+
+    /// Download `id`'s recent log lines, oldest first: empty for an unknown id
+    /// or one that hasn't run since the manager loaded (lines aren't saved).
+    pub fn download_log(&self, id: u64) -> Vec<LogLine> {
+        self.inner.logs.lines(id)
     }
 
     /// A one-shot snapshot of every download, in display order.
@@ -924,9 +953,10 @@ fn spawn_task(
     connections: u8,
 ) -> JoinHandle<()> {
     let id = record.id;
+    inner.logs.open(id);
     // Error level, like the engine's own span, so the tags survive any filter
     // that still shows errors. A provisional name is only a guess until claimed.
-    let span = tracing::error_span!("task", id, file = tracing::field::Empty);
+    let span = tracing::error_span!(TASK_SPAN, id, file = tracing::field::Empty);
     if !record.target_provisional {
         span.record("file", tracing::field::display(file_name(&record.target)));
     }
