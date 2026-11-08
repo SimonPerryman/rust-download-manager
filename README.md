@@ -24,8 +24,8 @@ command-line tool and a desktop app.
 
 ## Install
 
-Prebuilt binaries aren't available yet. They're planned for
-[M6](milestones/milestone-06-releases-install.md) and will be published on
+Prebuilt binaries aren't available yet. They're next on the
+[roadmap](roadmap.md) and will be published on
 [GitHub Releases](https://github.com/SimonPerryman/rust-download-manager/releases).
 Until then, build from source.
 
@@ -69,9 +69,8 @@ Interrupted, or pressed Ctrl-C? Run the same command again to resume. The
 
 ## Project status
 
-Early, but usable. M0–M5 (the engine, CLI, GUI, parallel downloads, queue and
-speed limits, and a GUI redesign) are done; M6, prebuilt releases, comes
-next. See the [roadmap](roadmap.md).
+Early, but usable. See the [roadmap](roadmap.md) for what's done and what's
+next.
 
 ## Security
 
