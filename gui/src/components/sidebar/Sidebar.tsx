@@ -11,6 +11,7 @@ import { List } from "../icons/List";
 import { Pause } from "../icons/Pause";
 import { Stop } from "../icons/Stop";
 import { FilterButton } from "./FilterButton";
+import { Sparkline } from "./Sparkline";
 
 const ICONS: Record<StatusFilter, React.ReactNode> = {
   all: <List />,
@@ -29,10 +30,23 @@ type Props = {
   folders: FolderEntry[];
   /** Bumps on each live finish; restarts the Done count's bump. 0 on load. */
   bumpSeq: number;
+  /** Total speed now, and its last minute, for the sparkline. */
+  speed: number;
+  speedSamples: readonly number[];
+  globalLimit: number | null;
 };
 
-// The status and folder filters with their live counts.
-export function Sidebar({ filter, onFilter, counts, folders, bumpSeq }: Props) {
+// The status and folder filters with their live counts, and the total-speed sparkline.
+export function Sidebar({
+  filter,
+  onFilter,
+  counts,
+  folders,
+  bumpSeq,
+  speed,
+  speedSamples,
+  globalLimit,
+}: Props) {
   const doneCount = useRef<HTMLSpanElement>(null);
 
   // Remove, reflow, re-add: restarts the animation on back-to-back finishes.
@@ -100,6 +114,7 @@ export function Sidebar({ filter, onFilter, counts, folders, bumpSeq }: Props) {
           </>
         )}
       </nav>
+      <Sparkline speed={speed} samples={speedSamples} globalLimit={globalLimit} />
     </aside>
   );
 }

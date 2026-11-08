@@ -131,6 +131,11 @@ pub struct DownloadRecord {
     /// Where the checksum check of the finished file stands.
     #[serde(default)]
     pub checksum_state: ChecksumState,
+    /// Milliseconds spent running (not waiting or paused) since the download
+    /// last started from zero bytes. `None` is unknown: a record from an older
+    /// build, or one whose run was cut short by a crash.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_ms: Option<u64>,
 }
 
 /// Manager-wide download settings, persisted with the download list.
@@ -292,6 +297,7 @@ mod tests {
             limit: None,
             partial_kept: status == Status::Cancelled,
             checksum_state: ChecksumState::None,
+            active_ms: None,
         }
     }
 
@@ -307,6 +313,7 @@ mod tests {
                 DownloadRecord {
                     checksum: Some("sha256:ab".into()),
                     checksum_state: ChecksumState::Verified,
+                    active_ms: Some(134_000),
                     ..sample_record(1, Status::Completed)
                 },
                 sample_record(2, Status::Paused),

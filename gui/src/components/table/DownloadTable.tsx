@@ -32,6 +32,8 @@ type Props = {
   empty: EmptyCopy;
   onAdd: () => void;
   wrapRef: React.RefObject<HTMLDivElement>;
+  selectedId: number | null;
+  onSelect: (id: number | null) => void;
 };
 
 // Every download in one sortable table; a failed row is followed by its error row.
@@ -48,6 +50,8 @@ export function DownloadTable({
   empty,
   onAdd,
   wrapRef,
+  selectedId,
+  onSelect,
 }: Props) {
   return (
     <div ref={wrapRef} className="list-wrap" tabIndex={-1}>
@@ -80,6 +84,8 @@ export function DownloadTable({
                 handlers={handlers}
                 refocus={refocusId === d.id}
                 onRefocused={onRefocused}
+                selected={selectedId === d.id}
+                onSelect={onSelect}
               />
               {d.status === "failed" && (
                 <ErrorRow d={d} failedCount={failedCount} handlers={handlers} />

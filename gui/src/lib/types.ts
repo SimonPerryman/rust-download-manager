@@ -42,6 +42,11 @@ export interface DownloadSnapshot {
    * partial kept (also after a restart), and once done for this session only.
    */
   segments: Segment[];
+  /**
+   * Milliseconds spent running (not waiting or paused) since it last started from zero;
+   * null when unknown (an older build's record, or a run cut short by a crash).
+   */
+  active_ms: number | null;
 }
 
 /** Mirrors the engine's manager-wide `Settings` (see src/engine/store.rs). */

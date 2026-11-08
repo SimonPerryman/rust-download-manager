@@ -1,0 +1,105 @@
+import { useRef } from "react";
+import { PANE_MIN_H, statePhrase } from "../../lib/details";
+import { filterKeyOf } from "../../lib/filters";
+import type { DownloadSnapshot } from "../../lib/types";
+import { X } from "../icons/X";
+import { StatusGlyph } from "../table/StatusGlyph";
+import { OverviewTab } from "./OverviewTab";
+import { PANEL_ID, PaneTabs, tabId } from "./PaneTabs";
+import { SpeedTab } from "./SpeedTab";
+import { PANE_ID, type PaneTab } from "./tabs";
+
+/** Pixels per ArrowUp / ArrowDown on the resize handle. */
+const KEY_STEP = 16;
+
+type Props = {
+  d: DownloadSnapshot;
+  tab: PaneTab;
+  onTab: (t: PaneTab) => void;
+  height: number;
+  /** The tallest the pane may grow in this window. */
+  maxHeight: number;
+  onResize: (px: number) => void;
+  onClose: () => void;
+  /** This download's last minute of speed samples. */
+  samples: readonly number[];
+  globalLimit: number | null;
+  onReveal: (d: DownloadSnapshot) => void;
+};
+
+// The selected download's details, under the table: a resize handle, the
+// title and state, the tab strip and the open tab's panel.
+export function DetailsPane({
+  d,
+  tab,
+  onTab,
+  height,
+  maxHeight,
+  onResize,
+  onClose,
+  samples,
+  globalLimit,
+  onReveal,
+}: Props) {
+  const drag = useRef<{ y: number; h: number } | null>(null);
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    onResize(height + (e.key === "ArrowUp" ? KEY_STEP : -KEY_STEP));
+  };
+
+  return (
+    <section
+      id={PANE_ID}
+      className="pane"
+      data-testid="details-pane"
+      data-id={d.id}
+      aria-label="Download details"
+      style={{ height }}
+    >
+      <div
+        className="pane-resize"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize details"
+        aria-valuenow={height}
+        aria-valuemin={PANE_MIN_H}
+        aria-valuemax={maxHeight}
+        tabIndex={0}
+        onKeyDown={onKeyDown}
+        onPointerDown={(e) => {
+          drag.current = { y: e.clientY, h: height };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          if (drag.current) onResize(drag.current.h + drag.current.y - e.clientY);
+        }}
+        onPointerUp={() => (drag.current = null)}
+        onPointerCancel={() => (drag.current = null)}
+      />
+      <div className="pane-head">
+        <div className={`pane-title st-${filterKeyOf(d.status)}`}>
+          <StatusGlyph status={d.status} />
+          <h2 className="truncate" title={d.filename}>
+            {d.filename}
+          </h2>
+          <span className="pane-state">{statePhrase(d)}</span>
+        </div>
+        <button
+          className="icon-btn"
+          aria-label="Close details"
+          title="Close details"
+          onClick={onClose}
+        >
+          <X size={16} />
+        </button>
+      </div>
+      <PaneTabs tab={tab} onTab={onTab} />
+      <div className="pane-body" id={PANEL_ID} role="tabpanel" aria-labelledby={tabId(tab)}>
+        {tab === "overview" && <OverviewTab d={d} onReveal={onReveal} />}
+        {tab === "speed" && <SpeedTab d={d} samples={samples} globalLimit={globalLimit} />}
+      </div>
+    </section>
+  );
+}

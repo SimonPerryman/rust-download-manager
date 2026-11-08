@@ -122,12 +122,23 @@ The window has a sidebar of filters, a toolbar, one table of every download
 and a status bar:
 
 - **Sidebar:** status filters (All, Downloading, Waiting, Paused, Done, Failed,
-  Stopped) and one filter per destination folder, each with a live count.
+  Stopped) and one filter per destination folder, each with a live count, and
+  the total speed now with a graph of the last minute.
 - **Toolbar:** filter by name (matches the filename or the site), Pause all /
   Resume all, **Clear finished**, **Add**, a light/dark theme toggle and
   **Settings**.
 - **Table:** click a column header to sort by it (click again to reverse).
-  Downloads stay where they are when they finish.
+  Downloads stay where they are when they finish. A multi-connection download
+  draws its **lanes** in the Progress column: one line per piece of the file,
+  showing where the piece sits and how far it has got.
+- **Details pane:** click a row to open it under the table (drag its top edge
+  to resize). **Overview** shows sizes, speed, time left, the full-size lanes
+  (hover one for details), the link, the folder and the checksum; for a
+  finished download, a summary such as "5.8 GB in 2 min 14 s, average
+  44 MB/s, checksum verified" and **Verify checksum**, which checks the file
+  against a SHA-256 you paste. **Speed** graphs the last 60 seconds, with the
+  speed limit as a dashed line. The pieces of a finished download are kept
+  only until the app closes, so after a restart it shows the summary alone.
 - **Status bar:** total speed, how many are downloading and waiting, and the
   global speed limit — click it to change it in place.
 
@@ -224,8 +235,9 @@ name), pause/resume to completion with the bytes checked on disk, a paused
 download surviving an app restart, display settings, paste/drop URL intake,
 the download queue (a cap of 1 queues a second download until the first is
 paused) and per-download limits, connection ramping, the finish moment, the
-sidebar filters, failed downloads and Retry all failed, the Stop dialog, and
-Clear finished with Undo. It downloads only from the repo's own fixture server
+sidebar filters, failed downloads and Retry all failed, the Stop dialog,
+Clear finished with Undo, and the lanes and details pane (with Verify
+checksum). It downloads only from the repo's own fixture server
 (`cargo run --example fixture_server`) on loopback, and keeps all app state in
 a throwaway temp dir via `RDM_HOME`/`RDM_DOWNLOAD_DIR`; `RDM_OPEN_LOG` makes
 Open and Show in folder write `open <path>` / `reveal <path>` lines to that

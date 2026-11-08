@@ -25,6 +25,7 @@ export function snap(overrides: Partial<DownloadSnapshot> = {}): DownloadSnapsho
     checksum: null,
     checksum_state: "none",
     segments: [],
+    active_ms: null,
     ...overrides,
   };
 }

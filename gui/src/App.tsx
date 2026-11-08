@@ -20,9 +20,13 @@ import { useDownloads } from "./lib/useDownloads";
 import { useFinishMoment } from "./lib/useFinishMoment";
 import { usePendingClear } from "./lib/usePendingClear";
 import { usePrefs } from "./lib/usePrefs";
+import { usePaneHeight } from "./lib/usePaneHeight";
 import { useSettings } from "./lib/useSettings";
+import { useSpeedHistory } from "./lib/useSpeedHistory";
 import { useToast } from "./lib/useToast";
 import { useUrlIntake } from "./lib/useUrlIntake";
+import { DetailsPane } from "./components/details/DetailsPane";
+import type { PaneTab } from "./components/details/tabs";
 import { AddDialog } from "./components/dialogs/AddDialog";
 import { StopDialog } from "./components/dialogs/StopDialog";
 import { DropOverlay } from "./components/DropOverlay";
@@ -48,6 +52,8 @@ export default function App() {
   const { toast, show: notify, dismiss: dismissToast } = useToast();
   const finish = useFinishMoment(downloads, seeded);
   const clear = usePendingClear(downloads, notify);
+  const history = useSpeedHistory(downloads);
+  const pane = usePaneHeight();
 
   const [filter, setFilter] = useState<ViewFilter>(ALL);
   const [query, setQuery] = useState("");
@@ -57,6 +63,8 @@ export default function App() {
   const [prefillUrl, setPrefillUrl] = useState("");
   const [stopTarget, setStopTarget] = useState<number | null>(null);
   const [refocusId, setRefocusId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [paneTab, setPaneTab] = useState<PaneTab>("overview");
   const tableRef = useRef<HTMLDivElement>(null);
 
   const openAdd = useCallback((url = "") => {
@@ -91,6 +99,11 @@ export default function App() {
     [shown, view, query, sort, frozen],
   );
   const failed = useMemo(() => shown.filter((d) => d.status === "failed"), [shown]);
+  // The pane follows the live row and closes once it's gone (removed or cleared).
+  const selected = shown.find((d) => d.id === selectedId);
+  useEffect(() => {
+    if (selectedId != null && seeded && !selected) setSelectedId(null);
+  }, [selectedId, seeded, selected]);
   const title = viewTitle(view, folders);
 
   const onSort = (key: SortKey) => {
@@ -203,6 +216,20 @@ export default function App() {
   }, [refocusId]);
   const onRefocused = useCallback(() => setRefocusId(null), []);
 
+  // Closing the pane from inside it hands focus back to the row that opened it.
+  const closeDetails = useCallback(() => {
+    const id = selectedId;
+    const hadFocus = document.activeElement?.closest('[data-testid="details-pane"]') != null;
+    setSelectedId(null);
+    if (!hadFocus || id == null) return;
+    setTimeout(() => {
+      const button = document.querySelector<HTMLButtonElement>(
+        `[data-testid="download-row"][data-id="${id}"] .fn-btn`,
+      );
+      (button ?? tableRef.current)?.focus();
+    });
+  }, [selectedId]);
+
   return (
     <div className="app">
       <Sidebar
@@ -211,6 +238,9 @@ export default function App() {
         counts={counts}
         folders={folders}
         bumpSeq={finish.bumpSeq}
+        speed={totalSpeed(downloads)}
+        speedSamples={history.total}
+        globalLimit={settings?.global_limit ?? null}
       />
       <main className="main">
         <Toolbar
@@ -247,7 +277,23 @@ export default function App() {
           empty={emptyCopy(view, title, query)}
           onAdd={() => openAdd()}
           wrapRef={tableRef}
+          selectedId={selected?.id ?? null}
+          onSelect={setSelectedId}
         />
+        {selected && (
+          <DetailsPane
+            d={selected}
+            tab={paneTab}
+            onTab={setPaneTab}
+            height={pane.height}
+            maxHeight={pane.maxHeight}
+            onResize={pane.resize}
+            onClose={closeDetails}
+            samples={history.byId.get(selected.id) ?? []}
+            globalLimit={settings?.global_limit ?? null}
+            onReveal={revealDownload}
+          />
+        )}
       </main>
       <StatusBar
         speed={totalSpeed(downloads)}

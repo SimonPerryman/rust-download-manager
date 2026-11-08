@@ -82,7 +82,7 @@ speed for graphs, and sorting and filtering the snapshot list.
   - **Overview:** sizes, speed, time left, lanes, URL, folder, checksum state.
     For a finished download it adds a summary line ("5.8 GB in 2 min 14 s,
     average 44 MB/s, checksum verified"), a Verify checksum control, and
-    queue up/down buttons for waiting downloads.
+    queue up/down buttons for waiting downloads (PR D).
   - **Speed:** a 60 s throughput graph with the limit drawn as a dashed line.
 - **Stop asks first.** "Keep the partial file to resume later" is the
   default; "Delete the partial file" is the alternative.
@@ -104,7 +104,7 @@ speed for graphs, and sorting and filtering the snapshot list.
 **Out (deferred):**
 - The "Key" origin overlay. It's a mockup-only comparison tool and doesn't
   ship.
-- Log tab in the details pane (open question 2, backlog until decided).
+- Log tab in the details pane: decided for a follow-up PR E (open question 2).
 - Free-space readout in the status bar (open question 1).
 - Native OS notifications, tray, and start with the system (backlog).
 - Per-type categories and auto-organise (backlog: scheduling and automation).
@@ -113,8 +113,8 @@ speed for graphs, and sorting and filtering the snapshot list.
   today.
 
 ## Tasks
-Split into four PRs. A comes first, because C needs A's snapshot fields. B
-can start in parallel on today's snapshot.
+Split into five PRs. A comes first, because C needs A's snapshot fields. B
+can start in parallel on today's snapshot. E (the Log tab) follows C.
 
 ### PR A — engine and Tauri commands
 - [x] `stop(id, keep_partial)`.
@@ -160,12 +160,25 @@ can start in parallel on today's snapshot.
   with dark overrides.
 
 ### PR C — details pane and lanes
-- [ ] Resizable details pane, with the Overview and Speed tabs.
-- [ ] Lanes component used at two sizes, the table cell and the pane, drawn
+- [x] Resizable details pane, with the Overview and Speed tabs.
+- [x] Lanes component used at two sizes, the table cell and the pane, drawn
   from `segments`.
-- [ ] Finished summary line and the Verify checksum control.
-- [ ] Speed graph from a frontend ring buffer of `bytes_per_sec` samples, plus
+- [x] Finished summary line and the Verify checksum control. (The summary's
+  time comes from a new snapshot field, `active_ms`: time spent running,
+  persisted, reset when a download starts again from zero, and unknown
+  (`null`) for a run cut short by a crash or an older build's record;
+  quitting the app records it first.)
+- [x] Speed graph from a frontend ring buffer of `bytes_per_sec` samples, plus
   the sidebar sparkline.
+- The Overview's queue up/down buttons for waiting downloads are left to
+  PR D, with the other reorder controls (they use `move_queued` too).
+
+### PR E — Log tab
+- [ ] Engine: a tracing layer that keeps the last ~200 lines per download,
+  keyed by the existing `task` span id in `src/engine/manager.rs`.
+- [ ] A thin `download_log(id)` Tauri command over it.
+- [ ] A Log tab in the details pane, polled while it's open.
+- [ ] An engine test for the per-download buffer and an e2e spec for the tab.
 
 ### PR D — batch add and power features
 - [ ] Batch add dialog with preview, Ctrl+V intake for several lines, and the
@@ -218,9 +231,10 @@ these e2e specs against the fixture server:
 - [x] **Clear finished:** clears Done and Stopped rows. Undo within the
   window brings them back, and nothing is removed from the engine.
   (`specs/clear.e2e.ts`)
-- [ ] **Lanes:** a 4-connection download on the `/gated` fixture shows 4
+- [x] **Lanes:** a 4-connection download on the `/seg-gated` fixture shows 4
   lanes in its row and in the details pane. Assert on DOM lane count, not
-  progress bytes. (`specs/lanes.e2e.ts`)
+  progress bytes. (`specs/lanes.e2e.ts`; `/gated` has no length or ranges, so
+  it can't be multi-connection: `/seg-gated` is `/seg` held by the same gate.)
 - [ ] **Batch add:** pasting three lines (two URLs and one non-link) previews
   "Add 2 downloads" and adds two rows. (`specs/batch-add.e2e.ts`)
 - [ ] **Reorder:** with a cap of 1, moving the last waiting row to the top
@@ -234,7 +248,8 @@ these e2e specs against the fixture server:
    command, or cut it? It affects B. **Decided (PR B):** cut; moved to the
    backlog.
 2. **Log tab:** in M5, which needs the engine to stream per-download log
-   lines to the GUI, or later? Currently out.
+   lines to the GUI, or later? **Decided:** a separate PR E, after C (see its
+   tasks above).
 3. **Density default:** compact (Console's default) or comfortable?
    **Decided (PR B):** compact (32 px). PR B ships compact rows only; the
    toggle comes with PR D.

@@ -10,6 +10,7 @@ import { RowActions } from "./RowActions";
 import type { RowHandlers } from "./rowHandlers";
 import { SpeedCell } from "./SpeedCell";
 import { StatusGlyph } from "./StatusGlyph";
+import { PANE_ID } from "../details/tabs";
 
 type Props = {
   d: DownloadSnapshot;
@@ -21,12 +22,27 @@ type Props = {
   /** Take focus once the stop just confirmed for this row lands. */
   refocus: boolean;
   onRefocused: () => void;
+  /** Shown in the details pane. */
+  selected: boolean;
+  onSelect: (id: number | null) => void;
 };
+
+/** Clicks on these belong to the control, not to selecting the row. */
+const CONTROLS = "button, input, select, textarea, a, label, .c-act";
 
 const connectionsLabel = (n: number) => `${n} connection${n === 1 ? "" : "s"}`;
 
 // One download. The data-* attributes are the e2e contract (read by gui/e2e/helpers.ts).
-export function TableRow({ d, lingering, freshAt, handlers, refocus, onRefocused }: Props) {
+export function TableRow({
+  d,
+  lingering,
+  freshAt,
+  handlers,
+  refocus,
+  onRefocused,
+  selected,
+  onSelect,
+}: Props) {
   const editor = useLimitEditor(d);
   const ref = useRef<HTMLTableRowElement>(null);
   const downloading = d.status === "downloading";
@@ -37,6 +53,11 @@ export function TableRow({ d, lingering, freshAt, handlers, refocus, onRefocused
     () => (freshAt == null ? undefined : `${-(Date.now() - freshAt) / 1000}s`),
     [freshAt],
   );
+
+  // Opening the pane shrinks the table, so keep the selected row in view.
+  useEffect(() => {
+    if (selected) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
 
   // A keep-stop lands asynchronously, so focus moves once the row shows Stopped.
   useEffect(() => {
@@ -57,16 +78,29 @@ export function TableRow({ d, lingering, freshAt, handlers, refocus, onRefocused
       data-linger={lingering ? "true" : undefined}
       data-partial-kept={String(d.partial_kept)}
       data-finished-at={d.finished_at ?? ""}
-      className={`row st-${filterKeyOf(d.status)}${lingering ? " linger" : ""}${fresh ? " fresh" : ""}`}
+      data-selected={selected ? "true" : undefined}
+      className={`row st-${filterKeyOf(d.status)}${lingering ? " linger" : ""}${fresh ? " fresh" : ""}${selected ? " selected" : ""}`}
+      onClick={(e) => {
+        if (!(e.target as Element).closest(CONTROLS)) onSelect(d.id);
+      }}
       // A negative delay resumes the tint mid-way when the row remounts (a filter change).
       style={fresh ? ({ "--fresh-delay": freshDelay } as React.CSSProperties) : undefined}
     >
       <td className="c-name">
         <div className="flex min-w-0 items-center gap-2">
           <StatusGlyph status={d.status} />
-          <span className="fn" title={d.filename}>
-            {d.filename}
-          </span>
+          {/* The keyboard way into the details pane; a click anywhere else on the row does the same. */}
+          <button
+            type="button"
+            className="fn-btn"
+            aria-label={`${d.filename}, details`}
+            aria-expanded={selected}
+            aria-controls={selected ? PANE_ID : undefined}
+            title={`${d.filename}. Show details`}
+            onClick={() => onSelect(selected ? null : d.id)}
+          >
+            <span className="fn">{d.filename}</span>
+          </button>
         </div>
       </td>
       <td className="c-size num">{sizeText(d)}</td>

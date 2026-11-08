@@ -24,7 +24,8 @@
 //!   it outlasts a multi-step UI flow at the E2E delay.
 //! - `GET /gated`     — no `Accept-Ranges`, no length: headers at once, then a
 //!   1 KiB chunk every [`GATED_TRICKLE`] until the test releases it through
-//!   [`TestServer::gate`] (keyed by arrival order), then ends.
+//!   [`TestServer::gate`] (keyed by arrival order, shared with `/seg-gated`),
+//!   then ends.
 //! - `GET /norange`   — always 200, full body, never honours `Range`.
 //! - `GET /liar`      — advertises `Accept-Ranges` but ignores `Range` (200).
 //! - `GET /flaky`     — supports ranges; drops the connection mid-body for the
@@ -64,6 +65,9 @@
 //! - `GET /seg-signed?sig=<n>` — `/seg`, but each `sig` is good for
 //!   [`SIGNED_URL_USES`] requests, then 403 (counted in
 //!   [`RouteStats::refused`]), like an expiring signed URL.
+//! - `GET /seg-gated`  — every response trickles [`SEG_GATED_CHUNK`] per
+//!   [`GATED_TRICKLE`] while [`TestServer::gate`] holds it, so no segment
+//!   finishes (and none is stolen) until the test releases it.
 //! - `GET /seg-ramp`   — [`SEG_RAMP_CHUNK`]s paced by deadline (no burst) at
 //!   [`SEG_RAMP_RATE`] per connection and [`SEG_RAMP_CAP`] across all of
 //!   them, like a host whose link saturates at four connections.
@@ -131,6 +135,10 @@ pub const GATED_TRICKLE: Duration = Duration::from_millis(20);
 
 /// `/gated`: bytes per trickled chunk.
 const GATED_CHUNK: usize = 1024;
+
+/// `/seg-gated`: bytes per trickled chunk while held (a 1 MiB segment takes
+/// over a minute, far longer than any test holds it).
+pub const SEG_GATED_CHUNK: usize = 256;
 
 /// Deterministic payload served by the fixture (just under 100 KB, enough to
 /// span many chunks). Reproduced byte-for-byte on every call.
@@ -411,6 +419,7 @@ const COUNTED_ROUTES: &[&str] = &[
     "/seg-expiring",
     "/seg-signed",
     "/seg-ramp",
+    "/seg-gated",
     "/seg-429",
     "/seg-429-drop",
     "/seg-429-then-drop",
@@ -422,8 +431,9 @@ const COUNTED_ROUTES: &[&str] = &[
     "/hang",
 ];
 
-/// The `/gated` hold: each request gets an arrival sequence number and
-/// trickles until its number is released.
+/// The `/gated` and `/seg-gated` hold, one arrival numbering for both: each
+/// request gets an arrival sequence number and trickles until its number is
+/// released.
 #[derive(Default)]
 pub struct Gate(Mutex<GateState>);
 
@@ -952,6 +962,7 @@ enum Seg {
     RateLimited,
     RateLimitedDrop,
     RateLimitedThenDrop,
+    Gated,
 }
 
 impl Seg {
@@ -977,6 +988,7 @@ impl Seg {
             Seg::RateLimited => "/seg-429",
             Seg::RateLimitedDrop => "/seg-429-drop",
             Seg::RateLimitedThenDrop => "/seg-429-then-drop",
+            Seg::Gated => "/seg-gated",
         }
     }
 }
@@ -1109,7 +1121,9 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg) -> Response {
             format!("bytes {start}-{}/{total}", end - 1),
         );
     }
-    let body = if kind == Seg::Ramp {
+    let body = if kind == Seg::Gated {
+        gated_seg_stream(data.slice(start..end), state.gate.enter(), guard)
+    } else if kind == Seg::Ramp {
         paced_stream(data.slice(start..end), state.ramp_next_free.clone(), guard)
     } else {
         seg_stream(
@@ -1218,6 +1232,32 @@ fn seg_stream(
     Body::from_stream(s)
 }
 
+/// `/seg-gated`'s body: tiny chunks while `ticket` is held, then the rest at
+/// once.
+fn gated_seg_stream(data: Bytes, ticket: GateTicket, guard: InFlight) -> Body {
+    let s = futures_util::stream::unfold(
+        (data, 0usize, ticket, guard),
+        |(data, offset, ticket, guard)| async move {
+            if offset >= data.len() {
+                return None;
+            }
+            let end = if ticket.released() {
+                data.len()
+            } else {
+                tokio::time::sleep(GATED_TRICKLE).await;
+                (offset + SEG_GATED_CHUNK).min(data.len())
+            };
+            let chunk = data.slice(offset..end);
+            guard
+                .0
+                .body_bytes
+                .fetch_add(chunk.len() as u64, Ordering::SeqCst);
+            Some((Ok::<_, std::io::Error>(chunk), (data, end, ticket, guard)))
+        },
+    );
+    Body::from_stream(s)
+}
+
 /// `/seg-redirect`: 307 to `/seg`.
 async fn seg_redirect_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     state.stats("/seg-redirect").record(&headers);
@@ -1275,7 +1315,7 @@ impl TestServer {
         self.state.stats(route).clone()
     }
 
-    /// The `/gated` hold, to release its requests.
+    /// The `/gated` and `/seg-gated` hold, to release their requests.
     pub fn gate(&self) -> &Gate {
         &self.state.gate
     }
@@ -1357,6 +1397,7 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/seg-expiring", get(seg_expiring_handler))
         .route("/seg-signed", get(seg_signed_handler))
         .route("/seg-ramp", seg_route(Seg::Ramp))
+        .route("/seg-gated", seg_route(Seg::Gated))
         .route("/seg-429", seg_route(Seg::RateLimited))
         .route("/seg-429-drop", seg_route(Seg::RateLimitedDrop))
         .route("/seg-429-then-drop", seg_route(Seg::RateLimitedThenDrop))
