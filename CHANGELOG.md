@@ -7,15 +7,6 @@ desktop app share one version.
 
 ## Unreleased
 
-### Desktop app
-
-- A download's log reads as a short story, one line per event: how the
-  download started, lanes added or lost and reconnected, pauses and where it
-  resumed, rate-limit waits, the checksum result, where the file was saved,
-  and a closing summary with the time taken, average and peak speed and
-  retries. Tick **Detailed** to also see each request. `rdm -v` prints the
-  same lines.
-
 ## 0.1.0 - 2026-11-09
 
 The first release: everything below is new.
@@ -60,8 +51,14 @@ The first release: everything below is new.
 - A queue: downloads beyond the concurrency limit wait their turn, and you can
   reorder them.
 - Pause, resume, stop, retry and remove, for one download or a selection.
-- Live connection lanes, a speed graph of the last minute, and a per-download
-  log in the details pane.
+- Live connection lanes and a speed graph of the last minute in the details
+  pane.
+- A download's log reads as a short story, one line per event: how the
+  download started, lanes added or lost and reconnected, pauses and where it
+  resumed, rate-limit waits, the checksum result, where the file was saved,
+  and a closing summary with the time taken, average and peak speed and
+  retries. Tick **Detailed** to also see each request. `rdm -v` prints the
+  same lines.
 - Filter by status or folder, search by name, a right-click menu and full
   keyboard control.
 - Settings for the theme, concurrent downloads, the global speed limit and
