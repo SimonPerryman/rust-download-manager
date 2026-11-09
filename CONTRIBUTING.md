@@ -64,3 +64,6 @@ WebdriverIO; see the [`gui/e2e` package](gui/e2e/package.json) (`pnpm e2e`),
 which needs `tauri-driver` and, on Windows, Microsoft Edge WebDriver.
 `pnpm screenshots` in the same package regenerates the images in
 [`docs/screenshots`](docs/screenshots/) used by the README and docs.
+Each run picks free ports for `tauri-driver`, so parallel runs (e.g. in
+separate worktrees) are safe; set `RDM_E2E_DRIVER_PORT` /
+`RDM_E2E_NATIVE_PORT` to pin them.
