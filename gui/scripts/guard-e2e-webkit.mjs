@@ -5,7 +5,9 @@
 //   Shift+key").
 // - `waitForExist()` may not set `reverse` ("When an e2e spec waits for an
 //   element to disappear").
-// All three rules live in AGENTS.md (Testing philosophy).
+// - `getSize()` / `getLocation()` may not be called ("When an e2e spec needs
+//   an element's size or position").
+// All four rules live in AGENTS.md (Testing philosophy).
 //
 // Usage: node scripts/guard-e2e-webkit.mjs [e2eDir]   (default: e2e)
 
@@ -34,6 +36,14 @@ const CHECKS = {
       "use `waitForGone(selector, timeoutMsg?)` from gui/e2e/helpers.ts — WebKitGTK's driver throws " +
       "a stale-element error when the element detaches mid-check (AGENTS.md, Testing philosophy: " +
       '"When an e2e spec waits for an element to disappear")',
+  },
+  rect: {
+    rule: "no getSize() / getLocation() (the driver's element-rect command)",
+    fix:
+      "use `rectOf(selector)` from gui/e2e/helpers.ts (getBoundingClientRect via browser.execute) — " +
+      "WebKitGTK's driver answers element-rect with \"element not interactable\" for elements like " +
+      "table rows (AGENTS.md, Testing philosophy: " +
+      "\"When an e2e spec needs an element's size or position\")",
   },
 };
 
@@ -96,6 +106,10 @@ for (const file of tsFiles(e2eDir)) {
     if (/\breverse\b/.test(args.replace(LITERAL, '""'))) {
       report("reverse", line, "sets `reverse` (waits for the element to disappear)");
     }
+  }
+
+  for (const { line } of calls(src, /\.(?:getSize|getLocation)\s*\(/g)) {
+    report("rect", line, "reads the element rect through the driver");
   }
 }
 
