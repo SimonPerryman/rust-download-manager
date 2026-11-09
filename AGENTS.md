@@ -104,8 +104,9 @@ instruction sheet for any agent (and human) working in this repo.
 Standing gates — established in M0, apply to all work, and deliberately NOT
 repeated in each milestone's acceptance criteria:
 - `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` pass.
-- CI is green on Linux and Windows; both run on every PR. Still run the
-  local gate before each push. Why: it's a faster loop than a CI round-trip,
+- CI is green on Linux and Windows; both run on every PR (jobs whose inputs
+  a PR didn't touch are skipped). Still run the local gate before each
+  push. Why: it's a faster loop than a CI round-trip,
   and CI's webview e2e runs only on Linux (WebKitGTK), so a GUI change gets
   its only WebView2 e2e run from a local `pnpm e2e` on Windows.
 - New/changed behaviour ships with a runnable test; the engine/CLI split holds.
