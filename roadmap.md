@@ -118,3 +118,4 @@ to be a single PR; promote one into a ticket when it's picked up.
 `reqwest` (HTTP), `tokio` (async), `futures` (concurrency), `clap` (CLI),
 `indicatif` (CLI progress), `serde` (config/state), `sqlx`/`rusqlite`
 (persistence), `sha2` (checksums). GUI: Tauri (chosen at M2).
+
