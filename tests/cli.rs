@@ -11,6 +11,11 @@ use tokio::process::Command;
 use common::FixtureConfig;
 use rdm::engine::state::{self, DownloadState};
 
+/// Lowercase hex of a digest (sha2 0.11 digests no longer implement `LowerHex`).
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// `rdm <url> -o <path>` downloads the file, exits 0, and writes the bytes.
 #[tokio::test]
 async fn cli_downloads_file() {
@@ -119,10 +124,10 @@ async fn kill_mid_download_then_restart_is_byte_identical() {
 
     let mut h = Sha256::new();
     h.update(&on_disk);
-    let got = format!("{:x}", h.finalize());
+    let got = hex(&h.finalize());
     let mut h2 = Sha256::new();
     h2.update(&expected);
-    let want = format!("{:x}", h2.finalize());
+    let want = hex(&h2.finalize());
     assert_eq!(
         got, want,
         "resumed file checksum must match a full download"
@@ -433,7 +438,7 @@ async fn cli_reports_verified_checksum() {
     let server = common::spawn().await;
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("checked.bin");
-    let digest = format!("{:x}", Sha256::digest(common::payload()));
+    let digest = hex(&Sha256::digest(common::payload()));
 
     let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
         .arg(server.url("/file"))
