@@ -1,7 +1,8 @@
 name: CI
 
 on:
-  # PRs run once (pull_request); main runs again after merge.
+  # PRs run once (pull_request), not again on push, which is main-only, so a
+  # push to a PR branch doesn't run CI twice. Main runs again after merge.
   push:
     branches: [main]
   pull_request:
@@ -36,9 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows minutes bill at 2x, and the local gate already runs on
-        # Windows before each push, so PRs run Linux only.
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04", "windows-2025-vs2026"]') }}
+        os: [ubuntu-24.04, windows-2025-vs2026]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -79,8 +78,6 @@ jobs:
   gui:
     name: gui build (windows-2025)
     runs-on: windows-2025-vs2026
-    # Windows-only and 2x billed: main and manual runs, not PRs.
-    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -143,7 +140,7 @@ jobs:
         run: cargo test -p rdm-gui
 
   # Also runs the dependency audits: this job already sets up pnpm and caches
-  # ~/.cargo/bin, so they add seconds here instead of a separate job's minute.
+  # ~/.cargo/bin, so they add seconds here instead of a separate job's setup.
   e2e:
     name: gui checks + e2e (webview, ubuntu)
     runs-on: ubuntu-24.04
@@ -289,7 +286,7 @@ jobs:
     name: live smoke (network, on demand)
     runs-on: ubuntu-24.04
     # Keep the default gate offline; run the real-network test only on manual
-    # dispatch so it never gates everyday pushes.
+    # dispatch so PRs and pushes never hit a third-party host.
     if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
