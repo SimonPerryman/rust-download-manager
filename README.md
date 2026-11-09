@@ -77,7 +77,8 @@ next.
 
 Please report vulnerabilities privately through GitHub's
 [Report a vulnerability](https://github.com/SimonPerryman/rust-download-manager/security/advisories/new)
-form, not in a public issue.
+form, not in a public issue. See [SECURITY.md](SECURITY.md) for what to
+include and what to expect.
 
 ## Licence
 
