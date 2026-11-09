@@ -69,6 +69,39 @@ export async function waitForGone(selector: string, timeoutMsg?: string): Promis
   );
 }
 
+/** An element's layout box in CSS px, as `getBoundingClientRect()` reports it. */
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The layout box of the first match of the CSS selector (or of an element),
+ * read by the page. Not getSize()/getLocation(): WebKitGTK's driver answers
+ * the element-rect command with "element not interactable" for elements like
+ * table rows. Throws when nothing matches.
+ */
+export async function rectOf(target: string | WebdriverIO.Element): Promise<Rect> {
+  const rect = await browser.execute(
+    (sel: string | null, el: Element | null) => {
+      const node = sel === null ? el : document.querySelector(sel);
+      if (!node) return null;
+      const { x, y, width, height } = node.getBoundingClientRect();
+      return { x, y, width, height };
+    },
+    typeof target === "string" ? target : null,
+    // Element arguments reach the page as DOM nodes (WebDriver element references).
+    (typeof target === "string" ? null : target) as unknown as Element | null,
+  );
+  if (!rect) {
+    const what = typeof target === "string" ? target : String(target.selector);
+    throw new Error(`rectOf: nothing matches ${what}`);
+  }
+  return rect;
+}
+
 /**
  * Waits until the first match of the CSS `selector` is displayed and its
  * rendered text (innerText) contains `text`. Not getText(): WebKitGTK's driver
@@ -123,8 +156,6 @@ async function textDiagnostics(selector: string): Promise<string> {
       ? {
           getText: await safe(() => el.getText()),
           isDisplayed: await safe(() => el.isDisplayed()),
-          size: await safe(() => el.getSize()),
-          location: await safe(() => el.getLocation()),
         }
       : null;
   const report = {
