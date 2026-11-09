@@ -48,7 +48,7 @@ const CHECKS = [
       return m && m[1].split(",").some((t) => !/^[\w-]+@\d+\.\d+\.\d+$/.test(t.trim()));
     },
     rule: "install-action `tool:` without an exact version",
-    fix: "pin each tool, e.g. `tool: cargo-nextest@0.9.149`",
+    fix: "pin each tool, e.g. `tool: cargo-nextest@0.9.151`",
   },
 ];
 
