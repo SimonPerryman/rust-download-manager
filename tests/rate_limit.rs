@@ -106,44 +106,6 @@ async fn throttle_sleeps_longer_than_read_timeout_still_complete() {
     );
 }
 
-/// The same on the multi-segment path: 76 KiB at 4 KiB/s past the 64 KiB
-/// burst is ~3 s of debt over two connections, so one of them sleeps longer
-/// than the 1 s read timeout between reads.
-#[tokio::test(flavor = "multi_thread")]
-async fn throttle_sleeps_longer_than_read_timeout_still_complete_across_segments() {
-    let server = common::spawn_with(FixtureConfig {
-        seg_len: 76 * KIB as usize,
-        ..FixtureConfig::default()
-    })
-    .await;
-    let dir = tempfile::tempdir().unwrap();
-    let out = dir.path().join("slow.bin");
-    let read_timeout = Duration::from_secs(1);
-    let control = Control::new().with_limiters([Arc::new(RateLimiter::new(Some(4 * KIB)))]);
-
-    let started = Instant::now();
-    let summary = download(
-        &DownloadRequest::to_path(server.url("/seg"), &out)
-            .with_connections(2)
-            .with_min_segment_size(16 * KIB)
-            .with_ramp(Ramping::Off)
-            .with_retry(rdm::RetryPolicy::none())
-            .with_read_timeout(read_timeout),
-        &control,
-        |_| {},
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(summary.status, 206, "expected a multi-segment download");
-    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
-    assert!(
-        started.elapsed() > read_timeout * 2,
-        "the limit never slept past the read timeout ({:?})",
-        started.elapsed()
-    );
-}
-
 /// AC (R2): the limit holds on the single-connection path.
 #[tokio::test]
 async fn rate_limit_holds_on_a_single_connection() {

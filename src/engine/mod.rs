@@ -77,7 +77,7 @@ pub struct DownloadRequest {
     /// Max parallel connections, added one at a time while speed keeps
     /// rising; 1 forces single-connection. Default 4; clamped to 1..=16 at use.
     pub connections: u8,
-    /// Smallest segment worth its own connection (files under 2Ã— this stay
+    /// Smallest segment worth its own connection (files under 2× this stay
     /// single). Default 1 MiB; a tuning knob, mainly for tests.
     pub min_segment_size: u64,
     ramp: Ramping,
@@ -782,7 +782,7 @@ async fn resume(
         }
         StatusCode::RANGE_NOT_SATISFIABLE => {
             // Offset past the end. If we already have the whole thing, we're
-            // done; otherwise the `.part` is inconsistent â€” restart.
+            // done; otherwise the `.part` is inconsistent — restart.
             if let Some(total) = st.total {
                 if offset >= total {
                     on_progress(Progress {
@@ -1148,6 +1148,32 @@ mod tests {
         reqwest::Client::builder()
             .build()
             .expect("a TLS-capable client builds once the provider is installed");
+    }
+
+    /// Time spent away from the stream (a throttle sleep) doesn't count; only
+    /// waiting on it does.
+    #[tokio::test(start_paused = true)]
+    async fn next_chunk_times_out_only_while_waiting() {
+        let timeout = Duration::from_millis(100);
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<reqwest::Result<u8>>();
+        let mut body = receiver_stream(rx);
+        tx.send(Ok(1)).unwrap();
+        assert!(matches!(next_chunk(&mut body, timeout).await, Some(Ok(1))));
+        tokio::time::sleep(timeout * 5).await;
+        tx.send(Ok(2)).unwrap();
+        assert!(matches!(next_chunk(&mut body, timeout).await, Some(Ok(2))));
+        assert!(matches!(
+            next_chunk(&mut body, timeout).await,
+            Some(Err(Error::TimedOut))
+        ));
+    }
+
+    fn receiver_stream<T>(
+        rx: tokio::sync::mpsc::UnboundedReceiver<T>,
+    ) -> impl futures_util::Stream<Item = T> + Unpin {
+        Box::pin(futures_util::stream::unfold(rx, |mut rx| async move {
+            rx.recv().await.map(|item| (item, rx))
+        }))
     }
 
     #[test]

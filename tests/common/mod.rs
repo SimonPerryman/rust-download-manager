@@ -90,10 +90,13 @@
 //! - `GET /stall`      — no length: one 1 KiB chunk, then the body stalls
 //!   forever (a connection whose packets are dropped).
 //! - `GET /hang`       — never answers, not even with headers.
+//! - `GET /seg-stall`  — `/seg`, but every ranged response sends its headers
+//!   and then no body bytes, ever.
+//! - `GET /seg-hang`   — `/seg`, but no ranged request is ever answered.
 //!
 //! Aborting bodies wait [`ABORT_GRACE`] after their prefix before erroring, so
 //! the prefix really reaches the client. Every `/seg*` route, `/liar-etag`,
-//! `/norange`, `/liar`, `/gated` and `/stall` keeps [`RouteStats`] (see
+//! `/norange`, `/liar`, `/gated`, `/stall` and `/hang` keeps [`RouteStats`] (see
 //! [`TestServer::stats`]); arrivals and refusals are timestamped in
 //! [`RouteStats::arrived_at`] and [`RouteStats::refused_at`].
 //!
@@ -429,6 +432,8 @@ const COUNTED_ROUTES: &[&str] = &[
     "/seg-signed",
     "/seg-ramp",
     "/seg-gated",
+    "/seg-stall",
+    "/seg-hang",
     "/seg-429",
     "/seg-429-drop",
     "/seg-429-then-drop",
@@ -984,6 +989,8 @@ enum Seg {
     RateLimitedDrop,
     RateLimitedThenDrop,
     Gated,
+    Stall,
+    Hang,
 }
 
 impl Seg {
@@ -1010,6 +1017,8 @@ impl Seg {
             Seg::RateLimitedDrop => "/seg-429-drop",
             Seg::RateLimitedThenDrop => "/seg-429-then-drop",
             Seg::Gated => "/seg-gated",
+            Seg::Stall => "/seg-stall",
+            Seg::Hang => "/seg-hang",
         }
     }
 }
@@ -1021,6 +1030,10 @@ fn seg_route(kind: Seg) -> MethodRouter<Arc<AppState>> {
                 state.stats(kind.route()).record(&headers);
                 tokio::time::sleep(FORBIDDEN_DELAY).await;
                 return StatusCode::FORBIDDEN.into_response();
+            }
+            if kind == Seg::Hang && headers.contains_key(header::RANGE) {
+                state.stats(kind.route()).record(&headers);
+                return std::future::pending().await;
             }
             seg_response(&state, &headers, kind, state.seg.clone())
         },
@@ -1156,6 +1169,8 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg, data: Bytes) -
         gated_seg_stream(data.slice(start..end), state.gate.enter(), guard)
     } else if kind == Seg::Ramp {
         paced_stream(data.slice(start..end), state.ramp_next_free.clone(), guard)
+    } else if kind == Seg::Stall && ranged {
+        stalled_stream(guard)
     } else {
         seg_stream(
             data.slice(start..end),
@@ -1205,6 +1220,17 @@ fn paced_stream(data: Bytes, next_free: Arc<Mutex<tokio::time::Instant>>, guard:
         },
     );
     Body::from_stream(s)
+}
+
+/// A body that never yields a byte; holds the in-flight slot until dropped.
+fn stalled_stream(guard: InFlight) -> Body {
+    Body::from_stream(futures_util::StreamExt::map(
+        futures_util::stream::pending::<Result<Bytes, std::io::Error>>(),
+        move |r| {
+            let _held = &guard;
+            r
+        },
+    ))
 }
 
 /// Stream `data` in [`SEG_CHUNK`]s, sleeping `delay` before each; with
@@ -1436,6 +1462,8 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/seg-signed", get(seg_signed_handler))
         .route("/seg-ramp", seg_route(Seg::Ramp))
         .route("/seg-gated", seg_route(Seg::Gated))
+        .route("/seg-stall", seg_route(Seg::Stall))
+        .route("/seg-hang", seg_route(Seg::Hang))
         .route("/seg-429", seg_route(Seg::RateLimited))
         .route("/seg-429-drop", seg_route(Seg::RateLimitedDrop))
         .route("/seg-429-then-drop", seg_route(Seg::RateLimitedThenDrop))
