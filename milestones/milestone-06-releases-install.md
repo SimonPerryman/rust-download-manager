@@ -24,10 +24,9 @@ to people who already have Rust, Node and pnpm set up.
 - **GUI: the official `tauri-apps/tauri-action`.** It builds the platform
   bundles and uploads them to a GitHub Release.
 - **Both attach to the same release**, created by one tag push.
-- **GUI updates: the official Tauri updater plugin** (`tauri-plugin-updater`),
-  fed by a signed `latest.json` on each release. Its signatures use a
-  dedicated update keypair, separate from OS code signing and free, so it
-  doesn't wait for signing.
+- **GUI updates are deferred** (backlog): the Tauri updater plugin, fed by a
+  signed `latest.json` on each release, comes after the first release. Until
+  then, GUI users update by installing the new release.
 
 The CI pinning rules in [AGENTS.md](../AGENTS.md) (Toolchain) apply to the
 release workflow like any other, and `gui/scripts/guard-ci-pins.mjs` enforces
@@ -57,27 +56,6 @@ them. Roadmap: [roadmap.md](../roadmap.md).
   - Windows: NSIS `.exe` setup, and `.msi`;
   - macOS: `.dmg` for arm64 and x64;
   - Linux: AppImage and `.deb`.
-- **In-app updates (GUI)** with `tauri-plugin-updater`:
-  - `bundle.createUpdaterArtifacts: true`, and tauri-action uploads a signed
-    `latest.json` (`includeUpdaterJson`) to each release, signed with
-    `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The
-    public key goes in `tauri.conf.json` (`plugins.updater.pubkey`).
-  - One endpoint, HTTPS GitHub Releases only:
-    `https://github.com/SimonPerryman/rust-download-manager/releases/latest/download/latest.json`.
-    `releases/latest` skips pre-releases, so rc tags are never offered to
-    users.
-  - The check runs Rust-side on start, through rdm's own Tauri commands, as
-    the folder picker and open/reveal already do. The webview gets no
-    `updater:*` permission, and the CSP's `connect-src` stays as it is (the
-    request never leaves Rust). If a JS-side check is ever needed, grant only
-    `updater:allow-check` and `updater:allow-download-and-install`.
-  - Minimal UX: when a newer version exists, a small "Update available:
-    vX.Y.Z" notice with **Install & restart** and a dismiss. No settings and
-    no polling beyond the start-up check. A failed check is logged, not
-    shown.
-  - Formats the updater supports: NSIS and `.msi` on Windows, the `.app`
-    (via `.app.tar.gz`) on macOS, and AppImage on Linux. `.deb` users update
-    by installing the new `.deb`.
 - **CLI updates: no self-updater.** Homebrew users run `brew upgrade`;
   shell and PowerShell users re-run the installer one-liner, which replaces
   the binary in place. Why not dist's `install-updater = true`: it ships a
@@ -103,6 +81,10 @@ them. Roadmap: [roadmap.md](../roadmap.md).
   unsigned builds: a short README Install section, detail in `docs/`.
 
 **Out (deferred):**
+- **In-app updates (GUI)** (backlog, see the roadmap): the
+  `tauri-plugin-updater` flow, signed `latest.json`, the "Update available"
+  notice and its tests. The update keypair is already generated and backed
+  up for it.
 - **Code signing and notarisation** (backlog). The first release is
   unsigned:
   - Windows SmartScreen shows "Windows protected your PC" for an unknown
@@ -184,21 +166,6 @@ them. Roadmap: [roadmap.md](../roadmap.md).
   job attaches when it creates the release.
 - [x] `contents: write` is scoped to the upload job only.
 
-### In-app updates (GUI)
-- [ ] Add `tauri-plugin-updater`; set `plugins.updater.pubkey` and the one
-  HTTPS endpoint in `tauri.conf.json`, and `bundle.createUpdaterArtifacts`.
-- [ ] tauri-action uploads `latest.json` to the same release, with the
-  signing key and password passed from Actions secrets to that job only.
-- [ ] Rust commands to check for an update and to install it and restart;
-  the check runs once on start. No `updater:*` permission in
-  `capabilities/default.json`.
-- [ ] The "Update available" notice with **Install & restart**.
-- [ ] A test-only endpoint override (debug builds or a test feature, never a
-  release build) so tests can point the updater at a local fixture.
-- [ ] A release step that verifies every `latest.json` signature against the
-  public key in `tauri.conf.json` (minisign, pinned) before the release is
-  published.
-
 ### Smoke and checks
 - [x] A `smoke` job in the release workflow, after the build jobs, on each
   CLI target's native runner (`ubuntu-24.04` for gnu and musl,
@@ -238,14 +205,7 @@ them. Roadmap: [roadmap.md](../roadmap.md).
    the root). Create a fine-grained token with **Contents: read and write**
    on `homebrew-tap` only, and add it to this repo's Actions secrets as
    `HOMEBREW_TAP_TOKEN`. dist's `publish-homebrew-formula` job uses it.
-2. Generate the update keypair with `pnpm tauri signer generate` (in `gui/`,
-   with a password). Add the private key and its password to Actions secrets
-   as `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`;
-   the public key goes in `tauri.conf.json` in the PR.
-3. **Back up the private key and its password** outside GitHub (e.g. a
-   password manager). Losing either means installed copies can never be
-   updated in-app again; users would have to reinstall by hand.
-4. Optional: a `release` environment with required reviewers, so a tag push
+2. Optional: a `release` environment with required reviewers, so a tag push
    waits for approval before the write-scoped jobs run.
 
 ## Acceptance criteria
@@ -284,23 +244,6 @@ and apply here without being restated._
   `brew install simonperryman/tap/rdm && rdm --version`, and on
   `ubuntu-24.04` and `windows-2025-vs2026` runs the shell and PowerShell
   one-liners followed by `rdm --version`.
-- [ ] Pushing `v0.1.0-rc.1` also attaches `latest.json` with an entry and
-  signature for each updatable bundle (Windows, both macOS archs, Linux
-  AppImage), and the release's signature-check step passes against the
-  public key in `tauri.conf.json`.
-- [ ] The signature check fails on a `latest.json` signed with a different
-  key (run it locally with a throwaway keypair).
-- [ ] An e2e or integration test points the updater (via the test-only
-  override) at a local fixture `latest.json` offering a higher version and
-  asserts the "Update available" notice appears; offering the same version,
-  it asserts no notice.
-- [ ] A Rust test serves a fixture update whose signature doesn't match the
-  public key and asserts the install is rejected and the app stays on its
-  version.
-- [ ] A release build ignores the test-only endpoint override (a test or
-  guard asserts it's compiled out).
-- [ ] `capabilities/default.json` grants no `updater:*` permission and the
-  CSP's `connect-src` is unchanged (asserted by a test or guard).
 - [ ] The README's Install section shows the one-liners and links to the
   install docs, which hold the unsigned-build notes; the links resolve
   against the `v0.1.0` release.
@@ -318,5 +261,8 @@ Decided:
    (`local-artifacts-jobs`): the GUI bundles are build artifacts that dist's
    `host` job attaches when it publishes the one release. No shared draft
    release.
+4. **In-app updater:** decided, out of M6 and moved to the roadmap backlog
+   with code signing. The first releases ship without it; GUI users update
+   by installing the new release.
 4. **`latest.json` and a draft release:** moot, since no draft release is
    used (3).
