@@ -25,7 +25,7 @@ export function FinishNotifications({ notifications, onOpen, onReveal, onDismiss
   return (
     <div
       aria-live="polite"
-      className="fixed bottom-12 right-4 z-[65] grid w-[min(352px,calc(100vw-32px))] gap-2"
+      className="fixed bottom-12 right-4 z-65 grid w-[min(352px,calc(100vw-32px))] gap-2"
     >
       {notifications.map((n) => (
         <Card

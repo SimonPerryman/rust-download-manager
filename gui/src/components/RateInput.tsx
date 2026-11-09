@@ -67,7 +67,7 @@ export function RateInput({
           value={value.amount}
           onChange={(e) => onChange({ ...value, amount: sanitizeAmount(e.target.value) })}
           onFocus={(e) => e.currentTarget.select()}
-          className={`min-w-0 bg-transparent tabular-nums text-ink placeholder:text-g400 focus-visible:outline-none ${
+          className={`min-w-0 bg-transparent tabular-nums text-ink placeholder:text-g400 focus-visible:outline-hidden ${
             sm ? "w-16 px-2 text-xs" : "flex-1 px-3 text-sm"
           }`}
         />
@@ -76,7 +76,7 @@ export function RateInput({
           disabled={disabled}
           value={value.unit}
           onChange={(e) => onChange({ ...value, unit: e.target.value as RateUnit })}
-          className={`border-l border-line-strong bg-hover text-ink focus-visible:outline-none ${
+          className={`border-l border-line-strong bg-hover text-ink focus-visible:outline-hidden ${
             sm ? "px-1 text-xs" : "px-2 text-sm"
           }`}
         >

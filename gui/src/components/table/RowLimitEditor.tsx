@@ -34,7 +34,7 @@ export function RowLimitEditor({ editor }: { editor: LimitEditor }) {
   return (
     <div
       ref={ref}
-      className={`absolute right-0 z-[3] w-max max-w-[320px] whitespace-normal rounded-lg bg-raised p-3 text-left shadow-pop ring-1 ring-line ${
+      className={`absolute right-0 z-3 w-max max-w-[320px] whitespace-normal rounded-lg bg-raised p-3 text-left shadow-pop ring-1 ring-line ${
         flip ? "bottom-full" : "top-full"
       }`}
     >
