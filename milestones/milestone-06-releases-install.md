@@ -271,7 +271,7 @@ and apply here without being restated._
 - [x] `guard-release-workflow.mjs` fails on a copy of `release.yml` with a
   `pull_request:` trigger added, and on one with top-level
   `contents: write`. (A guard self-test, run in `pnpm lint` or vitest.)
-- [ ] The release workflow doesn't run on pull requests: the PR that adds it
+- [x] The release workflow doesn't run on pull requests: the PR that adds it
   shows no `Release` run in its checks.
 - [x] `tauri.conf.json` has identifier `io.github.simonperryman.rdm`, and
   `bundle.publisher`, `copyright` and `license` are set (asserted by the
