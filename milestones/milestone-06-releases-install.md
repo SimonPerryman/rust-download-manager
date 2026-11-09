@@ -1,7 +1,7 @@
 ---
 id: M6
 title: Releases & install
-status: todo
+status: done
 depends-on: [M5]
 tags: [cli, gui, ci]
 ---
@@ -153,7 +153,7 @@ them. Roadmap: [roadmap.md](../roadmap.md).
     push only;
   - top-level `permissions: contents: read`; `contents: write` only on the
     job that creates the release and uploads assets.
-- [ ] Owner setup steps (below) done before the first non-rc tag.
+- [x] Owner setup steps (below) done before the first non-rc tag.
 
 ### GUI release (tauri-action)
 - [x] A GUI job (or reusable workflow called from `release.yml`) runs
@@ -240,11 +240,12 @@ and apply here without being restated._
   `bundle.publisher`, `copyright` and `license` are set (asserted by the
   guard or a Rust test reading the file); the existing e2e suite passes
   under the new identifier.
-- [ ] After tagging `v0.1.0`, a `verify-install` job on `macos-15` runs
+- [x] After tagging `v0.1.0`, a `verify-install` job on `macos-15` runs
   `brew install simonperryman/tap/rdm && rdm --version`, and on
   `ubuntu-24.04` and `windows-2025-vs2026` runs the shell and PowerShell
   one-liners followed by `rdm --version`.
-- [ ] The README's Install section shows the one-liners and links to the
+  (Passed in the `v0.1.0` release run, with the Homebrew formula published.)
+- [x] The README's Install section shows the one-liners and links to the
   install docs, which hold the unsigned-build notes; the links resolve
   against the `v0.1.0` release.
 
