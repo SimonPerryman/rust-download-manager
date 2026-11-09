@@ -220,12 +220,12 @@ and apply here without being restated._
     `.AppImage` and `.deb`.
   Checked by a final workflow step that lists the release's assets with
   `gh release view <tag> --json assets` and fails on any missing pattern.
-  (Proven by `v0.1.0-rc.3`, whose one pre-release holds every asset above.
-  Its asset step was skipped by a workflow condition, fixed since; the next
-  tag runs it.)
-- [ ] The `smoke` job passes on every CLI target: checksum file matches,
+  (Proven by `v0.1.0-rc.3`, and by `v0.1.0-rc.4`, whose asset-check step
+  passed.)
+- [x] The `smoke` job passes on every CLI target: checksum file matches,
   `rdm --version` prints the tag's version, and the local-HTTP download with
   `--checksum` exits 0.
+  (Proven by `v0.1.0-rc.4`: the asset check and all five smoke jobs passed.)
 - [x] The version check fails the workflow, before any build, when the tag,
   workspace version, `gui/package.json` and `CHANGELOG.md` heading disagree.
   (Run it locally with a mismatched tag to show it fails.)
