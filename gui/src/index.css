@@ -869,9 +869,12 @@
     color: var(--g600);
   }
   /* Pinned above the lines while they scroll; the negative margin covers the
-     pane body's top padding, so lines don't show through above it. */
+     pane body's top padding, so lines don't show through above it. Sticky
+     offsets count from the scroller's content edge, inside that padding, so
+     the offset must undo the same 1rem: at top-0 the bar sat 1rem low and
+     covered the first line. */
   .log-bar {
-    @apply sticky top-0 z-1 -mt-4 mb-2 flex justify-end pt-4 pb-1 text-sm;
+    @apply sticky -top-4 z-1 -mt-4 mb-2 flex justify-end pt-4 pb-1 text-sm;
     background: var(--surface);
   }
   .log-detail {

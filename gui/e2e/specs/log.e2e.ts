@@ -1,11 +1,12 @@
 // End-to-end: the details pane's Log tab. A download that fails against
 // /seg-403 shows its engine lines, the error among them, in its Log tab; the
-// tab follows the details pane to another download (a finished one ends on
-// its Done summary), the Detailed toggle adds the per-request lines and
-// takes them away again, it says so when a download hasn't logged anything
-// (one waiting in the queue), keeps polling while it's open (a running
-// download's pause shows up without reopening it), and the list goes away
-// when another tab is chosen or the pane closes.
+// Detailed bar never covers a line, scrolled or not; the tab follows the
+// details pane to another download (a finished one ends on its Done
+// summary), the Detailed toggle adds the per-request lines and takes them
+// away again, it says so when a download hasn't logged anything (one waiting
+// in the queue), keeps polling while it's open (a running download's pause
+// shows up without reopening it), and the list goes away when another tab is
+// chosen or the pane closes.
 
 import { $, $$, browser, expect } from "@wdio/globals";
 import {
@@ -28,6 +29,39 @@ const DETAILED = `${PANE} [data-testid="log-detailed"]`;
 /** Where the Log tab keeps the Detailed choice (see gui/src/lib/prefs.ts). */
 const LOG_DETAILED_KEY = "rdm.gui.logDetailed";
 const tab = (key: string) => $(`${PANE} button[role="tab"][data-tab="${key}"]`);
+
+const BODY = `${PANE} .pane-body`;
+
+interface BarGeometry {
+  /** The scroller's padding-box top: where its visible area starts. */
+  scrollerTop: number;
+  barTop: number;
+  barBottom: number;
+  firstLineTop: number;
+  firstLineBottom: number;
+}
+
+/** Where the Detailed bar and the lines sit inside the scrolling pane body. */
+async function barGeometry(): Promise<BarGeometry> {
+  return browser.execute(
+    (body, detailed) => {
+      const scroller = document.querySelector(body) as HTMLElement;
+      const bar = (document.querySelector(detailed) as HTMLElement).closest(".log-bar")!;
+      const barRect = bar.getBoundingClientRect();
+      const scrollerTop = scroller.getBoundingClientRect().top + scroller.clientTop;
+      const line = (scroller.querySelector("ol li") as HTMLElement).getBoundingClientRect();
+      return {
+        scrollerTop,
+        barTop: barRect.top,
+        barBottom: barRect.bottom,
+        firstLineTop: line.top,
+        firstLineBottom: line.bottom,
+      };
+    },
+    BODY,
+    DETAILED,
+  );
+}
 
 /** Opens the details pane for `id` by clicking its row (outside the buttons). */
 async function openDetails(id: number): Promise<void> {
@@ -79,12 +113,67 @@ describe("rdm GUI log tab", () => {
     await expect($(`${LOG} li[data-level="error"]`)).toBeExisting();
   });
 
+  it("keeps the Detailed bar clear of a one-line log", async () => {
+    const missing = await addThroughDialog(`${baseUrl}/missing`);
+    ids.push(missing);
+    await waitForStatus(missing, "failed", 30_000);
+    await openDetails(missing);
+    await expect(tab("log")).toHaveAttribute("aria-selected", "true");
+    await waitForText(LOG, "server returned HTTP 404");
+    const g = await barGeometry();
+    // Below the bar, not under it: the two rects don't intersect.
+    expect(g.firstLineTop).toBeGreaterThanOrEqual(g.barBottom);
+    expect(g.barTop).toBeCloseTo(g.scrollerTop, 0);
+  });
+
   it("follows the details pane to another download", async () => {
     await openDetails(done);
     await expect(tab("log")).toHaveAttribute("aria-selected", "true");
     await waitForText(LOG, "Saved to ");
     await waitForText(LOG, "Done · 97.6 KB in ");
     await waitForGone(`${LOG} li[data-level="error"]`, "the other download's error stayed");
+  });
+
+  it("pins the Detailed bar flush to the top of a scrolled log", async () => {
+    // Shrink the pane body so even this short log scrolls.
+    const scrolled = await browser.execute((body) => {
+      const scroller = document.querySelector(body) as HTMLElement;
+      scroller.style.flex = "none";
+      scroller.style.height = "90px";
+      scroller.scrollTop = 20;
+      return { top: scroller.scrollTop, max: scroller.scrollHeight - scroller.clientHeight };
+    }, BODY);
+    try {
+      expect(scrolled.max).toBeGreaterThan(20);
+      expect(scrolled.top).toBeGreaterThan(0);
+      // Flush with the visible top: no band where lines show through above
+      // it, and not sitting low over the lines.
+      const g = await barGeometry();
+      expect(g.barTop).toBeCloseTo(g.scrollerTop, 0);
+
+      // Back at the top, the first line sits below the bar again. Retried:
+      // a poll landing before the scroll event can follow the log's bottom.
+      let top = g;
+      await browser
+        .waitUntil(
+          async () => {
+            await browser.execute((body) => {
+              (document.querySelector(body) as HTMLElement).scrollTop = 0;
+            }, BODY);
+            top = await barGeometry();
+            return top.firstLineTop >= top.barBottom;
+          },
+          { timeout: 5_000 },
+        )
+        .catch(() => undefined);
+      expect(top.firstLineTop).toBeGreaterThanOrEqual(top.barBottom);
+    } finally {
+      await browser.execute((body) => {
+        const scroller = document.querySelector(body) as HTMLElement;
+        scroller.style.flex = "";
+        scroller.style.height = "";
+      }, BODY);
+    }
   });
 
   it("adds the per-request lines while Detailed is on", async () => {
