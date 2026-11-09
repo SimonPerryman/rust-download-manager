@@ -19,7 +19,7 @@ export type LimitEditor = {
   commit: (next?: RateDraft, refocus?: boolean) => void;
   cancel: () => void;
   /** The gauge button, where focus goes back when the editor closes from the keyboard. */
-  buttonRef: RefObject<HTMLButtonElement>;
+  buttonRef: RefObject<HTMLButtonElement | null>;
 };
 
 // Commits on Enter or when focus leaves the editor; the engine validates and
