@@ -1,0 +1,55 @@
+# Dependabot version updates. Security updates are separate and not delayed
+# by the cooldown below.
+#
+# - Weekly, with minor and patch bumps grouped into one PR per ecosystem;
+#   majors arrive one PR each so their breaking changes are reviewed alone.
+# - A 7-day cooldown keeps a brand-new release out until it has had time to
+#   be yanked or flagged (supply-chain safety).
+# - Actions stay SHA-pinned: Dependabot moves the SHA and its `# vX.Y.Z`
+#   comment together, which `gui/scripts/guard-ci-pins.mjs` accepts.
+# - The Rust toolchain (`rust-toolchain.toml`), runner images and
+#   `node-version` are pinned by hand, not here: bump each in its own commit.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci(deps)
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+
+  # The root workspace, which includes the GUI's Tauri crate (gui/src-tauri).
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
+
+  # The GUI and its E2E suite are separate pnpm roots, each with a lockfile.
+  - package-ecosystem: npm
+    directories:
+      - /gui
+      - /gui/e2e
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
