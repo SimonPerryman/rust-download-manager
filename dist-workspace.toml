@@ -1,0 +1,37 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist'
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.33.1"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "powershell", "homebrew"]
+# A GitHub repo to push Homebrew formulas to
+tap = "SimonPerryman/homebrew-tap"
+# Publish jobs to run in CI
+publish-jobs = ["homebrew"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+# Whether to install an updater program
+install-updater = false
+# Skip the pull_request trigger: the workflow runs on tag push only
+pr-run-mode = "skip"
+local-artifacts-jobs = ["./release-gui"]
+post-announce-jobs = ["./release-checks"]
+# release.yml is hand-edited to the repo's CI pinning rules (AGENTS.md), so
+# `dist generate` must not overwrite it. When bumping cargo-dist-version,
+# regenerate it without this line and re-apply the edits listed at its top.
+allow-dirty = ["ci"]
+
+[dist.github-custom-runners]
+global = "ubuntu-24.04"
+x86_64-unknown-linux-gnu = "ubuntu-24.04"
+x86_64-unknown-linux-musl = "ubuntu-24.04"
+x86_64-pc-windows-msvc = "windows-2025-vs2026"
+aarch64-apple-darwin = "macos-15"
+x86_64-apple-darwin = { runner = "macos-15", host = "aarch64-apple-darwin" }

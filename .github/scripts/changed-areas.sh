@@ -31,7 +31,7 @@ while IFS= read -r f; do
     gui/src-tauri/*) rust=true gui=true ;;
     gui/*) gui=true ;;
     src/* | tests/* | benches/* | examples/* | .config/* | .cargo/* | \
-      Cargo.toml | */Cargo.toml | Cargo.lock | rust-toolchain.toml | \
+      Cargo.toml | */Cargo.toml | Cargo.lock | rust-toolchain.toml | dist-workspace.toml | \
       deny.toml | audit.toml)
       rust=true
       ;;

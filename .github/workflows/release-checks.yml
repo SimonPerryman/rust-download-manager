@@ -1,0 +1,167 @@
+# Checks a published release, called by release.yml as a dist custom job
+# (`post-announce-jobs` in dist-workspace.toml) once the release exists:
+#
+# * assets: every expected CLI and GUI asset is attached;
+# * smoke: each CLI archive, on its own platform, matches its .sha256 file,
+#   reports the tag's version and downloads a file over local HTTP with
+#   --checksum;
+# * verify-install (stable tags only, once the Homebrew formula is
+#   published): the Homebrew, shell and PowerShell one-liners from the README
+#   install a working `rdm`.
+
+name: Release checks
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ fromJson(inputs.plan).announcement_tag }}
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  assets:
+    name: release assets
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Fail on any missing asset
+        run: |
+          set -euo pipefail
+          names=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+          echo "$names"
+          missing=0
+          for target in x86_64-pc-windows-msvc.zip aarch64-apple-darwin.tar.xz x86_64-apple-darwin.tar.xz \
+            x86_64-unknown-linux-gnu.tar.xz x86_64-unknown-linux-musl.tar.xz; do
+            for name in "rdm-$target" "rdm-$target.sha256"; do
+              grep -qxF "$name" <<<"$names" || { echo "::error::missing $name"; missing=1; }
+            done
+          done
+          # Exact names, then the GUI bundles' patterns (their names carry the version).
+          for name in rdm-installer.sh rdm-installer.ps1 rdm.rb; do
+            grep -qxF "$name" <<<"$names" || { echo "::error::missing $name"; missing=1; }
+          done
+          for pattern in '_x64-setup\.exe$' '_x64_.*\.msi$' '_aarch64\.dmg$' '_x64\.dmg$' '\.AppImage$' '\.deb$'; do
+            grep -qE "$pattern" <<<"$names" || { echo "::error::no asset matches $pattern"; missing=1; }
+          done
+          exit "$missing"
+
+  smoke:
+    name: smoke (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+            archive: tar.xz
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+            archive: tar.xz
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2025-vs2026
+            archive: zip
+          - target: aarch64-apple-darwin
+            runner: macos-15
+            archive: tar.xz
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+            archive: tar.xz
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Python does the hashing, unpacking and serving: it's on every runner,
+      # where sha256sum, xz and unzip are not.
+      - name: Find Python
+        # Windows' `python3` can be the Microsoft Store stub.
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then py=python; else py=python3; fi
+          "$py" --version
+          echo "PY=$py" >> "$GITHUB_ENV"
+
+      - name: Download the archive and check its checksum
+        env:
+          ARCHIVE: rdm-${{ matrix.target }}.${{ matrix.archive }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --pattern "$ARCHIVE" --pattern "$ARCHIVE.sha256" --dir smoke
+          cd smoke
+          expected=$(cut -d ' ' -f 1 "$ARCHIVE.sha256")
+          actual=$("$PY" -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$ARCHIVE")
+          echo "expected $expected, got $actual"
+          [ "$expected" = "$actual" ]
+          if [ "${{ matrix.archive }}" = zip ]; then "$PY" -m zipfile -e "$ARCHIVE" out; else "$PY" -m tarfile -e "$ARCHIVE" out; fi
+          bin=$(find out -type f \( -name rdm -o -name rdm.exe \) | head -n 1)
+          chmod +x "$bin"
+          echo "RDM=$PWD/$bin" >> "$GITHUB_ENV"
+
+      - name: rdm --version matches the tag
+        run: |
+          set -euo pipefail
+          printed=$("$RDM" --version)
+          echo "$printed"
+          [ "$printed" = "rdm ${TAG#v}" ]
+
+      - name: Download over local HTTP with --checksum
+        run: |
+          set -euo pipefail
+          mkdir -p served
+          "$PY" -c 'import os; open("served/blob.bin","wb").write(os.urandom(3*1024*1024))'
+          hex=$("$PY" -c 'import hashlib; print(hashlib.sha256(open("served/blob.bin","rb").read()).hexdigest())')
+          port=8765
+          "$PY" -m http.server "$port" --bind 127.0.0.1 --directory served &
+          server=$!
+          trap 'kill "$server" || true' EXIT
+          for _ in $(seq 1 50); do
+            "$PY" -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:$port/blob.bin')" 2>/dev/null && break
+            sleep 0.2
+          done
+          "$RDM" "http://127.0.0.1:$port/blob.bin" -o downloaded.bin --checksum "sha256:$hex"
+
+  verify-install:
+    name: verify install (${{ matrix.installer }})
+    # The formula reaches the tap only for stable tags (publish-homebrew-formula
+    # skips pre-releases), and releases/latest skips pre-releases too.
+    if: ${{ !fromJson(inputs.plan).announcement_is_prerelease }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - installer: homebrew
+            runner: macos-15
+          - installer: shell
+            runner: ubuntu-24.04
+          - installer: powershell
+            runner: windows-2025-vs2026
+    steps:
+      - name: brew install
+        if: ${{ matrix.installer == 'homebrew' }}
+        run: |
+          set -euo pipefail
+          brew install simonperryman/tap/rdm
+          [ "$(rdm --version)" = "rdm ${TAG#v}" ]
+
+      - name: Shell installer
+        if: ${{ matrix.installer == 'shell' }}
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/SimonPerryman/rust-download-manager/releases/latest/download/rdm-installer.sh | sh
+          [ "$("$HOME/.cargo/bin/rdm" --version)" = "rdm ${TAG#v}" ]
+
+      - name: PowerShell installer
+        if: ${{ matrix.installer == 'powershell' }}
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -c "irm https://github.com/SimonPerryman/rust-download-manager/releases/latest/download/rdm-installer.ps1 | iex"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $printed = & "$env:USERPROFILE\.cargo\bin\rdm.exe" --version
+          if ($printed -ne "rdm $($env:TAG.TrimStart('v'))") { throw "got '$printed'" }

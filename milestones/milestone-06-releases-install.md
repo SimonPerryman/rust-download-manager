@@ -143,7 +143,7 @@ them. Roadmap: [roadmap.md](../roadmap.md).
 ### Version, identifier and metadata
 - [x] Move the version to `[workspace.package]`; both crates inherit it;
   remove `version` from `tauri.conf.json`; keep `gui/package.json` in step.
-- [ ] Add `scripts/check-release-version` (or a Rust test) that fails unless
+- [x] Add `scripts/check-release-version` (or a Rust test) that fails unless
   the tag, the workspace version, `gui/package.json` and the `CHANGELOG.md`
   heading agree. The release workflow runs it first.
 - [x] Change the identifier to `io.github.simonperryman.rdm`.
@@ -153,13 +153,13 @@ them. Roadmap: [roadmap.md](../roadmap.md).
 - [x] Add `CHANGELOG.md` with an `## Unreleased` section covering M0 to M5.
 
 ### CLI release (dist)
-- [ ] `dist init` with the targets, installers (`shell`, `powershell`,
+- [x] `dist init` with the targets, installers (`shell`, `powershell`,
   `homebrew`; no `msi`) and `tap = "SimonPerryman/homebrew-tap"`,
   `publish-jobs = ["homebrew"]`. Pin `cargo-dist-version`.
-- [ ] Make the `publish-homebrew-formula` job commit `rdm.rb` at the tap's
+- [x] Make the `publish-homebrew-formula` job commit `rdm.rb` at the tap's
   root, not under `Formula/` (a dist setting if the pinned version has one,
   otherwise an edit to the generated job, kept by `allow-dirty`).
-- [ ] Adjust the generated `.github/workflows/release.yml` to the repo's
+- [x] Adjust the generated `.github/workflows/release.yml` to the repo's
   rules, then set `allow-dirty = ["ci"]` so `dist` doesn't regenerate it:
   - every `uses:` pinned to a full commit SHA with a `# vX.Y.Z` comment;
   - exact runner images: `ubuntu-24.04`, `windows-2025-vs2026`, `macos-15`
@@ -174,15 +174,15 @@ them. Roadmap: [roadmap.md](../roadmap.md).
 - [ ] Owner setup steps (below) done before the first non-rc tag.
 
 ### GUI release (tauri-action)
-- [ ] A GUI job (or reusable workflow called from `release.yml`) runs
+- [x] A GUI job (or reusable workflow called from `release.yml`) runs
   `tauri-apps/tauri-action` pinned by SHA, in a matrix of
   `windows-2025-vs2026`, `macos-15` (`--target aarch64-apple-darwin` and
   `--target x86_64-apple-darwin`) and `ubuntu-22.04` (Open questions 1; with
   the same apt build packages as CI). Node and pnpm are pinned as in `ci.yml`.
-- [ ] It uploads to the release dist creates for the tag, not a second
+- [x] It uploads to the release dist creates for the tag, not a second
   release: a dist custom job (Open questions 3) whose bundles dist's `host`
   job attaches when it creates the release.
-- [ ] `contents: write` is scoped to the upload job only.
+- [x] `contents: write` is scoped to the upload job only.
 
 ### In-app updates (GUI)
 - [ ] Add `tauri-plugin-updater`; set `plugins.updater.pubkey` and the one
@@ -200,7 +200,7 @@ them. Roadmap: [roadmap.md](../roadmap.md).
   published.
 
 ### Smoke and checks
-- [ ] A `smoke` job in the release workflow, after the build jobs, on each
+- [x] A `smoke` job in the release workflow, after the build jobs, on each
   CLI target's native runner (`ubuntu-24.04` for gnu and musl,
   `windows-2025-vs2026`, `macos-15`, `macos-15-intel`):
   - download the target's archive from the release and check it against
@@ -209,21 +209,22 @@ them. Roadmap: [roadmap.md](../roadmap.md).
   - serve a generated file over local HTTP (`python3 -m http.server`) and
     run `rdm http://127.0.0.1:<port>/<file> --checksum sha256:<hex>`;
     expect exit code 0.
-- [ ] A guard, `gui/scripts/guard-release-workflow.mjs`, part of `pnpm lint`
+- [x] A guard, `gui/scripts/guard-release-workflow.mjs`, part of `pnpm lint`
   next to `guard-ci-pins.mjs`. It fails if `release.yml`:
   - has any trigger other than `push: tags`;
   - grants `contents: write` (or any `write`) at the top level, or to a job
     other than the release/upload jobs.
-- [ ] Regular CI runs `dist plan` (pinned) so a broken dist config fails a
+- [x] Regular CI runs `dist plan` (pinned) so a broken dist config fails a
   PR, not a tag.
 
 ### Docs
-- [ ] README **Install**: the shell, PowerShell and Homebrew one-liners and a
+- [x] README **Install**: the shell, PowerShell and Homebrew one-liners and a
   link to the Releases page. A docs page holds GUI downloads by platform,
   the unsigned-build notes for SmartScreen and Gatekeeper, how to update
-  (in-app for the GUI, `brew upgrade` or the one-liner for the CLI), and
+  (reinstalling the GUI until the in-app updater lands, `brew upgrade` or
+  the one-liner for the CLI), and
   building from source as the last option.
-- [ ] `CONTRIBUTING.md`: how to cut a release (bump PR, then tag).
+- [x] `CONTRIBUTING.md`: how to cut a release (bump PR, then tag).
 
 ### Stretch
 - [ ] winget manifest (`winget-pkgs` PR) and/or a scoop bucket.
@@ -262,12 +263,12 @@ and apply here without being restated._
 - [ ] The `smoke` job passes on every CLI target: checksum file matches,
   `rdm --version` prints the tag's version, and the local-HTTP download with
   `--checksum` exits 0.
-- [ ] The version check fails the workflow, before any build, when the tag,
+- [x] The version check fails the workflow, before any build, when the tag,
   workspace version, `gui/package.json` and `CHANGELOG.md` heading disagree.
   (Run it locally with a mismatched tag to show it fails.)
-- [ ] `pnpm lint` passes, including `guard-ci-pins.mjs` over `release.yml`
+- [x] `pnpm lint` passes, including `guard-ci-pins.mjs` over `release.yml`
   and the new `guard-release-workflow.mjs`.
-- [ ] `guard-release-workflow.mjs` fails on a copy of `release.yml` with a
+- [x] `guard-release-workflow.mjs` fails on a copy of `release.yml` with a
   `pull_request:` trigger added, and on one with top-level
   `contents: write`. (A guard self-test, run in `pnpm lint` or vitest.)
 - [ ] The release workflow doesn't run on pull requests: the PR that adds it

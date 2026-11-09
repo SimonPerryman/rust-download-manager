@@ -1,0 +1,121 @@
+# The desktop GUI's bundles for a release, called by release.yml as a dist
+# custom job (`local-artifacts-jobs` in dist-workspace.toml). tauri-action
+# only builds here; the bundles are uploaded as `artifacts-gui-*` workflow
+# artifacts, which release.yml's host job attaches to the one release it
+# creates for the tag, next to the CLI's assets.
+
+name: Release GUI
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: gui (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            runner: windows-2025-vs2026
+            target: ""
+          - name: macos-arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+          - name: macos-x64
+            runner: macos-15
+            target: x86_64-apple-darwin
+          # 22.04, not 24.04: the AppImage and .deb then need glibc 2.35, not
+          # 2.39, so they run on more distributions.
+          - name: linux-x64
+            runner: ubuntu-22.04
+            target: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Tauri's webview build deps, as in ci.yml, plus `file` for the AppImage.
+      - name: Install Linux webview build dependencies
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf file
+
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        shell: bash
+        run: |
+          rustup toolchain install
+          if [ -n "${{ matrix.target }}" ]; then rustup target add "${{ matrix.target }}"; fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: gui/package.json
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.22.1
+          cache: pnpm
+          cache-dependency-path: gui/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: gui
+        run: pnpm install --frozen-lockfile
+
+      # WiX accepts only a numeric MSI version (major.minor.patch[.build]), so
+      # a pre-release such as 0.1.0-rc.1 builds its .msi as 0.1.0. The app and
+      # every other bundle keep the full version.
+      - name: Choose tauri build arguments
+        id: args
+        shell: bash
+        env:
+          TAG: ${{ fromJson(inputs.plan).announcement_tag }}
+        run: |
+          args=""
+          if [ -n "${{ matrix.target }}" ]; then args="--target ${{ matrix.target }}"; fi
+          version="${TAG#v}"
+          if [ "$RUNNER_OS" = Windows ] && [ "$version" != "${version%%-*}" ]; then
+            conf="$RUNNER_TEMP/msi-version.conf.json"
+            printf '{"bundle":{"windows":{"wix":{"version":"%s"}}}}' "${version%%-*}" > "$conf"
+            args="$args --config $(cygpath -m "$conf")"
+          fi
+          echo "args=$args" >> "$GITHUB_OUTPUT"
+
+      - name: Build the GUI bundles
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
+        with:
+          projectPath: gui
+          tauriScript: pnpm tauri
+          args: ${{ steps.args.outputs.args }}
+
+      # Only the installers users download; tauri-action's other outputs
+      # (the .app folder, the .rpm, plain binaries) stay out of the release.
+      - name: Collect the bundles
+        shell: bash
+        run: |
+          mkdir gui-bundles
+          find target -path '*/release/bundle/*' -type f \
+            \( -name '*-setup.exe' -o -name '*.msi' -o -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \) ! -name 'rw.*' \
+            -exec cp {} gui-bundles/ \;
+          ls -l gui-bundles
+          [ -n "$(ls gui-bundles)" ]
+
+      - name: Upload the bundles
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: artifacts-gui-${{ matrix.name }}
+          path: gui-bundles/*
+          if-no-files-found: error

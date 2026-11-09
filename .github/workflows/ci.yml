@@ -475,13 +475,36 @@ jobs:
           TAURI_DRIVER_PATH: ${{ github.workspace }}/target/debug/tauri-driver
         run: xvfb-run -a pnpm exec wdio run wdio.conf.ts --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
+  # dist reads the workspace, dist-workspace.toml and the release workflow it
+  # generated, so a broken dist config fails here, on the PR, not on a tag.
+  dist-plan:
+    name: dist plan
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.ci == 'true' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
+
+      # The version in the URL pins dist; keep it equal to cargo-dist-version
+      # in dist-workspace.toml and the one release.yml installs.
+      - name: Install dist
+        shell: bash
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.33.1/cargo-dist-installer.sh | sh
+
+      - name: dist plan
+        run: dist plan
   # The one check to require in branch protection, so the ruleset needn't
   # track job or shard names. Green when `changes` succeeded and every other
   # job succeeded or was skipped as unaffected (an e2e-build skip skips the
   # shards too); red on any failure or cancellation.
   ci-ok:
     name: ci ok
-    needs: [changes, test, gui, gui-linux, checks, e2e-build, e2e]
+    needs: [changes, test, gui, gui-linux, checks, e2e-build, e2e, dist-plan]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     steps:
