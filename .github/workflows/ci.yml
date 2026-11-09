@@ -314,15 +314,39 @@ jobs:
       - name: Unpack e2e binaries
         run: tar -xf e2e-bin.tar
 
+      # The runner's apt mirror sometimes crawls (one shard took 5.5 min to
+      # fetch ~60 MB), so the .debs are cached per runner image. Only main
+      # saves, as with the other caches.
+      - name: Key the apt package cache by runner image
+        id: image
+        run: echo "key=e2e-apt-v1-$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+
+      - name: Restore apt package cache
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-debs
+          key: ${{ steps.image.outputs.key }}
+
       # Runtime libraries only, plus WebKitWebDriver (the native driver
       # tauri-driver fronts on Linux) and a virtual display.
-      # --no-install-recommends: the recommended extras stall every app
-      # launch ~30 s on the runner.
+      # --no-install-recommends: the recommends pull in xdg-desktop-portal,
+      # whose D-Bus activation stalls every app launch ~30 s on the runner.
       - name: Install Linux webview runtime, driver and display
         run: |
+          mkdir -p ~/apt-debs
+          sudo cp ~/apt-debs/*.deb /var/cache/apt/archives/ 2>/dev/null || true
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-common libxdo3 webkit2gtk-driver xvfb
+          sudo apt-get install -y --no-install-recommends -o APT::Keep-Downloaded-Packages=true libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-common libxdo3 webkit2gtk-driver xvfb
+          cp /var/cache/apt/archives/*.deb ~/apt-debs/
           ! ldd target/debug/rdm-gui | grep "not found"
+
+      - name: Save apt package cache
+        if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 && steps.apt-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-debs
+          key: ${{ steps.image.outputs.key }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
