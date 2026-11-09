@@ -19,6 +19,9 @@ targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-
 install-path = "CARGO_HOME"
 # Whether to install an updater program
 install-updater = false
+# Build only the rdm package (cargo -p), not the whole workspace: the GUI crate
+# needs the webview system libraries, which the CLI runners don't have.
+precise-builds = true
 # Skip the pull_request trigger: the workflow runs on tag push only
 pr-run-mode = "skip"
 local-artifacts-jobs = ["./release-gui"]

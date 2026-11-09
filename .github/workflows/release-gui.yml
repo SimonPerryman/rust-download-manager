@@ -25,22 +25,28 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
+      # `bundles`: only the formats the release ships. The .rpm in particular
+      # rejects a pre-release version such as 0.1.0-rc.1.
       matrix:
         include:
           - name: windows-x64
             runner: windows-2025-vs2026
             target: ""
+            bundles: nsis,msi
           - name: macos-arm64
             runner: macos-15
             target: aarch64-apple-darwin
+            bundles: app,dmg
           - name: macos-x64
             runner: macos-15
             target: x86_64-apple-darwin
+            bundles: app,dmg
           # 22.04, not 24.04: the AppImage and .deb then need glibc 2.35, not
           # 2.39, so they run on more distributions.
           - name: linux-x64
             runner: ubuntu-22.04
             target: ""
+            bundles: deb,appimage
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,8 +90,8 @@ jobs:
         env:
           TAG: ${{ fromJson(inputs.plan).announcement_tag }}
         run: |
-          args=""
-          if [ -n "${{ matrix.target }}" ]; then args="--target ${{ matrix.target }}"; fi
+          args="--bundles ${{ matrix.bundles }}"
+          if [ -n "${{ matrix.target }}" ]; then args="$args --target ${{ matrix.target }}"; fi
           version="${TAG#v}"
           if [ "$RUNNER_OS" = Windows ] && [ "$version" != "${version%%-*}" ]; then
             conf="$RUNNER_TEMP/msi-version.conf.json"
@@ -101,8 +107,8 @@ jobs:
           tauriScript: pnpm tauri
           args: ${{ steps.args.outputs.args }}
 
-      # Only the installers users download; tauri-action's other outputs
-      # (the .app folder, the .rpm, plain binaries) stay out of the release.
+      # Only the installers users download; the .app folder (shipped inside
+      # the .dmg) and plain binaries stay out of the release.
       - name: Collect the bundles
         shell: bash
         run: |
