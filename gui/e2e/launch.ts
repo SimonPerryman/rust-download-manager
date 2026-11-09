@@ -18,7 +18,35 @@ const fixtureBinary = exe(path.join(targetDir, "debug", "examples", "fixture_ser
 const tauriDriverBinary =
   process.env.TAURI_DRIVER_PATH ?? exe(path.join(os.homedir(), ".cargo", "bin", "tauri-driver"));
 
-export const DRIVER_PORT = 4444;
+/** Resolve `count` distinct ports that are free right now on loopback. */
+async function freePorts(count: number): Promise<number[]> {
+  const servers = await Promise.all(
+    Array.from(
+      { length: count },
+      () =>
+        new Promise<net.Server>((resolve, reject) => {
+          const server = net.createServer();
+          server.once("error", reject);
+          server.listen(0, "127.0.0.1", () => resolve(server));
+        }),
+    ),
+  );
+  const ports = servers.map((s) => (s.address() as net.AddressInfo).port);
+  await Promise.all(servers.map((s) => new Promise((r) => s.close(r))));
+  return ports;
+}
+
+// tauri-driver's ports, free ones rather than its fixed 4444/4445 defaults so
+// concurrent runs (e.g. from two worktrees) don't collide. Picked once when the
+// launcher loads the config and inherited (via the environment) by the workers
+// that load it again; set either variable to choose a port yourself.
+if (!process.env.RDM_E2E_DRIVER_PORT || !process.env.RDM_E2E_NATIVE_PORT) {
+  const [driver, native] = await freePorts(2);
+  process.env.RDM_E2E_DRIVER_PORT ??= String(driver);
+  process.env.RDM_E2E_NATIVE_PORT ??= String(native);
+}
+const DRIVER_PORT = Number(process.env.RDM_E2E_DRIVER_PORT);
+const NATIVE_PORT = Number(process.env.RDM_E2E_NATIVE_PORT);
 
 /** The WebdriverIO settings both runs share; each adds its specs and hooks. */
 export const baseConfig = {
@@ -79,14 +107,15 @@ async function waitForPort(port: number, timeoutMs = 15_000): Promise<void> {
 
 /** Start tauri-driver and wait until it accepts connections. */
 export async function startTauriDriver(): Promise<void> {
-  const driverArgs = process.env.MSEDGEDRIVER_PATH
-    ? ["--native-driver", process.env.MSEDGEDRIVER_PATH]
-    : [];
+  const driverArgs = ["--port", String(DRIVER_PORT), "--native-port", String(NATIVE_PORT)];
+  if (process.env.MSEDGEDRIVER_PATH)
+    driverArgs.push("--native-driver", process.env.MSEDGEDRIVER_PATH);
   tauriDriver = spawn(tauriDriverBinary, driverArgs, {
     stdio: ["ignore", "inherit", "inherit"],
   });
   tauriDriver.once("error", (e) => console.error(`tauri-driver failed to start: ${e}`));
   await waitForPort(DRIVER_PORT);
+  console.log(`tauri-driver on port ${DRIVER_PORT} (native driver on ${NATIVE_PORT})`);
 }
 
 /** Stop tauri-driver and the fixture server. */
