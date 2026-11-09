@@ -105,3 +105,10 @@ rules, so `dist generate` leaves it alone (`allow-dirty` in
 `dist-workspace.toml`). When bumping dist, regenerate it and re-apply the
 edits listed at its top; `pnpm lint` (in `gui/`) checks the pins, the trigger
 and the permissions.
+
+The repository allows only GitHub's own actions and a short list of
+third-party ones (Settings, Actions, General: "Allow specified actions").
+A workflow that uses any other third-party action fails at startup, before a
+job runs. Pull-request CI doesn't run the release workflows, so it won't
+catch this: have a new action's `owner/repo@*` pattern added there before
+the change that uses it is merged.
