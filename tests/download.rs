@@ -28,10 +28,78 @@ async fn stalled_body_times_out_and_retries() {
     .expect("a stalled body must not hang the download");
 
     match result {
-        Err(Error::Http(e)) => assert!(e.is_timeout(), "{e:?}"),
+        Err(Error::TimedOut) => {}
         other => panic!("expected a timeout, got {other:?}"),
     }
     assert_eq!(server.stats("/stall").requests(), 2, "retried once");
+}
+
+/// A server that never sends response headers times out and is retried
+/// instead of hanging.
+#[tokio::test]
+async fn missing_response_headers_time_out_and_retry() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+
+    let req = DownloadRequest::to_path(server.url("/hang"), dir.path().join("hang.bin"))
+        .with_retry(rdm::RetryPolicy {
+            max_attempts: 2,
+            ..rdm::RetryPolicy::none()
+        })
+        .with_read_timeout(Duration::from_millis(200));
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        download(&req, &Control::new(), |_| {}),
+    )
+    .await
+    .expect("a server that never answers must not hang the download");
+
+    match result {
+        Err(Error::TimedOut) => {}
+        other => panic!("expected a timeout, got {other:?}"),
+    }
+    assert_eq!(server.stats("/hang").requests(), 2, "retried once");
+}
+
+/// Download `route` (a 160 KiB `/seg` variant) over two connections with a
+/// 200 ms read timeout and no retries (a retry that makes progress resets the
+/// budget), expecting it to time out.
+async fn assert_segment_times_out(route: &str) {
+    let server = common::spawn_with(common::FixtureConfig {
+        seg_len: 160 * 1024,
+        ..common::FixtureConfig::default()
+    })
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let req = DownloadRequest::to_path(server.url(route), dir.path().join("seg.bin"))
+        .with_connections(2)
+        .with_min_segment_size(16 * 1024)
+        .with_ramp(rdm::engine::Ramping::Off)
+        .with_retry(rdm::RetryPolicy::none())
+        .with_read_timeout(Duration::from_millis(200));
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        download(&req, &Control::new(), |_| {}),
+    )
+    .await
+    .expect("a stuck segment must not hang the download");
+
+    match result {
+        Err(Error::TimedOut) => {}
+        other => panic!("expected a timeout, got {other:?}"),
+    }
+}
+
+/// A ranged segment response whose body never arrives times out.
+#[tokio::test]
+async fn stalled_segment_times_out() {
+    assert_segment_times_out("/seg-stall").await;
+}
+
+/// A ranged segment request that never gets response headers times out.
+#[tokio::test]
+async fn unanswered_segment_request_times_out() {
+    assert_segment_times_out("/seg-hang").await;
 }
 
 /// On a single connection too, a 429's `Retry-After` is waited out even when

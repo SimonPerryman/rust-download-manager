@@ -192,8 +192,7 @@ async fn changed_resource_restarts_onto_v2() {
     );
 
     // Flip the server to v2.
-    let bumped = reqwest::get(server.url("/mutable/bump")).await.unwrap();
-    assert_eq!(bumped.status(), 204);
+    server.bump_mutable();
 
     let req = DownloadRequest::to_path(server.url("/mutable"), &out);
     let summary = download(&req, &Control::new(), |_| {}).await.unwrap();

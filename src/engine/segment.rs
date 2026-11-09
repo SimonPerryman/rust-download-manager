@@ -169,6 +169,7 @@ pub(crate) struct Job<'a> {
     pub state: DownloadState,
     pub workers: usize,
     pub min_segment_size: u64,
+    pub read_timeout: Duration,
     pub ramp: Ramping,
     pub first: Option<reqwest::Response>,
 }
@@ -319,6 +320,7 @@ struct Shared<'a> {
     validator: Option<String>,
     total: u64,
     min: u64,
+    read_timeout: Duration,
     part: &'a Path,
     table: Mutex<Table>,
     progressed: Notify,
@@ -376,6 +378,7 @@ pub(crate) async fn run(
         validator: job.state.if_range().map(str::to_owned),
         total,
         min: job.min_segment_size,
+        read_timeout: job.read_timeout,
         part: job.part,
         table: Mutex::new(Table {
             segments,
@@ -726,6 +729,7 @@ async fn fetch_segment(
                 }
                 let resp = tokio::select! {
                     resp = request.send() => resp?,
+                    _ = tokio::time::sleep(shared.read_timeout) => return Err(Error::TimedOut.into()),
                     _ = stop.wait_for(|stopped| *stopped) => return Ok(Outcome::Stopped),
                 };
                 check_ranged(&resp, pos, end, shared.total, shared.redirected)?;
@@ -738,7 +742,7 @@ async fn fetch_segment(
         let mut progressed = false;
         loop {
             let next = tokio::select! {
-                next = body.next() => next,
+                next = super::next_chunk(&mut body, shared.read_timeout) => next,
                 _ = stop.wait_for(|stopped| *stopped) => return Ok(Outcome::Stopped),
             };
             let Some(chunk) = next else { break };
