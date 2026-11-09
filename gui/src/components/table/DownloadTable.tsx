@@ -33,7 +33,7 @@ type Props = {
   onRefocused: () => void;
   empty: EmptyCopy;
   onAdd: () => void;
-  tableRef: React.RefObject<HTMLTableElement>;
+  tableRef: React.RefObject<HTMLTableElement | null>;
   selection: Selection;
   /** The waiting order, first to start first. */
   queue: readonly number[];
