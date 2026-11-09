@@ -1160,7 +1160,11 @@ mod tests {
         tx.send(Ok(1)).unwrap();
         assert!(matches!(next_chunk(&mut body, timeout).await, Some(Ok(1))));
         tokio::time::sleep(timeout * 5).await;
-        tx.send(Ok(2)).unwrap();
+        let late = tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(timeout / 2).await;
+            late.send(Ok(2)).unwrap();
+        });
         assert!(matches!(next_chunk(&mut body, timeout).await, Some(Ok(2))));
         assert!(matches!(
             next_chunk(&mut body, timeout).await,
