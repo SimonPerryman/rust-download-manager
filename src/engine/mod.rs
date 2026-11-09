@@ -77,7 +77,7 @@ pub struct DownloadRequest {
     /// Max parallel connections, added one at a time while speed keeps
     /// rising; 1 forces single-connection. Default 4; clamped to 1..=16 at use.
     pub connections: u8,
-    /// Smallest segment worth its own connection (files under 2× this stay
+    /// Smallest segment worth its own connection (files under 2Ã— this stay
     /// single). Default 1 MiB; a tuning knob, mainly for tests.
     pub min_segment_size: u64,
     ramp: Ramping,
@@ -93,7 +93,9 @@ const DEFAULT_MIN_SEGMENT_SIZE: u64 = 1024 * 1024;
 /// Until the response headers arrive, a deadline from the request's start
 /// (connect, TLS, redirects, time to headers); then, while the body is read, an
 /// idle limit between reads (our own throttle sleeps don't count against it).
-/// Never a total deadline, since downloads run long.
+/// Never a total deadline, since downloads run long. Enforced by the engine
+/// ([`send`], [`next_chunk`]) rather than reqwest's `read_timeout`, whose body
+/// clock keeps running while we sleep between reads.
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Longest a connect may take; a host dropping our packets (e.g. a firewall
@@ -232,6 +234,10 @@ pub enum Error {
     /// Built via `From`, which strips the URL so it can't leak into messages.
     #[error("request failed: {0}")]
     Http(reqwest::Error),
+    /// The server sent nothing for the read timeout: no response headers in
+    /// time, or a stalled body (transient: retried).
+    #[error("timed out waiting for the server")]
+    TimedOut,
     /// The server answered with a non-success status.
     #[error("server returned HTTP {0}")]
     Status(u16),
@@ -302,10 +308,10 @@ pub async fn download(
     control: &Control,
     mut on_progress: impl FnMut(Progress),
 ) -> Result<Summary> {
+    install_crypto_provider();
     let client = reqwest::Client::builder()
         .user_agent(USER_AGENT)
         .connect_timeout(CONNECT_TIMEOUT)
-        .read_timeout(req.read_timeout)
         .build()?;
 
     // The target may not be known until the first response (derived filename),
@@ -552,7 +558,7 @@ async fn attempt_once(
 
     // FRESH: issue a plain GET so we can learn the (post-redirect) URL and the
     // derived filename before committing to a target path.
-    let resp = send(control, client.get(&req.url)).await?;
+    let resp = send(control, client.get(&req.url), req.read_timeout).await?;
     let status = resp.status();
     if !status.is_success() {
         return Err(status_error(&resp).into());
@@ -636,6 +642,7 @@ async fn attempt_once(
                 state: st,
                 workers,
                 min_segment_size: req.min_segment_size,
+                read_timeout: req.read_timeout,
                 ramp: req.ramp,
                 first: Some(resp),
             };
@@ -650,7 +657,18 @@ async fn attempt_once(
     let st = DownloadState::new(&req.url, &target, total, etag, last_modified);
     st.save(&sidecar)?;
 
-    let bytes = stream_to_part(resp, file, control, &part, &sidecar, 0, total, on_progress).await?;
+    let bytes = stream_to_part(
+        resp,
+        file,
+        control,
+        req.read_timeout,
+        &part,
+        &sidecar,
+        0,
+        total,
+        on_progress,
+    )
+    .await?;
     Ok((status.as_u16(), part, bytes))
 }
 
@@ -676,6 +694,7 @@ async fn resume_segmented(
         state: st,
         workers: usize::from(req.effective_connections()),
         min_segment_size: req.min_segment_size,
+        read_timeout: req.read_timeout,
         ramp: req.ramp,
         first: None,
     };
@@ -709,7 +728,7 @@ async fn resume(
     if let Some(validator) = st.if_range() {
         builder = builder.header(header::IF_RANGE, validator);
     }
-    let resp = send(control, builder).await?;
+    let resp = send(control, builder, req.read_timeout).await?;
     let status = resp.status();
 
     match status {
@@ -725,6 +744,7 @@ async fn resume(
                 resp,
                 file,
                 control,
+                req.read_timeout,
                 part,
                 sidecar,
                 offset,
@@ -746,13 +766,23 @@ async fn resume(
             let fresh = DownloadState::new(&st.url, target, total, etag, last_modified);
             fresh.save(sidecar)?;
 
-            let bytes =
-                stream_to_part(resp, file, control, part, sidecar, 0, total, on_progress).await?;
+            let bytes = stream_to_part(
+                resp,
+                file,
+                control,
+                req.read_timeout,
+                part,
+                sidecar,
+                0,
+                total,
+                on_progress,
+            )
+            .await?;
             Ok((status.as_u16(), part.to_path_buf(), bytes))
         }
         StatusCode::RANGE_NOT_SATISFIABLE => {
             // Offset past the end. If we already have the whole thing, we're
-            // done; otherwise the `.part` is inconsistent — restart.
+            // done; otherwise the `.part` is inconsistent â€” restart.
             if let Some(total) = st.total {
                 if offset >= total {
                     on_progress(Progress {
@@ -777,7 +807,7 @@ async fn resume(
 #[allow(clippy::too_many_arguments)]
 async fn restart(
     client: &reqwest::Client,
-    _req: &DownloadRequest,
+    req: &DownloadRequest,
     control: &Control,
     target: &Path,
     part: &Path,
@@ -789,7 +819,7 @@ async fn restart(
         let st = DownloadState::load(sidecar)?;
         st.url
     };
-    let resp = send(control, client.get(&url)).await?;
+    let resp = send(control, client.get(&url), req.read_timeout).await?;
     let status = resp.status();
     if !status.is_success() {
         return Err(status_error(&resp));
@@ -801,7 +831,18 @@ async fn restart(
     fresh.save(sidecar)?;
 
     let file = tokio::fs::File::create(part).await?;
-    let bytes = stream_to_part(resp, file, control, part, sidecar, 0, total, on_progress).await?;
+    let bytes = stream_to_part(
+        resp,
+        file,
+        control,
+        req.read_timeout,
+        part,
+        sidecar,
+        0,
+        total,
+        on_progress,
+    )
+    .await?;
     Ok((status.as_u16(), part.to_path_buf(), bytes))
 }
 
@@ -816,6 +857,7 @@ async fn stream_to_part(
     resp: reqwest::Response,
     mut file: tokio::fs::File,
     control: &Control,
+    read_timeout: Duration,
     part: &Path,
     sidecar: &Path,
     start_offset: u64,
@@ -836,7 +878,7 @@ async fn stream_to_part(
     });
 
     let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
+    while let Some(chunk) = next_chunk(&mut stream, read_timeout).await {
         // Control point: honoured once per chunk, before the write.
         match control.poll() {
             Flow::Cancel => {
@@ -927,6 +969,13 @@ fn sidecar_for_part(part: &Path) -> PathBuf {
     state::sidecar_path(&target_for_part(part))
 }
 
+/// Make ring the process-wide rustls crypto provider, which reqwest needs
+/// before it builds a client. Idempotent: a provider already installed (by an
+/// earlier call or by the embedding app) is kept.
+fn install_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 /// Read a header value as an owned `String`, if present and valid UTF-8.
 fn header_str(headers: &header::HeaderMap, name: header::HeaderName) -> Option<String> {
     headers
@@ -952,7 +1001,7 @@ fn is_transient(err: &Error) -> bool {
             e.is_timeout() || e.is_connect() || e.is_request() || e.is_body() || e.is_decode()
         }
         Error::Status(code) => *code >= 500 || *code == 408 || *code == 429,
-        Error::Throttled { .. } => true,
+        Error::Throttled { .. } | Error::TimedOut => true,
         Error::Incomplete(_) | Error::RedirectExpired(_) => true,
         Error::Io(_)
         | Error::Cancelled
@@ -999,20 +1048,41 @@ fn interruption(control: &Control) -> Option<Error> {
 }
 
 /// Send a request, cut short by pause/cancel: a host that never answers would
-/// otherwise hold the download until the read timeout.
-async fn send(control: &Control, request: reqwest::RequestBuilder) -> Result<reqwest::Response> {
+/// otherwise hold the download until the read timeout. [`Error::TimedOut`] if
+/// the response headers don't arrive within `read_timeout`.
+async fn send(
+    control: &Control,
+    request: reqwest::RequestBuilder,
+    read_timeout: Duration,
+) -> Result<reqwest::Response> {
     let response = request.send();
     tokio::pin!(response);
+    let deadline = tokio::time::sleep(read_timeout);
+    tokio::pin!(deadline);
     let mut poll = tokio::time::interval(segment::CONTROL_POLL_INTERVAL);
     loop {
         tokio::select! {
             resp = &mut response => return Ok(resp?),
+            _ = &mut deadline => return Err(Error::TimedOut),
             _ = poll.tick() => {
                 if let Some(e) = interruption(control) {
                     return Err(e);
                 }
             }
         }
+    }
+}
+
+/// The next body chunk, or [`Error::TimedOut`] if none arrives within
+/// `read_timeout`. The clock only runs while we wait here, so throttle sleeps
+/// between reads don't count against it.
+async fn next_chunk<S, T>(body: &mut S, read_timeout: Duration) -> Option<Result<T>>
+where
+    S: futures_util::Stream<Item = reqwest::Result<T>> + Unpin,
+{
+    match tokio::time::timeout(read_timeout, body.next()).await {
+        Ok(next) => next.map(|chunk| chunk.map_err(Error::from)),
+        Err(_) => Some(Err(Error::TimedOut)),
     }
 }
 
@@ -1071,6 +1141,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn crypto_provider_install_is_idempotent_and_lets_a_client_build() {
+        install_crypto_provider();
+        install_crypto_provider();
+        assert!(rustls::crypto::CryptoProvider::get_default().is_some());
+        reqwest::Client::builder()
+            .build()
+            .expect("a TLS-capable client builds once the provider is installed");
+    }
+
+    #[test]
     fn target_and_sidecar_derive_from_part() {
         let part = Path::new("/tmp/archive.zip.part");
         assert_eq!(target_for_part(part), Path::new("/tmp/archive.zip"));
@@ -1087,6 +1167,7 @@ mod tests {
             retry_after: Duration::ZERO,
         }));
         assert!(is_transient(&Error::Incomplete("x".into())));
+        assert!(is_transient(&Error::TimedOut));
         assert!(is_transient(&Error::RedirectExpired(403)));
         assert!(!is_transient(&Error::Status(404)));
         assert!(!is_transient(&Error::Cancelled));

@@ -28,10 +28,37 @@ async fn stalled_body_times_out_and_retries() {
     .expect("a stalled body must not hang the download");
 
     match result {
-        Err(Error::Http(e)) => assert!(e.is_timeout(), "{e:?}"),
+        Err(Error::TimedOut) => {}
         other => panic!("expected a timeout, got {other:?}"),
     }
     assert_eq!(server.stats("/stall").requests(), 2, "retried once");
+}
+
+/// A server that never sends response headers times out and is retried
+/// instead of hanging.
+#[tokio::test]
+async fn missing_response_headers_time_out_and_retry() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+
+    let req = DownloadRequest::to_path(server.url("/hang"), dir.path().join("hang.bin"))
+        .with_retry(rdm::RetryPolicy {
+            max_attempts: 2,
+            ..rdm::RetryPolicy::none()
+        })
+        .with_read_timeout(Duration::from_millis(200));
+    let result = tokio::time::timeout(
+        Duration::from_secs(10),
+        download(&req, &Control::new(), |_| {}),
+    )
+    .await
+    .expect("a server that never answers must not hang the download");
+
+    match result {
+        Err(Error::TimedOut) => {}
+        other => panic!("expected a timeout, got {other:?}"),
+    }
+    assert_eq!(server.stats("/hang").requests(), 2, "retried once");
 }
 
 /// On a single connection too, a 429's `Retry-After` is waited out even when

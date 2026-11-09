@@ -35,7 +35,6 @@
 //! - `GET /flaky`     — supports ranges; drops the connection mid-body for the
 //!   first `FLAKY_FAILURES` requests, then serves fully.
 //! - `GET /mutable`   — serves the current version with `Range`/`If-Range`.
-//! - `GET /mutable/bump` — flip `/mutable` to v2 (new bytes, length, ETag).
 //!
 //! Multi-segment routes (M3), all over [`seg_payload`] (4 MiB by default,
 //! streamed in 32 KiB chunks) with a strong ETag + `Last-Modified` and closed
@@ -961,12 +960,6 @@ async fn mutable_handler(State(state): State<Arc<AppState>>, headers: HeaderMap)
     ranged_response(&headers, etag, body)
 }
 
-/// `/mutable/bump`: flip `/mutable` to v2.
-async fn mutable_bump_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    state.mutable_bumped.store(true, Ordering::SeqCst);
-    StatusCode::NO_CONTENT
-}
-
 /// The multi-segment route variants (see the module docs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Seg {
@@ -1358,6 +1351,11 @@ impl TestServer {
         &self.state.gate
     }
 
+    /// Flip `/mutable` to v2 (new bytes, length, ETag).
+    pub fn bump_mutable(&self) {
+        self.state.mutable_bumped.store(true, Ordering::SeqCst);
+    }
+
     /// The bytes the `/seg*` routes serve on this server.
     pub fn seg_payload(&self) -> Vec<u8> {
         self.state.seg.to_vec()
@@ -1417,7 +1415,6 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/liar", get(liar_handler))
         .route("/flaky", get(flaky_handler))
         .route("/mutable", get(mutable_handler))
-        .route("/mutable/bump", get(mutable_bump_handler))
         .route("/seg", seg_route(Seg::Plain))
         .route("/seg/{len}/{*name}", get(seg_sized_handler))
         .route("/seg-flaky", seg_route(Seg::Flaky))

@@ -13,6 +13,8 @@ The first release: everything below is new.
 
 - Download a file over HTTP or HTTPS with `rdm <url>`, or from the desktop
   app.
+- HTTPS trusts the certificates your operating system trusts, so downloads
+  work on networks that use a company or other custom certificate authority.
 - Large files download faster: each one is split across several connections
   (4 by default, up to 16). rdm starts on one connection and adds more only
   while the speed keeps rising.
