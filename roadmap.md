@@ -68,6 +68,11 @@ needs M5's details pane, context menu and multi-select, and comes after M6.
 - **Code signing (cut from M6)**: sign the Windows binaries and installers
   (e.g. Azure Trusted Signing) and sign and notarise the macOS app (Apple
   Developer Program), so SmartScreen and Gatekeeper stop warning.
+- **In-app updater (cut from M6)**: the Tauri updater plugin with a signed
+  `latest.json` on each release, a Rust-side check on start and an "Update
+  available" notice with Install & restart. The update keypair already
+  exists. The drafted scope and tests are in the git history of
+  [[milestone-06-releases-install]].
 - **Archive and tag automation (cut from M7)**: auto-archive finished
   downloads after N days; auto-tag rules by host or file type; tag rename,
   merge and colours.
