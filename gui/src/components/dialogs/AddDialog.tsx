@@ -137,7 +137,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
 
   return (
     <div className="fixed inset-0 z-50">
-      <div onClick={close} className="fixed inset-0 bg-[var(--backdrop)]" />
+      <div onClick={close} className="fixed inset-0 bg-(--backdrop)" />
       <div
         ref={dialogRef}
         role="dialog"
@@ -170,7 +170,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
                   }
                 }}
                 placeholder={"https://example.com/file.iso\nhttps://example.com/another.tar.gz"}
-                className="block max-h-40 min-h-20 w-full resize-y rounded-md border border-line-strong bg-raised px-3 py-2 font-mono text-xs leading-5 transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-none"
+                className="block max-h-40 min-h-20 w-full resize-y rounded-md border border-line-strong bg-raised px-3 py-2 font-mono text-xs leading-5 transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden"
               />
               <p className="text-xs text-g400">
                 Press Ctrl+V anywhere in rdm to open this with your clipboard. Ctrl+Enter adds.
@@ -187,7 +187,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
                   aria-label="Destination folder"
                   value={dest}
                   onChange={(e) => setDest(e.target.value)}
-                  className="flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 text-sm transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-none"
+                  className="flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 text-sm transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden"
                 />
                 <button onClick={browse} className="btn btn-soft">
                   <Folder />
@@ -197,47 +197,56 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
               <p className="text-xs text-g400">rdm remembers the last folder you used.</p>
             </Field>
 
-            <button
-              type="button"
-              aria-expanded={moreOpen}
-              aria-controls="add-more-options"
-              onClick={() => setMoreOpen((o) => !o)}
-              className="inline-flex items-center gap-1 text-sm font-medium text-g600 hover:text-ink"
-            >
-              <ChevronDown size={14} className={moreOpen ? "" : "-rotate-90"} />
-              More options
-            </button>
+            <div>
+              <button
+                type="button"
+                aria-expanded={moreOpen}
+                aria-controls="add-more-options"
+                onClick={() => setMoreOpen((o) => !o)}
+                className="inline-flex items-center gap-1 text-sm font-medium text-g600 hover:text-ink"
+              >
+                <ChevronDown size={14} className={moreOpen ? "" : "-rotate-90"} />
+                More options
+              </button>
 
-            {/* Always rendered (just hidden) so `aria-controls` resolves and drafts survive collapsing. */}
-            <div id="add-more-options" hidden={!moreOpen} className="space-y-4">
-              <Field label="SHA-256 checksum" htmlFor="add-checksum">
-                <input
-                  id="add-checksum"
-                  type="text"
-                  aria-label="SHA-256 checksum"
-                  value={checksum}
-                  disabled={!single}
-                  onChange={(e) => setChecksum(e.target.value)}
-                  placeholder="e3b0c44298fc1c149afbf4c8996fb924…"
-                  className="flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 font-mono text-xs transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-none disabled:opacity-45"
-                />
-                <p className="text-xs text-g400">
-                  {single
-                    ? "If provided, the file is verified after download and discarded on mismatch."
-                    : "A checksum names one file. Add links one at a time to check each."}
-                </p>
-              </Field>
+              {/* Always rendered (just hidden) so `aria-controls` resolves and drafts survive collapsing.
+                  It shares a wrapper with the toggle: as space-y's last child, a hidden panel would
+                  leave a gap under the toggle. */}
+              <div id="add-more-options" hidden={!moreOpen} className="mt-4 space-y-4">
+                <Field label="SHA-256 checksum" htmlFor="add-checksum">
+                  <input
+                    id="add-checksum"
+                    type="text"
+                    aria-label="SHA-256 checksum"
+                    value={checksum}
+                    disabled={!single}
+                    onChange={(e) => setChecksum(e.target.value)}
+                    placeholder="e3b0c44298fc1c149afbf4c8996fb924…"
+                    className="flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 font-mono text-xs transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden disabled:opacity-45"
+                  />
+                  <p className="text-xs text-g400">
+                    {single
+                      ? "If provided, the file is verified after download and discarded on mismatch."
+                      : "A checksum names one file. Add links one at a time to check each."}
+                  </p>
+                </Field>
 
-              <Field label="Speed limit">
-                <RateInput label="Speed limit" value={limit} onChange={setLimit} onEnter={submit} />
-                <p className="text-xs text-g400">
-                  {globalLimit != null && exceeds(limit, globalLimit)
-                    ? `The global limit is ${formatSpeed(globalLimit)} for all downloads combined, so ${single ? "this one" : "these"} won't go faster than that.`
-                    : single
-                      ? "Empty = no limit."
-                      : "Applies to each download. Empty = no limit."}
-                </p>
-              </Field>
+                <Field label="Speed limit">
+                  <RateInput
+                    label="Speed limit"
+                    value={limit}
+                    onChange={setLimit}
+                    onEnter={submit}
+                  />
+                  <p className="text-xs text-g400">
+                    {globalLimit != null && exceeds(limit, globalLimit)
+                      ? `The global limit is ${formatSpeed(globalLimit)} for all downloads combined, so ${single ? "this one" : "these"} won't go faster than that.`
+                      : single
+                        ? "Empty = no limit."
+                        : "Applies to each download. Empty = no limit."}
+                  </p>
+                </Field>
+              </div>
             </div>
 
             {error && <p className="text-xs text-danger-ink">{error}</p>}

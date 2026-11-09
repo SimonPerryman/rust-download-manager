@@ -35,7 +35,7 @@ export function StopDialog({ ds, onCancel, onConfirm }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-[60] grid place-items-center bg-[var(--backdrop)] p-4"
+      className="fixed inset-0 z-60 grid place-items-center bg-(--backdrop) p-4"
       onClick={(e) => e.target === e.currentTarget && onCancel()}
     >
       <div

@@ -16,7 +16,7 @@ export function NameFilter({ query, onQuery }: { query: string; onQuery: (q: str
         value={query}
         onChange={(e) => onQuery(e.target.value)}
         onKeyDown={(e) => e.key === "Escape" && onQuery("")}
-        className="name-filter h-8 rounded-md border border-transparent bg-hover pl-8 pr-8 text-sm placeholder:text-g400 hover:border-line-strong focus:border-accent focus:bg-raised focus:outline-none"
+        className="name-filter h-8 rounded-md border border-transparent bg-hover pl-8 pr-8 text-sm placeholder:text-g400 hover:border-line-strong focus:border-accent focus:bg-raised focus:outline-hidden"
       />
       {query && (
         <button

@@ -100,7 +100,7 @@ export function DownloadSettings({
       onBlur={() => commit(field)}
       onKeyDown={(e) => e.key === "Enter" && commit(field)}
       inputMode="numeric"
-      className="flex h-7 w-full rounded-md border border-line-strong bg-raised px-2 text-sm tabular-nums transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-none disabled:opacity-60 aria-[invalid]:border-danger"
+      className="flex h-7 w-full rounded-md border border-line-strong bg-raised px-2 text-sm tabular-nums transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden disabled:opacity-60 aria-[invalid]:border-danger"
     />
   );
 
