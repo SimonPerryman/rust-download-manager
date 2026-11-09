@@ -74,8 +74,8 @@ jobs:
       - name: Doctests
         run: cargo test --doc
 
-  # On Linux, e2e-build lints and tests the GUI crate (it builds the same app
-  # anyway) and checks runs the frontend checks.
+  # On Linux, gui-linux lints and tests the GUI crate and checks runs the
+  # frontend checks.
   gui:
     name: gui build (windows-2025)
     runs-on: windows-2025-vs2026
@@ -137,6 +137,61 @@ jobs:
 
       # The root's default-members keep `cargo test` off rdm-gui; its tests
       # (e.g. log rotation) need gui/dist too, built above.
+      - name: Test GUI crate
+        run: cargo test -p rdm-gui
+
+  # Its own job so the GUI crate's clippy and test builds stay off the e2e
+  # critical path (e2e-build -> shards).
+  gui-linux:
+    name: gui crate (ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        run: rustup toolchain install
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Tauri's webview build deps.
+      - name: Install Linux webview build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: gui/package.json
+
+      # Every Linux job lists the same lockfiles, so they share one pnpm cache
+      # entry (prune-caches keeps only the newest per key prefix).
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.22.1
+          cache: pnpm
+          cache-dependency-path: |
+            gui/pnpm-lock.yaml
+            gui/e2e/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: gui
+        run: pnpm install --frozen-lockfile
+
+      # The GUI crate embeds gui/dist, so it must exist first.
+      - name: Build frontend (tsc + vite)
+        working-directory: gui
+        run: pnpm build
+
+      - name: Clippy GUI crate (deny warnings)
+        run: cargo clippy -p rdm-gui --all-targets -- -D warnings
+
       - name: Test GUI crate
         run: cargo test -p rdm-gui
 
@@ -209,10 +264,10 @@ jobs:
         working-directory: gui
         run: pnpm audit --prod
 
-  # Builds the debug app and fixture server once for every e2e shard, then
-  # lints and tests the GUI crate while the shards run.
+  # Builds the debug app, fixture server and tauri-driver once for every e2e
+  # shard.
   e2e-build:
-    name: e2e build + gui crate (ubuntu)
+    name: e2e build (ubuntu)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -280,15 +335,6 @@ jobs:
           path: e2e-bin.tar
           retention-days: 1
           if-no-files-found: error
-
-      # gui/dist exists now, which the GUI crate embeds.
-      - name: Clippy GUI crate (deny warnings)
-        run: cargo clippy -p rdm-gui --all-targets -- -D warnings
-
-      # The root's default-members keep the test job off rdm-gui; its tests
-      # (e.g. log rotation) need gui/dist too, built above.
-      - name: Test GUI crate
-        run: cargo test -p rdm-gui
 
   # The webview e2e suite, split across shards by spec file (wdio --shard).
   # Each shard is its own runner, so its app state dir, fixture server and
@@ -375,7 +421,7 @@ jobs:
   # it needs succeeded, so the ruleset needn't track job or shard names.
   ci-ok:
     name: ci ok
-    needs: [test, gui, checks, e2e-build, e2e]
+    needs: [test, gui, gui-linux, checks, e2e-build, e2e]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     steps:
@@ -396,7 +442,7 @@ jobs:
   # Prefixes no current job uses are left to the 7-day eviction.
   prune-caches:
     name: prune stale caches (main)
-    needs: [test, gui, checks, e2e-build, e2e]
+    needs: [test, gui, gui-linux, checks, e2e-build, e2e]
     if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     permissions:
