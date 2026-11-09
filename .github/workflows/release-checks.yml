@@ -27,8 +27,12 @@ env:
   GH_REPO: ${{ github.repository }}
 
 jobs:
+  # `!cancelled()` on every job: the caller's skipped publish-homebrew-formula
+  # (every pre-release skips it) must not skip these the way it would with the
+  # implicit success().
   assets:
     name: release assets
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: Fail on any missing asset
@@ -54,6 +58,7 @@ jobs:
 
   smoke:
     name: smoke (${{ matrix.target }})
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -130,7 +135,7 @@ jobs:
     name: verify install (${{ matrix.installer }})
     # The formula reaches the tap only for stable tags (publish-homebrew-formula
     # skips pre-releases), and releases/latest skips pre-releases too.
-    if: ${{ !fromJson(inputs.plan).announcement_is_prerelease }}
+    if: ${{ !cancelled() && !fromJson(inputs.plan).announcement_is_prerelease }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false

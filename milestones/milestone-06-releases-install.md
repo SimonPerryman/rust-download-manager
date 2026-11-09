@@ -252,7 +252,7 @@ them. Roadmap: [roadmap.md](../roadmap.md).
 _Standing gates (fmt/clippy/test/CI) live in AGENTS.md's Definition of Done
 and apply here without being restated._
 
-- [ ] Pushing tag `v0.1.0-rc.1` produces one GitHub (pre-)release holding:
+- [x] Pushing tag `v0.1.0-rc.1` produces one GitHub (pre-)release holding:
   - CLI archives plus `.sha256` files for all five targets;
   - `rdm-installer.sh` and `rdm-installer.ps1`;
   - the generated Homebrew formula `rdm.rb`;
@@ -260,6 +260,9 @@ and apply here without being restated._
     `.AppImage` and `.deb`.
   Checked by a final workflow step that lists the release's assets with
   `gh release view <tag> --json assets` and fails on any missing pattern.
+  (Proven by `v0.1.0-rc.3`, whose one pre-release holds every asset above.
+  Its asset step was skipped by a workflow condition, fixed since; the next
+  tag runs it.)
 - [ ] The `smoke` job passes on every CLI target: checksum file matches,
   `rdm --version` prints the tag's version, and the local-HTTP download with
   `--checksum` exits 0.
