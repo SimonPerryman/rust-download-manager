@@ -864,6 +864,23 @@
   .log li[data-level="error"] > span {
     color: var(--danger-ink);
   }
+  .log li[data-level="debug"] > span,
+  .log li[data-level="trace"] > span {
+    color: var(--g600);
+  }
+  /* Pinned above the lines while they scroll; the negative margin covers the
+     pane body's top padding, so lines don't show through above it. */
+  .log-bar {
+    @apply sticky top-0 z-1 -mt-4 mb-2 flex justify-end pt-4 pb-1 text-sm;
+    background: var(--surface);
+  }
+  .log-detail {
+    @apply flex cursor-pointer items-center gap-2;
+    color: var(--g600);
+  }
+  .log-detail input {
+    accent-color: var(--btn);
+  }
   .log-empty {
     @apply grid gap-1 text-sm;
   }

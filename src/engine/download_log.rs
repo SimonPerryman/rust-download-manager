@@ -2,9 +2,11 @@
 //!
 //! [`LogLayer`] is a tracing layer: it tags the Manager's `task` span with its
 //! download id and files every event under it into that download's bounded
-//! buffer. It records only the event's own message and fields, never span
-//! fields (the `download` span's URL), so it shows nothing the redacted file
-//! log doesn't.
+//! buffer. INFO-and-up lines and DEBUG ones (the "detailed" view: per-request
+//! detail) are capped separately, so a burst of detail never pushes out the
+//! lines that say what happened. It records only the event's own message and
+//! fields, never span fields (the `download` span's URL), so it shows nothing
+//! the redacted file log doesn't.
 
 use std::collections::{HashMap, VecDeque};
 use std::fmt::{self, Write as _};
@@ -14,11 +16,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use tracing::field::{Field, Visit};
 use tracing::{span, Event, Level, Subscriber};
+use tracing_subscriber::filter::{LevelFilter, Targets};
 use tracing_subscriber::layer::{Context, Layer};
 use tracing_subscriber::registry::LookupSpan;
 
-/// How many lines each download keeps; the oldest go first.
+/// How many INFO-and-up lines each download keeps; the oldest go first.
 pub const LOG_LINES: usize = 200;
+
+/// How many DEBUG lines each download keeps, apart from [`LOG_LINES`].
+pub(crate) const DETAILED_LOG_LINES: usize = 300;
 
 /// The span the Manager runs each download under; its `id` field keys the lines.
 pub(crate) const TASK_SPAN: &str = "task";
@@ -55,7 +61,7 @@ pub struct LogLine {
     /// When it was logged, in milliseconds since the Unix epoch.
     pub at: u64,
     pub level: LogLevel,
-    /// The event's message, e.g. `download failed`.
+    /// The event's message, e.g. `Paused`.
     pub message: String,
     /// The event's other fields as `name=value` pairs, space-separated.
     pub fields: String,
@@ -66,7 +72,36 @@ pub struct LogLine {
 /// bring a removed download's buffer back.
 #[derive(Default)]
 pub(crate) struct DownloadLogs {
-    buffers: Mutex<HashMap<u64, VecDeque<LogLine>>>,
+    buffers: Mutex<HashMap<u64, Buffer>>,
+}
+
+/// One download's lines, numbered in arrival order so the two caps' lines
+/// merge back into one log.
+#[derive(Default)]
+struct Buffer {
+    next: u64,
+    concise: VecDeque<(u64, LogLine)>,
+    detailed: VecDeque<(u64, LogLine)>,
+}
+
+impl Buffer {
+    fn push(&mut self, line: LogLine) {
+        let (lines, cap) = match line.level {
+            LogLevel::Debug | LogLevel::Trace => (&mut self.detailed, DETAILED_LOG_LINES),
+            _ => (&mut self.concise, LOG_LINES),
+        };
+        if lines.len() == cap {
+            lines.pop_front();
+        }
+        lines.push_back((self.next, line));
+        self.next += 1;
+    }
+
+    fn lines(&self) -> Vec<LogLine> {
+        let mut all: Vec<_> = self.concise.iter().chain(&self.detailed).collect();
+        all.sort_unstable_by_key(|(seq, _)| *seq);
+        all.into_iter().map(|(_, line)| line.clone()).collect()
+    }
 }
 
 impl DownloadLogs {
@@ -86,18 +121,24 @@ impl DownloadLogs {
             .lock()
             .unwrap()
             .get(&id)
-            .map(|b| b.iter().cloned().collect())
+            .map(Buffer::lines)
             .unwrap_or_default()
     }
 
     fn push(&self, id: u64, line: LogLine) {
         if let Some(buffer) = self.buffers.lock().unwrap().get_mut(&id) {
-            if buffer.len() == LOG_LINES {
-                buffer.pop_front();
-            }
-            buffer.push_back(line);
+            buffer.push(line);
         }
     }
+}
+
+/// What [`LogLayer`] keeps: INFO and up from anywhere, as the file log does,
+/// plus the engine's own DEBUG detail. Other crates' DEBUG lines are theirs to
+/// explain, and may name URLs.
+pub(crate) fn capture_filter() -> Targets {
+    Targets::new()
+        .with_default(LevelFilter::INFO)
+        .with_target("rdm::engine", LevelFilter::DEBUG)
 }
 
 /// The download id a `task` span carries, stored in the span's extensions.
@@ -246,6 +287,33 @@ mod tests {
         assert_eq!(lines[0].level, LogLevel::Info);
     }
 
+    /// Detail has its own cap: a flood of DEBUG lines keeps the INFO ones,
+    /// and the two read back interleaved in the order they were logged.
+    #[test]
+    fn detail_never_pushes_out_the_concise_lines() {
+        let logs = Arc::new(DownloadLogs::default());
+        logs.open(1);
+        with_layer(&logs, || {
+            let _task = tracing::error_span!("task", id = 1u64).entered();
+            tracing::info!("started");
+            for i in 0..DETAILED_LOG_LINES + 10 {
+                tracing::debug!(i, "detail");
+            }
+            tracing::warn!("retrying");
+            tracing::debug!("last detail");
+        });
+        let lines = logs.lines(1);
+        assert_eq!(lines.len(), 2 + DETAILED_LOG_LINES);
+        assert_eq!(lines[0].message, "started");
+        assert_eq!(lines[1].fields, "i=11");
+        let n = lines.len();
+        assert_eq!(
+            (lines[n - 2].message.as_str(), lines[n - 1].message.as_str()),
+            ("retrying", "last detail")
+        );
+        assert_eq!(lines[n - 1].level, LogLevel::Debug);
+    }
+
     #[test]
     fn files_lines_under_the_innermost_task_and_skips_the_rest() {
         let logs = Arc::new(DownloadLogs::default());
@@ -298,6 +366,28 @@ mod tests {
             tracing::info!("after");
         });
         assert!(logs.lines(7).is_empty());
+    }
+
+    /// The capture filter keeps the engine's own detail but not other
+    /// crates' (which may name URLs), nor anyone's TRACE; INFO and up is kept
+    /// from anywhere.
+    #[test]
+    fn detail_is_kept_only_from_the_engine() {
+        let logs = Arc::new(DownloadLogs::default());
+        logs.open(1);
+        let layer = LogLayer { logs: logs.clone() }.with_filter(capture_filter());
+        let subscriber = tracing_subscriber::registry().with(layer);
+        tracing::subscriber::with_default(subscriber, || {
+            let _task =
+                tracing::error_span!(target: "rdm::engine::manager", "task", id = 1u64).entered();
+            tracing::debug!(target: "rdm::engine::segment", "engine detail");
+            tracing::trace!(target: "rdm::engine::segment", "engine trace");
+            tracing::debug!(target: "reqwest::connect", "http://host/?token=SECRET");
+            tracing::debug!(target: "rdm_gui", "gui detail");
+            tracing::info!(target: "hyper::client", "foreign info");
+        });
+        let kept: Vec<_> = logs.lines(1).into_iter().map(|l| l.message).collect();
+        assert_eq!(kept, ["engine detail", "foreign info"]);
     }
 
     #[test]

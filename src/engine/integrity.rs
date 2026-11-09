@@ -67,13 +67,19 @@ impl fmt::Display for Checksum {
 
 impl Checksum {
     /// Hash `path` and return [`Error::ChecksumMismatch`] if the digest doesn't
-    /// match. Hashes on the blocking pool, off the async runtime.
+    /// match, logging the outcome either way. Hashes on the blocking pool, off
+    /// the async runtime.
     pub async fn verify(&self, path: &Path) -> crate::engine::Result<()> {
         let (checksum, path) = (self.clone(), path.to_path_buf());
         let actual = tokio::task::spawn_blocking(move || checksum.digest_file(&path))
             .await
             .map_err(std::io::Error::other)??;
         if actual != self.hex {
+            tracing::error!(
+                "Checksum mismatch ({}) — expected {}, got {actual}",
+                self.algo.name(),
+                self.hex
+            );
             return Err(Error::ChecksumMismatch(format!(
                 "{} mismatch: expected {}, got {}",
                 self.algo.name(),
@@ -81,6 +87,7 @@ impl Checksum {
                 actual
             )));
         }
+        tracing::info!("Checksum verified ✓");
         Ok(())
     }
 

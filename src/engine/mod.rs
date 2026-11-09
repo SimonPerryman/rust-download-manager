@@ -17,6 +17,7 @@
 pub mod control;
 mod download_log;
 pub mod filename;
+mod human;
 pub mod integrity;
 pub mod limit;
 pub mod manager;
@@ -27,6 +28,7 @@ pub mod retry;
 mod segment;
 pub mod state;
 pub mod store;
+mod tally;
 
 pub use control::{Control, Flow};
 pub use download_log::{LogLevel, LogLine, LOG_LINES};
@@ -53,6 +55,7 @@ use reqwest::StatusCode;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 use segment::Failure;
+use tally::Tally;
 
 /// User-Agent sent with every request, e.g. `rdm/0.1.0`.
 const USER_AGENT: &str = concat!("rdm/", env!("CARGO_PKG_VERSION"));
@@ -82,6 +85,8 @@ pub struct DownloadRequest {
     pub min_segment_size: u64,
     ramp: Ramping,
     read_timeout: Duration,
+    tally: Arc<Tally>,
+    active_before: Duration,
 }
 
 /// Default for [`DownloadRequest::connections`].
@@ -141,6 +146,8 @@ impl DownloadRequest {
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
             ramp: Ramping::default(),
             read_timeout: READ_TIMEOUT,
+            tally: Arc::default(),
+            active_before: Duration::ZERO,
         }
     }
 
@@ -158,6 +165,8 @@ impl DownloadRequest {
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
             ramp: Ramping::default(),
             read_timeout: READ_TIMEOUT,
+            tally: Arc::default(),
+            active_before: Duration::ZERO,
         }
     }
 
@@ -206,6 +215,14 @@ impl DownloadRequest {
     #[doc(hidden)]
     pub fn with_read_timeout(mut self, timeout: Duration) -> Self {
         self.read_timeout = timeout;
+        self
+    }
+
+    /// Share `tally` with this download's other runs, so its finish summary
+    /// covers them all; `active_before` is their active time.
+    pub(crate) fn with_history(mut self, tally: Arc<Tally>, active_before: Duration) -> Self {
+        self.tally = tally;
+        self.active_before = active_before;
         self
     }
 
@@ -301,6 +318,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// `on_progress` is invoked before the first byte and as bytes land (coalesced
 /// across parallel connections), so a frontend can render a live readout. `control` steers the in-flight
 /// download (cancel/pause).
+///
+/// Each event worth telling the user is logged as one short line (`Started ·
+/// …`, `Paused`, `Done · …`). Running the same request again, e.g. after a
+/// pause, continues its finish summary: a request and its clones share it.
 // Error level so the identity survives any filter that still shows errors.
 #[tracing::instrument(name = "download", level = "error", skip_all, fields(url = %redact_url(&req.url)))]
 pub async fn download(
@@ -326,7 +347,14 @@ pub async fn download(
     // single-connection.
     let mut force_single = false;
 
-    tracing::info!("download started");
+    req.tally.begin_run(req.active_before);
+    // Ends the run however `download` returns (or is dropped).
+    let _run = RunGuard(&req.tally);
+    let tally = req.tally.clone();
+    let mut on_progress = move |p: Progress| {
+        tally.observe_progress(p.downloaded);
+        on_progress(p);
+    };
     let mut attempt: u32 = 0;
     let mut single_attempts: u32 = 0;
     // Segmented attempts only count against the budget while they make no
@@ -357,8 +385,13 @@ pub async fn download(
             Ok((status, final_path, bytes)) => {
                 let finished = finalize(req, &final_path, bytes, status).await;
                 match &finished {
-                    Ok(summary) => tracing::info!(bytes = summary.bytes, "download finished"),
-                    Err(e) => tracing::error!(error = %error_detail(e), "download failed"),
+                    Ok(summary) => {
+                        tracing::info!("Saved to {}", summary.path.display());
+                        tracing::info!("{}", req.tally.done_line(summary.bytes));
+                    }
+                    // `verify` has already said what didn't match.
+                    Err(Error::ChecksumMismatch(_)) => {}
+                    Err(e) => tracing::error!("Failed: {}", error_detail(e)),
                 }
                 return finished;
             }
@@ -390,25 +423,30 @@ pub async fn download(
         let delay = delay.map(|d| d.max(throttle.unwrap_or_default()));
         let Some(delay) = delay else {
             match e {
-                Error::Paused => tracing::info!("download paused"),
+                Error::Paused => tracing::info!("Paused"),
                 Error::Cancelled => {
                     discard_partial(&known_target).await;
-                    tracing::info!("download cancelled")
+                    tracing::info!("Cancelled")
                 }
-                _ => {
-                    tracing::error!(attempts = attempt, error = %error_detail(&e), "download failed")
+                _ if attempt > 1 => {
+                    tracing::error!("Failed after {attempt} attempts: {}", error_detail(&e))
                 }
+                _ => tracing::error!("Failed: {}", error_detail(&e)),
             }
             return Err(e);
         };
-        tracing::warn!(
-            attempt,
-            max_attempts,
-            segmented,
-            delay_ms = delay.as_millis() as u64,
-            error = %error_detail(&e),
-            "download attempt failed; retrying"
-        );
+        req.tally.retried();
+        tracing::debug!("Attempt {attempt} failed: {}", error_detail(&e));
+        if throttle.is_some() {
+            tracing::warn!("Server rate-limited — waiting {}", human::duration(delay));
+        } else {
+            tracing::warn!(
+                "{} — retrying in {} (attempt {})",
+                problem(&e),
+                human::duration(delay),
+                attempt + 1
+            );
+        }
         // A pause/cancel cuts this short; the next iteration reports it.
         backoff(control, delay).await;
     }
@@ -549,6 +587,7 @@ async fn attempt_once(
             }
             Existing::Segmented(st) => {
                 *segmented = true;
+                announce_resume(req, st.segments.iter().flatten().map(|s| s.done).sum());
                 return resume_segmented(client, req, control, &part, &sidecar, st, on_progress)
                     .await;
             }
@@ -560,6 +599,11 @@ async fn attempt_once(
     // derived filename before committing to a target path.
     let resp = send(control, client.get(&req.url), req.read_timeout).await?;
     let status = resp.status();
+    tracing::debug!(
+        "Requested the file · HTTP {} · {}",
+        status.as_u16(),
+        size_text(resp.content_length())
+    );
     if !status.is_success() {
         return Err(status_error(&resp).into());
     }
@@ -608,6 +652,7 @@ async fn attempt_once(
         }
         Existing::Segmented(st) => {
             *segmented = true;
+            announce_resume(req, st.segments.iter().flatten().map(|s| s.done).sum());
             return resume_segmented(client, req, control, &part, &sidecar, st, on_progress).await;
         }
         Existing::Absent => {}
@@ -618,6 +663,11 @@ async fn attempt_once(
             *segmented = true;
             let segments = segment::plan(total, req.effective_connections(), req.min_segment_size);
             let workers = segments.len();
+            let lanes = match req.ramp {
+                Ramping::Window(_) => format!("up to {workers} lanes"),
+                Ramping::Off => human::count(workers as u32, "lane", "lanes"),
+            };
+            announce_start(req, &resp, &lanes);
             let st = DownloadState::segmented(
                 &req.url,
                 &target,
@@ -645,12 +695,14 @@ async fn attempt_once(
                 read_timeout: req.read_timeout,
                 ramp: req.ramp,
                 first: Some(resp),
+                tally: &req.tally,
             };
             let bytes = segment::run(job, on_progress).await?;
             return Ok((StatusCode::PARTIAL_CONTENT.as_u16(), part, bytes));
         }
     }
 
+    announce_start(req, &resp, "1 lane");
     // Truncate any stale `.part` before the v1 sidecar lands: a kill in between
     // must not leave a sidecar that resumes from leftover bytes.
     let file = tokio::fs::File::create(&part).await?;
@@ -697,6 +749,7 @@ async fn resume_segmented(
         read_timeout: req.read_timeout,
         ramp: req.ramp,
         first: None,
+        tally: &req.tally,
     };
     let bytes = segment::run(job, on_progress).await?;
     Ok((
@@ -730,10 +783,12 @@ async fn resume(
     }
     let resp = send(control, builder, req.read_timeout).await?;
     let status = resp.status();
+    tracing::debug!("Requested bytes {offset}– · HTTP {}", status.as_u16());
 
     match status {
         StatusCode::PARTIAL_CONTENT => {
             // Resource unchanged: append from the current offset.
+            announce_resume(req, offset);
             let total = st.total;
             let mut file = tokio::fs::OpenOptions::new()
                 .append(true)
@@ -758,6 +813,7 @@ async fn resume(
             // 200 to a Range request: the resource changed, or the server
             // ignores/lies about ranges. Only a true 206 is safe to append, so
             // truncate and restart with fresh validators.
+            restarting(req, offset, "the server sent the whole file again");
             let total = resp.content_length();
             let etag = header_str(resp.headers(), header::ETAG);
             let last_modified = header_str(resp.headers(), header::LAST_MODIFIED);
@@ -785,6 +841,7 @@ async fn resume(
             // done; otherwise the `.part` is inconsistent — restart.
             if let Some(total) = st.total {
                 if offset >= total {
+                    announce_resume(req, offset);
                     on_progress(Progress {
                         downloaded: offset,
                         total: Some(total),
@@ -796,6 +853,7 @@ async fn resume(
                     return Ok((status.as_u16(), part.to_path_buf(), offset));
                 }
             }
+            restarting(req, offset, "the saved part doesn't match the file");
             tokio::fs::File::create(part).await?; // truncate
             restart(client, req, control, target, part, sidecar, on_progress).await
         }
@@ -821,6 +879,7 @@ async fn restart(
     };
     let resp = send(control, client.get(&url), req.read_timeout).await?;
     let status = resp.status();
+    tracing::debug!("Requested the file again · HTTP {}", status.as_u16());
     if !status.is_success() {
         return Err(status_error(&resp));
     }
@@ -928,6 +987,66 @@ pub(crate) fn single_segment(downloaded: u64, total: Option<u64>) -> Vec<Segment
         })
         .into_iter()
         .collect()
+}
+
+/// A size for a log line, or `size unknown`.
+fn size_text(total: Option<u64>) -> String {
+    total.map_or_else(|| "size unknown".to_owned(), human::bytes)
+}
+
+/// Say how a fresh download starts (once per run), e.g. `Started · 6.25 GB ·
+/// resumable · up to 4 lanes`. Resumable means the server takes byte ranges.
+fn announce_start(req: &DownloadRequest, resp: &reqwest::Response, lanes: &str) {
+    if !req.tally.announce() {
+        return;
+    }
+    let size = size_text(resp.content_length());
+    let ranges = header_str(resp.headers(), header::ACCEPT_RANGES)
+        .is_some_and(|v| v.trim().eq_ignore_ascii_case("bytes"));
+    let resumable = if ranges { "resumable" } else { "not resumable" };
+    tracing::info!("Started · {size} · {resumable} · {lanes}");
+}
+
+/// Say a run picked up the `on_disk` bytes an earlier one left (once per run).
+fn announce_resume(req: &DownloadRequest, on_disk: u64) {
+    if req.tally.announce() {
+        req.tally.resumed_with(on_disk);
+        if on_disk == 0 {
+            tracing::info!("Resumed from the start");
+        } else {
+            tracing::info!("Resumed at {}", human::bytes(on_disk));
+        }
+    }
+}
+
+/// Say a resume throws its `offset` bytes away, and `why`.
+fn restarting(req: &DownloadRequest, offset: u64, why: &str) {
+    req.tally.announce();
+    req.tally.wasted(offset);
+    tracing::warn!("Couldn't resume ({why}) — starting over");
+}
+
+/// Ends its run in the tally when dropped.
+struct RunGuard<'a>(&'a Tally);
+
+impl Drop for RunGuard<'_> {
+    fn drop(&mut self) {
+        self.0.end_run();
+    }
+}
+
+/// A transient failure in a few words, for a retry line.
+fn problem(e: &Error) -> String {
+    match e {
+        Error::TimedOut => "Server stopped responding".to_owned(),
+        Error::Http(e) if e.is_timeout() => "Server stopped responding".to_owned(),
+        Error::Http(e) if e.is_connect() => "Couldn't connect".to_owned(),
+        Error::Status(code) | Error::Throttled { status: code, .. } => {
+            format!("Server returned HTTP {code}")
+        }
+        Error::RedirectExpired(_) => "Download link expired".to_owned(),
+        _ => "Connection lost".to_owned(),
+    }
 }
 
 /// Verify the finished `.part` (size, then checksum), rename it to a

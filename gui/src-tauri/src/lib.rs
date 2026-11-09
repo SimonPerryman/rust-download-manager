@@ -602,9 +602,10 @@ mod tests {
     }
 
     /// `RUST_LOG` (the outputs' filter) doesn't reach the Log tab: with the
-    /// outputs at `error`, a download's INFO lines still land in its log.
+    /// outputs at `error`, a download's lower-level lines (here its retry
+    /// warning) still land in its log.
     #[test]
-    fn log_tab_keeps_info_lines_whatever_the_filter() {
+    fn log_tab_keeps_its_lines_whatever_the_filter() {
         let dir = std::env::temp_dir().join(format!("rdm-gui-logtab-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -621,15 +622,16 @@ mod tests {
             None::<fn() -> std::io::Sink>,
         );
 
-        // A link nothing serves: its start is logged at once; no need to wait
-        // for it to fail.
+        // A link nothing serves: its first retry is logged at once; no need
+        // to wait for it to fail.
         let lines = tracing::subscriber::with_default(subscriber, || {
             runtime.block_on(async {
                 let id = mgr.add("http://127.0.0.1:9/f.bin", &dir, None, None);
                 let deadline = Instant::now() + Duration::from_secs(10);
                 loop {
                     let lines = mgr.download_log(id);
-                    if !lines.is_empty() || Instant::now() >= deadline {
+                    let retried = lines.iter().any(|l| l.message.contains("— retrying in"));
+                    if retried || Instant::now() >= deadline {
                         mgr.remove(id);
                         break lines;
                     }
@@ -640,7 +642,7 @@ mod tests {
         drop(mgr);
         let _ = std::fs::remove_dir_all(&dir);
         assert!(
-            lines.iter().any(|l| l.message == "download started"),
+            lines.iter().any(|l| l.message.contains("— retrying in")),
             "{lines:#?}"
         );
     }

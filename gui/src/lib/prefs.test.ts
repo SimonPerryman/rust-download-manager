@@ -5,7 +5,9 @@ import {
   applyPrefs,
   DEFAULT_PREFS,
   LAST_DIR_KEY,
+  LOG_DETAILED_KEY,
   loadLastDir,
+  loadLogDetailed,
   loadPaneHeight,
   loadPrefs,
   loadUnopened,
@@ -14,6 +16,7 @@ import {
   PREFS_KEY,
   resolveTheme,
   saveLastDir,
+  saveLogDetailed,
   savePaneHeight,
   savePrefs,
   saveUnopened,
@@ -186,6 +189,26 @@ describe("loadLastDir / saveLastDir", () => {
     expect(loadLastDir(memoryStorage({ [LAST_DIR_KEY]: "  " }))).toBeNull();
     expect(loadLastDir(throwing)).toBeNull();
     expect(saveLastDir("/x", throwing)).toBe(false);
+  });
+});
+
+describe("loadLogDetailed / saveLogDetailed", () => {
+  it("starts concise and round-trips the Log tab's level", () => {
+    const storage = memoryStorage();
+    expect(loadLogDetailed(storage)).toBe(false);
+    expect(saveLogDetailed(true, storage)).toBe(true);
+    expect(storage.data[LOG_DETAILED_KEY]).toBe("true");
+    expect(loadLogDetailed(storage)).toBe(true);
+    expect(saveLogDetailed(false, storage)).toBe(true);
+    expect(loadLogDetailed(storage)).toBe(false);
+  });
+
+  it("treats anything else, or failing storage, as concise", () => {
+    expect(loadLogDetailed(memoryStorage({ [LOG_DETAILED_KEY]: "yes" }))).toBe(false);
+    expect(loadLogDetailed(throwing)).toBe(false);
+    expect(loadLogDetailed(undefined)).toBe(false);
+    expect(saveLogDetailed(true, throwing)).toBe(false);
+    expect(saveLogDetailed(true, undefined)).toBe(false);
   });
 });
 

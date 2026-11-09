@@ -1,7 +1,7 @@
 // Cosmetic GUI preferences (theme + row density), the finish moment's
-// "not opened yet" ids, the details pane's height and the Add dialog's last
-// folder, kept in localStorage. Pure apart from the storage/root handles
-// passed in, so it is unit-testable.
+// "not opened yet" ids, the details pane's height, the Add dialog's last
+// folder and the Log tab's level, kept in localStorage. Pure apart from the
+// storage/root handles passed in, so it is unit-testable.
 // The inline script in index.html mirrors `parsePrefs` + `applyPrefs` to apply
 // them before first paint; keep the two in step.
 
@@ -168,6 +168,32 @@ export function savePaneHeight(
   try {
     if (!storage) return false;
     storage.setItem(PANE_HEIGHT_KEY, String(Math.round(px)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether the Log tab shows the detailed (per-request) lines too. */
+export const LOG_DETAILED_KEY = "rdm.gui.logDetailed";
+
+/** The remembered Log tab level: false (concise) unless "true" is stored. */
+export function loadLogDetailed(storage: ReadStorage | undefined = defaultStorage()): boolean {
+  try {
+    return storage?.getItem(LOG_DETAILED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+/** Remembers the Log tab level; returns false (and changes nothing) if storage is unavailable. */
+export function saveLogDetailed(
+  detailed: boolean,
+  storage: WriteStorage | undefined = defaultStorage(),
+): boolean {
+  try {
+    if (!storage) return false;
+    storage.setItem(LOG_DETAILED_KEY, String(detailed));
     return true;
   } catch {
     return false;

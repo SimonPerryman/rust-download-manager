@@ -70,8 +70,29 @@ the partial file.
     you paste.
   - **Speed** graphs the last 60 seconds, with the speed limit as a dashed
     line.
-  - **Log** shows the download's last 200 log lines (start, each retry with
-    its reason, failure, finish), updating while the tab is open.
+  - **Log** tells the download's story in short lines, updating while the
+    tab is open: how it started (size, whether it can resume, how many
+    lanes), lanes being added or capped by the server, a lane losing its
+    connection and reconnecting, pauses and where it resumed, rate-limit
+    waits, the checksum result, where the file was saved, and a closing
+    summary:
+
+    ```
+    Started · 6.25 GB · resumable · up to 4 lanes
+    Ramped to 2 lanes
+    Lane 2 lost connection — retrying (attempt 2)
+    Lane 2 reconnected
+    Paused
+    Resumed at 3.10 GB
+    Checksum verified ✓
+    Saved to /home/me/Downloads/big.iso
+    Done · 6.25 GB in 9m 59s (active 7m 14s) · avg 14.7 MB/s · peak 38.0 MB/s · 1 retry
+    ```
+
+    Tick **Detailed** to also see each request (its byte range and the
+    server's answer) and each lane picking up or taking over work. The
+    choice is remembered. rdm keeps a download's last 200 lines, plus its
+    last 300 detailed ones.
   - A finished download's lanes and log lines are kept only until the app
     closes; after a restart the pane shows the summary alone.
 
@@ -97,7 +118,8 @@ limit there to change it.
 The download list and settings are stored in `~/.rdm/state.json`. The GUI also
 writes a daily log in `~/.rdm` (`rdm.YYYY-MM-DD.log`, the last 7 kept), with
 its level set by `RUST_LOG` (default `info`); the Log tab always shows
-informational lines and up, whatever `RUST_LOG` says. On
+informational lines and up (and, with **Detailed**, rdm's debug lines too),
+whatever `RUST_LOG` says. On
 Unix, `~/.rdm` is made owner-only (0700), since the state file and logs hold
 full download URLs.
 
