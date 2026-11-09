@@ -1,8 +1,9 @@
 # Using the GUI
 
 The desktop app (Tauri + React) shows every download in one sortable table,
-keeps the list across restarts, and has light and dark themes. To build it,
-see [CONTRIBUTING.md](../CONTRIBUTING.md#building-the-desktop-gui).
+keeps the list across restarts, and has light and dark themes. To install it,
+see [Installing rdm](install.md#desktop-app); to build it, see
+[CONTRIBUTING.md](../CONTRIBUTING.md#building-the-desktop-gui).
 
 ## Contents
 

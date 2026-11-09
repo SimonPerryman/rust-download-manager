@@ -8,6 +8,7 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 repository = "https://github.com/SimonPerryman/rust-download-manager"
+homepage = "https://github.com/SimonPerryman/rust-download-manager"
 
 [package]
 name = "rdm"
@@ -17,6 +18,11 @@ description = "A download manager in Rust"
 license = "MIT OR Apache-2.0"
 publish = false
 repository.workspace = true
+homepage.workspace = true
+
+# Released by dist (see dist-workspace.toml) even though it's not on crates.io.
+[package.metadata.dist]
+dist = true
 
 # Engine/CLI split: the engine lives in the library crate; `rdm` is a thin
 # frontend binary that only calls it. Integration tests drive the library.
@@ -52,3 +58,8 @@ axum = "0.8"
 # tokio features (rt-multi-thread, macros, fs, io-util) for test builds.
 tokio = { version = "1", features = ["net", "process", "test-util"] }
 tempfile = "3"
+
+# The profile dist builds the release archives with.
+[profile.dist]
+inherits = "release"
+lto = "thin"

@@ -7,6 +7,10 @@ license = "MIT OR Apache-2.0"
 publish = false
 repository.workspace = true
 
+# Released by tauri-action in the release workflow, not by dist.
+[package.metadata.dist]
+dist = false
+
 # A library target so Tauri's mobile tooling and the binary share one entry
 # point; the desktop binary is a thin `main` that calls into it.
 [lib]

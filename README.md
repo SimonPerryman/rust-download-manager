@@ -25,20 +25,26 @@ For the details behind each of these, see
 
 ## Install
 
-Prebuilt binaries aren't available yet. They're next on the
-[roadmap](roadmap.md) and will be published on
-[GitHub Releases](https://github.com/SimonPerryman/rust-download-manager/releases).
-Until then, build from source.
-
-**CLI.** With [Rust](https://www.rust-lang.org/tools/install) installed:
+Download the desktop app or the command-line tool from the
+[Releases page](https://github.com/SimonPerryman/rust-download-manager/releases/latest),
+or install the CLI with one command:
 
 ```sh
-cargo install --locked --git https://github.com/SimonPerryman/rust-download-manager rdm
+# macOS and Linux
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/SimonPerryman/rust-download-manager/releases/latest/download/rdm-installer.sh | sh
+
+# Homebrew
+brew install simonperryman/tap/rdm
 ```
 
-**Desktop GUI.** Build it from `gui/` with `pnpm tauri build`; see
-[CONTRIBUTING.md](CONTRIBUTING.md#building-the-desktop-gui) for the
-prerequisites.
+```powershell
+# Windows
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/SimonPerryman/rust-download-manager/releases/latest/download/rdm-installer.ps1 | iex"
+```
+
+The builds aren't code-signed yet, so Windows and macOS warn on first launch.
+[Installing rdm](docs/install.md) lists the app's installers by platform,
+how to get past those warnings, how to update, and how to build from source.
 
 ## Quick start
 
@@ -61,12 +67,15 @@ Interrupted, or pressed Ctrl-C? Run the same command again to resume. The
 
 ## Documentation
 
+- [Installing rdm](docs/install.md): downloads by platform, unsigned-build
+  warnings, updating and building from source.
 - [CLI reference](docs/cli.md): flags, resuming, exit codes and logging.
 - [Using the GUI](docs/gui.md): the window, shortcuts, settings and where
   state is kept.
 - [How it works](docs/how-it-works.md): segmenting, resume, retries and
   integrity checks.
-- [Contributing](CONTRIBUTING.md): building and testing from source.
+- [Contributing](CONTRIBUTING.md): building and testing from source, and
+  cutting a release.
 
 ## Project status
 
