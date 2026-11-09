@@ -7,8 +7,11 @@
 # Usage: apt-install-cached.sh [apt-get install options] package...
 set -euo pipefail
 
+# The runner is throwaway: skip the man-db rebuild and dpkg's fsyncs.
+sudo rm -f /var/lib/man-db/auto-update
+
 mkdir -p ~/apt-debs
 sudo cp ~/apt-debs/*.deb /var/cache/apt/archives/ 2>/dev/null || true
 sudo apt-get update
-sudo apt-get install -y -o APT::Keep-Downloaded-Packages=true "$@"
+sudo apt-get install -y -o APT::Keep-Downloaded-Packages=true -o Dpkg::Options::=--force-unsafe-io "$@"
 cp /var/cache/apt/archives/*.deb ~/apt-debs/

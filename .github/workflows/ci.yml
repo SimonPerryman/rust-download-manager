@@ -170,9 +170,9 @@ jobs:
           path: ~/apt-debs
           key: ${{ steps.image.outputs.key }}
 
-      # Tauri's webview build deps.
+      # Tauri's webview build deps (headers only: recommends aren't needed).
       - name: Install Linux webview build dependencies
-        run: bash .github/scripts/apt-install-cached.sh libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
+        run: bash .github/scripts/apt-install-cached.sh --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
 
       - name: Setup pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
@@ -307,9 +307,9 @@ jobs:
           path: ~/apt-debs
           key: ${{ steps.image.outputs.key }}
 
-      # Tauri's webview build deps.
+      # Tauri's webview build deps (headers only: recommends aren't needed).
       - name: Install Linux webview build dependencies
-        run: bash .github/scripts/apt-install-cached.sh libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
+        run: bash .github/scripts/apt-install-cached.sh --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf
 
       - name: Save apt package cache
         if: ${{ github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true' }}
