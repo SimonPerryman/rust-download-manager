@@ -362,6 +362,9 @@ jobs:
     needs:
       - plan
       - announce
+    # always(): without it the skipped publish-homebrew-formula job (every
+    # pre-release skips it) upstream of announce would skip this job too.
+    if: ${{ always() && needs.plan.result == 'success' && needs.announce.result == 'success' }}
     permissions:
       contents: read
     uses: ./.github/workflows/release-checks.yml
