@@ -19,6 +19,7 @@ import {
   invoke,
   openRowMenu,
   pressOnTable,
+  rectOf,
   removeAll,
   rowById,
   rowSelector,
@@ -171,12 +172,12 @@ describe("rdm GUI power features", () => {
   it("switches to comfortable rows and remembers it", async () => {
     const id = ids[0];
     expect(await density()).toBe("compact");
-    const compact = (await rowById(id).getSize()).height;
+    const compact = (await rectOf(rowSelector(id))).height;
 
     await $(DENSITY).click();
     await expect($(DENSITY)).toHaveAttribute("aria-pressed", "true");
     await waitForDensity("comfortable");
-    await browser.waitUntil(async () => (await rowById(id).getSize()).height > compact, {
+    await browser.waitUntil(async () => (await rectOf(rowSelector(id))).height > compact, {
       timeoutMsg: "comfortable rows never grew",
     });
 

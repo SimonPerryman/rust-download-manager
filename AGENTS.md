@@ -75,6 +75,12 @@ instruction sheet for any agent (and human) working in this repo.
   `shiftKey` instead of `browser.keys([Key.Shift, …])`.** Why: WebKitGTK's
   driver drops the Shift, so Shift+Tab arrived as Tab. Enforced by
   `gui/scripts/guard-e2e-webkit.mjs`.
+- **When an e2e spec needs an element's size or position, use `rectOf()`
+  from `gui/e2e/helpers.ts` (`getBoundingClientRect` via `browser.execute`),
+  never `getSize()`/`getLocation()`.** Why: WebKitGTK's driver answers the
+  element-rect command with "element not interactable" for elements like
+  table rows (power.e2e.ts's row-height check failed only on Linux).
+  Enforced by `gui/scripts/guard-e2e-webkit.mjs`.
 
 ## Comments & docs
 - Doc-comment (`///`) the public engine API: it's the contract and renders in
