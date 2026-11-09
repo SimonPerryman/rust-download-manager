@@ -3,14 +3,20 @@ members = ["gui/src-tauri"]
 default-members = ["."]
 resolver = "2"
 
+# One version for the CLI and the GUI: a tag vX.Y.Z releases both. The release
+# workflow's version check holds gui/package.json and CHANGELOG.md to it.
+[workspace.package]
+version = "0.1.0"
+repository = "https://github.com/SimonPerryman/rust-download-manager"
+
 [package]
 name = "rdm"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "A download manager in Rust"
 license = "MIT OR Apache-2.0"
 publish = false
-repository = "https://github.com/SimonPerryman/rust-download-manager"
+repository.workspace = true
 
 # Engine/CLI split: the engine lives in the library crate; `rdm` is a thin
 # frontend binary that only calls it. Integration tests drive the library.

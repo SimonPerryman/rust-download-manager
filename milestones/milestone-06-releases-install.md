@@ -51,9 +51,8 @@ them. Roadmap: [roadmap.md](../roadmap.md).
     the repo root (it already holds one), so dist must write `rdm.rb` at the
     root too: once a `Formula/` folder exists, Homebrew reads only that
     folder, which would hide the tap's existing formula.
-  - Optional: a CLI `.msi` from dist (needs `[package.metadata.wix]` with a
-    fixed upgrade GUID). Skip it if the GUI's installer is enough for Windows
-    users.
+  - No CLI `.msi` (Open questions 2): the GUI's installers cover Windows
+    desktop users.
 - **GUI release assets (tauri-action)**, attached to the same release:
   - Windows: NSIS `.exe` setup, and `.msi`;
   - macOS: `.dmg` for arm64 and x64;
@@ -142,20 +141,20 @@ them. Roadmap: [roadmap.md](../roadmap.md).
 
 ## Tasks
 ### Version, identifier and metadata
-- [ ] Move the version to `[workspace.package]`; both crates inherit it;
+- [x] Move the version to `[workspace.package]`; both crates inherit it;
   remove `version` from `tauri.conf.json`; keep `gui/package.json` in step.
 - [ ] Add `scripts/check-release-version` (or a Rust test) that fails unless
   the tag, the workspace version, `gui/package.json` and the `CHANGELOG.md`
   heading agree. The release workflow runs it first.
-- [ ] Change the identifier to `io.github.simonperryman.rdm`.
-- [ ] Fill `bundle.publisher`, `copyright`, `license`, `homepage`,
+- [x] Change the identifier to `io.github.simonperryman.rdm`.
+- [x] Fill `bundle.publisher`, `copyright`, `license`, `homepage`,
   `category` and descriptions in `tauri.conf.json`; add `repository` to
   `gui/src-tauri/Cargo.toml`.
-- [ ] Add `CHANGELOG.md` with an `## Unreleased` section covering M0 to M5.
+- [x] Add `CHANGELOG.md` with an `## Unreleased` section covering M0 to M5.
 
 ### CLI release (dist)
 - [ ] `dist init` with the targets, installers (`shell`, `powershell`,
-  `homebrew`, optionally `msi`) and `tap = "SimonPerryman/homebrew-tap"`,
+  `homebrew`; no `msi`) and `tap = "SimonPerryman/homebrew-tap"`,
   `publish-jobs = ["homebrew"]`. Pin `cargo-dist-version`.
 - [ ] Make the `publish-homebrew-formula` job commit `rdm.rb` at the tap's
   root, not under `Formula/` (a dist setting if the pinned version has one,
@@ -178,13 +177,11 @@ them. Roadmap: [roadmap.md](../roadmap.md).
 - [ ] A GUI job (or reusable workflow called from `release.yml`) runs
   `tauri-apps/tauri-action` pinned by SHA, in a matrix of
   `windows-2025-vs2026`, `macos-15` (`--target aarch64-apple-darwin` and
-  `--target x86_64-apple-darwin`) and `ubuntu-24.04` (with the same apt
-  packages as the e2e job). Node and pnpm are pinned as in `ci.yml`.
+  `--target x86_64-apple-darwin`) and `ubuntu-22.04` (Open questions 1; with
+  the same apt build packages as CI). Node and pnpm are pinned as in `ci.yml`.
 - [ ] It uploads to the release dist creates for the tag, not a second
-  release. Wire it as a dist custom job if that orders cleanly (dist's
-  `host` job creates the release first); otherwise have one job create a
-  draft release, both upload to it, and a final job publishes it. Decide in
-  the PR and note why.
+  release: a dist custom job (Open questions 3) whose bundles dist's `host`
+  job attaches when it creates the release.
 - [ ] `contents: write` is scoped to the upload job only.
 
 ### In-app updates (GUI)
@@ -275,7 +272,7 @@ and apply here without being restated._
   `contents: write`. (A guard self-test, run in `pnpm lint` or vitest.)
 - [ ] The release workflow doesn't run on pull requests: the PR that adds it
   shows no `Release` run in its checks.
-- [ ] `tauri.conf.json` has identifier `io.github.simonperryman.rdm`, and
+- [x] `tauri.conf.json` has identifier `io.github.simonperryman.rdm`, and
   `bundle.publisher`, `copyright` and `license` are set (asserted by the
   guard or a Rust test reading the file); the existing e2e suite passes
   under the new identifier.
@@ -305,12 +302,17 @@ and apply here without being restated._
   against the `v0.1.0` release.
 
 ## Open questions
-1. **Linux GUI glibc floor:** the AppImage and `.deb` built on
-   `ubuntu-24.04` need glibc 2.39. Build the Linux GUI on `ubuntu-22.04`
-   (still an exact pin) for wider reach, or accept 24.04 as the floor?
-2. **CLI MSI:** ship it, or let the GUI's installers cover Windows?
-3. **GUI and dist ordering:** a dist custom job, or a draft release that
-   both upload to (Tasks, GUI release)?
-4. **`latest.json` and a draft release:** if the release stays a draft until
-   a final job publishes it, check that the `releases/latest/download/` URL
-   resolves only once it's published.
+Decided:
+1. **Linux GUI glibc floor:** decided, build the Linux GUI (AppImage and
+   `.deb`) on `ubuntu-22.04` (an exact pin), so it runs on glibc 2.35 and
+   later rather than 2.39. The CLI keeps `ubuntu-24.04`, with
+   the static musl build for older systems.
+2. **CLI MSI:** decided, no CLI `.msi`. The Windows CLI ships as a zip plus
+   the PowerShell installer; the GUI's NSIS and `.msi` installers cover
+   Windows desktop users.
+3. **GUI and dist ordering:** decided, a dist custom job
+   (`local-artifacts-jobs`): the GUI bundles are build artifacts that dist's
+   `host` job attaches when it publishes the one release. No shared draft
+   release.
+4. **`latest.json` and a draft release:** moot, since no draft release is
+   used (3).
