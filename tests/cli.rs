@@ -428,7 +428,7 @@ async fn cli_is_quiet_by_default_and_verbose_on_request() {
         let loud = run(name, verbose, rust_log).await;
         assert!(loud.status.success());
         let stderr = String::from_utf8_lossy(&loud.stderr);
-        assert!(stderr.contains("download started"), "{name}: {stderr}");
+        assert!(stderr.contains("Started · "), "{name}: {stderr}");
     }
 }
 

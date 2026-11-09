@@ -30,13 +30,18 @@ use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
 
 use crate::engine::ramp::{Decision, Ramp, Ramping, Window};
+use crate::engine::tally::Tally;
 use crate::engine::{
-    is_transient, progress, status_error, throttle_wait, Control, DownloadState, Error, Flow,
-    Progress, SpeedMeter,
+    human, is_transient, progress, status_error, throttle_wait, Control, DownloadState, Error,
+    Flow, Progress, SpeedMeter,
 };
 
 /// Hard cap on parallel connections per download.
 pub(crate) const MAX_CONNECTIONS: u8 = 16;
+
+/// Lane numbers a pool can hand out; above [`MAX_CONNECTIONS`], since a
+/// retiring worker holds its lane until it leaves.
+const LANES: usize = 32;
 
 /// How often per-segment progress is made durable in the sidecar.
 const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(1);
@@ -172,6 +177,7 @@ pub(crate) struct Job<'a> {
     pub read_timeout: Duration,
     pub ramp: Ramping,
     pub first: Option<reqwest::Response>,
+    pub tally: &'a Tally,
 }
 
 /// The shared work table: segments plus which ones a worker currently owns.
@@ -228,6 +234,9 @@ struct Pool {
     live: AtomicU8,
     target: AtomicU8,
     changed: AtomicBool,
+    /// Lane numbers in use, one bit each; a lane's number is what the log
+    /// calls it by.
+    lanes: Mutex<u32>,
 }
 
 impl Pool {
@@ -237,17 +246,34 @@ impl Pool {
             target: AtomicU8::new(target),
             // The first window holds the initial spawn.
             changed: AtomicBool::new(true),
+            lanes: Mutex::new(0),
         }
     }
 
-    /// Count a new worker in; it is counted out when the slot drops.
-    fn join(&self) -> Slot<'_> {
+    /// Count a new worker in, on lane `prefer` if it's free, else the lowest
+    /// free one; it is counted out when the slot drops.
+    fn join(&self, prefer: Option<u8>) -> Slot<'_> {
         self.live.fetch_add(1, Ordering::SeqCst);
         self.changed.store(true, Ordering::SeqCst);
+        let lane = {
+            let mut used = self.lanes.lock().unwrap();
+            let free = |lane: &u8| usize::from(*lane) < LANES && *used & (1 << lane) == 0;
+            let lane = prefer
+                .filter(free)
+                .or_else(|| (0..LANES as u8).find(free))
+                .unwrap_or(LANES as u8 - 1);
+            *used |= 1 << lane;
+            lane
+        };
         Slot {
             pool: self,
             held: true,
+            lane,
         }
+    }
+
+    fn free_lane(&self, lane: u8) {
+        *self.lanes.lock().unwrap() &= !(1 << lane);
     }
 
     fn live(&self) -> u8 {
@@ -271,6 +297,8 @@ impl Pool {
 struct Slot<'a> {
     pool: &'a Pool,
     held: bool,
+    /// Zero-based; the log shows it one-based.
+    lane: u8,
 }
 
 impl Slot<'_> {
@@ -287,8 +315,14 @@ impl Slot<'_> {
         if left {
             self.held = false;
             pool.changed.store(true, Ordering::SeqCst);
+            pool.free_lane(self.lane);
         }
         left
+    }
+
+    /// The lane's number as the log shows it, from 1.
+    fn number(&self) -> u8 {
+        self.lane + 1
     }
 }
 
@@ -297,6 +331,7 @@ impl Drop for Slot<'_> {
         if self.held {
             self.pool.live.fetch_sub(1, Ordering::SeqCst);
             self.pool.changed.store(true, Ordering::SeqCst);
+            self.pool.free_lane(self.lane);
         }
     }
 }
@@ -328,6 +363,10 @@ struct Shared<'a> {
     pool: Pool,
     /// Nanoseconds workers have spent waiting on rate limits.
     waited: AtomicU64,
+    tally: &'a Tally,
+    /// Each lane's failures since it last got a response; non-zero means its
+    /// next response is a reconnect.
+    lane_failures: Mutex<[u32; LANES]>,
 }
 
 impl Shared<'_> {
@@ -389,6 +428,8 @@ pub(crate) async fn run(
         stop,
         pool: Pool::new(ramp.target()),
         waited: AtomicU64::new(0),
+        tally: job.tally,
+        lane_failures: Mutex::new([0; LANES]),
     };
 
     let mut meter = SpeedMeter::new();
@@ -413,7 +454,7 @@ pub(crate) async fn run(
     let mut first = job.first;
     let mut workers = FuturesUnordered::new();
     for _ in 0..ramp.target() {
-        workers.push(worker(&shared, first.take(), shared.pool.join()));
+        workers.push(worker(&shared, first.take(), shared.pool.join(None)));
     }
     report(&mut meter, on_progress);
     // Bounded so a server that keeps failing still ends the attempt.
@@ -443,12 +484,22 @@ pub(crate) async fn run(
         let checkpoint_running = checkpoint.is_some();
         let can_checkpoint = !checkpoint_running && !shared.is_stopping();
         tokio::select! {
-            Some(result) = workers.next() => {
+            Some((lane, result)) = workers.next() => {
+                // The lane's failures in a row: carried over to a replacement
+                // below, else dropped, so a later worker on the same number
+                // doesn't report a reconnect it never made.
+                let failed_before =
+                    std::mem::take(&mut shared.lane_failures.lock().unwrap()[usize::from(lane)]);
                 if let Err(failure) = result {
                     match failure {
                         Failure::Engine(ref e) if is_transient(e) => {
-                            tracing::debug!(error = %crate::engine::error_detail(e), "segment worker failed; segment re-queued");
+                            tracing::debug!(
+                                "Lane {} failed: {}",
+                                lane + 1,
+                                crate::engine::error_detail(e)
+                            );
                             let severity = Severity::of(e, shared.pool.live() > 0);
+                            let what = lane_problem(e);
                             // The host says it won't take more connections.
                             if severity != Severity::Other {
                                 let live = shared.pool.live();
@@ -459,7 +510,15 @@ pub(crate) async fn run(
                                 if severity == Severity::Cap {
                                     cap = lower_cap(cap, live);
                                 }
+                                let before = shared.pool.target();
                                 shared.pool.set_target(capped(ramp.target(), cap));
+                                let after = shared.pool.target();
+                                if severity == Severity::Cap && after < before {
+                                    tracing::info!(
+                                        "Server limited connections — down to {}",
+                                        human::count(after.into(), "lane", "lanes")
+                                    );
+                                }
                             }
                             // The outer backoff keys off the attempt's error,
                             // so a sibling's later reset mustn't mask a rate limit.
@@ -480,9 +539,24 @@ pub(crate) async fn run(
                             // outer backoff.
                             let orphaned = shared.table.lock().unwrap().has_unowned_work();
                             let wanted = usize::from(shared.pool.target());
+                            let failures = failed_before + 1;
                             if !rate_limited && orphaned && workers.len() < wanted && replacements_left > 0 && !shared.is_stopping() {
                                 replacements_left -= 1;
-                                workers.push(worker(&shared, None, shared.pool.join()));
+                                let slot = shared.pool.join(Some(lane));
+                                // A capped lane isn't lost (the cap line said
+                                // why), so it isn't a retry either.
+                                if severity == Severity::Other {
+                                    shared.tally.retried();
+                                    tracing::warn!(
+                                        "Lane {} {what} — retrying (attempt {})",
+                                        slot.number(),
+                                        failures + 1
+                                    );
+                                    shared.lane_failures.lock().unwrap()[usize::from(slot.lane)] = failures;
+                                }
+                                workers.push(worker(&shared, None, slot));
+                            } else if severity == Severity::Other && !shared.is_stopping() {
+                                tracing::warn!("Lane {} {what}", lane + 1);
                             }
                         }
                         other => {
@@ -513,13 +587,18 @@ pub(crate) async fn run(
                 };
                 let decision = ramp.observe(measured);
                 shared.pool.set_target(capped(ramp.target(), cap));
-                tracing::debug!(?measured, ?decision, target = ramp.target(), "ramp window");
+                tracing::trace!(?measured, ?decision, target = ramp.target(), "ramp window");
                 match decision {
                     Decision::Add if !shared.is_stopping() && job.control.poll() == Flow::Continue => {
-                        workers.push(worker(&shared, None, shared.pool.join()));
+                        workers.push(worker(&shared, None, shared.pool.join(None)));
+                        tracing::info!("Ramped to {} lanes", shared.pool.target());
                         report(&mut meter, on_progress);
                     }
-                    Decision::Add | Decision::Hold | Decision::Retire => {}
+                    Decision::Retire => tracing::info!(
+                        "Down to {} — more didn't help",
+                        human::count(shared.pool.target().into(), "lane", "lanes")
+                    ),
+                    Decision::Add | Decision::Hold => {}
                 }
             }
             joined = async { checkpoint.as_mut().expect("guarded by precondition").await }, if checkpoint_running => {
@@ -576,7 +655,10 @@ pub(crate) async fn run(
     }
     match fatal {
         Some(Failure::RangeUnsupported) => {
-            tracing::info!("server does not honour ranges; falling back to one connection");
+            shared.tally.wasted(shared.downloaded());
+            tracing::warn!(
+                "Server sent the whole file instead of a part — starting over on 1 lane"
+            );
             let _ = tokio::fs::remove_file(job.sidecar).await;
             tokio::fs::File::create(job.part).await?;
             Err(Failure::RangeUnsupported)
@@ -633,6 +715,18 @@ fn lower_cap(cap: Option<u8>, live: u8) -> Option<u8> {
     Some(cap.map_or(live, |c| c.min(live)))
 }
 
+/// What happened to a lane, e.g. `lost connection`, `got HTTP 500`.
+fn lane_problem(e: &Error) -> String {
+    match e {
+        Error::TimedOut => "timed out".to_owned(),
+        Error::Http(e) if e.is_timeout() => "timed out".to_owned(),
+        Error::Http(e) if e.is_connect() => "couldn't connect".to_owned(),
+        Error::Status(code) | Error::Throttled { status: code, .. } => format!("got HTTP {code}"),
+        Error::RedirectExpired(_) => "found the download link expired".to_owned(),
+        _ => "lost connection".to_owned(),
+    }
+}
+
 /// A worker: repeatedly claim a segment (queued, else stolen) and fetch it,
 /// until there is no work left, the stop signal is raised, or the pool is over
 /// target. A failed or retired-from segment is handed back to the queue for
@@ -641,6 +735,16 @@ async fn worker(
     shared: &Shared<'_>,
     first: Option<reqwest::Response>,
     mut slot: Slot<'_>,
+) -> (u8, Result<(), Failure>) {
+    let lane = slot.lane;
+    (lane, work(shared, first, &mut slot).await)
+}
+
+/// [`worker`]'s loop, on `slot`'s lane.
+async fn work(
+    shared: &Shared<'_>,
+    first: Option<reqwest::Response>,
+    slot: &mut Slot<'_>,
 ) -> Result<(), Failure> {
     let mut stop = shared.stop.subscribe();
     let mut file = tokio::fs::OpenOptions::new()
@@ -651,6 +755,8 @@ async fn worker(
     // Until its first claim, a worker may still be opening the file while a
     // sibling's segment is handed back after a 429.
     let mut fresh = first.is_none();
+    let number = slot.number();
+    tracing::debug!("Lane {number} started");
     loop {
         if shared.is_stopping() {
             return Ok(());
@@ -659,21 +765,36 @@ async fn worker(
             Some((idx, resp)) => (idx, Some(resp)),
             None => {
                 if slot.try_retire() {
+                    tracing::debug!("Lane {number} closed");
                     return Ok(());
                 }
-                let claimed = shared.table.lock().unwrap().claim_for(shared.min, fresh);
-                match claimed {
-                    Some(idx) => (idx, None),
-                    None => return Ok(()),
-                }
+                let claimed = {
+                    let mut table = shared.table.lock().unwrap();
+                    let queued = table.segments.len();
+                    table
+                        .claim_for(shared.min, fresh)
+                        .map(|idx| (idx, table.segments[idx], table.segments.len() > queued))
+                };
+                let Some((idx, seg, stolen)) = claimed else {
+                    tracing::debug!("Lane {number} finished: no work left");
+                    return Ok(());
+                };
+                let how = if stolen { "took over" } else { "picked up" };
+                tracing::debug!(
+                    "Lane {number} {how} bytes {}–{}",
+                    seg.start + seg.done,
+                    seg.end - 1
+                );
+                (idx, None)
             }
         };
         fresh = false;
-        match fetch_segment(shared, &mut file, idx, resp, &mut stop, &mut slot).await {
+        match fetch_segment(shared, &mut file, idx, resp, &mut stop, slot).await {
             Ok(Outcome::Done) => {}
             Ok(Outcome::Stopped) => return Ok(()),
             Ok(Outcome::Retired) => {
                 shared.table.lock().unwrap().owned[idx] = false;
+                tracing::debug!("Lane {number} closed");
                 return Ok(());
             }
             Err(failure) => {
@@ -732,7 +853,19 @@ async fn fetch_segment(
                     _ = tokio::time::sleep(shared.read_timeout) => return Err(Error::TimedOut.into()),
                     _ = stop.wait_for(|stopped| *stopped) => return Ok(Outcome::Stopped),
                 };
+                tracing::debug!(
+                    "Lane {} requested bytes {pos}–{} · HTTP {}",
+                    slot.number(),
+                    end - 1,
+                    resp.status().as_u16()
+                );
                 check_ranged(&resp, pos, end, shared.total, shared.redirected)?;
+                let reconnected = std::mem::take(
+                    &mut shared.lane_failures.lock().unwrap()[usize::from(slot.lane)],
+                );
+                if reconnected > 0 {
+                    tracing::info!("Lane {} reconnected", slot.number());
+                }
                 resp
             }
         };
@@ -854,8 +987,11 @@ fn log_periodic_checkpoint(
 ) {
     match joined {
         Ok(Ok(())) => {}
-        Ok(Err(e)) => tracing::warn!(error = %crate::engine::error_detail(&e), "checkpoint failed"),
-        Err(e) => tracing::warn!(error = %e, "checkpoint task failed"),
+        Ok(Err(e)) => tracing::warn!(
+            "Couldn't save progress, will try again: {}",
+            crate::engine::error_detail(&e)
+        ),
+        Err(e) => tracing::warn!("Couldn't save progress, will try again: {e}"),
     }
 }
 
@@ -884,7 +1020,10 @@ fn complete_checkpoint_blocking(
 ) -> crate::engine::Result<()> {
     if sync_part(part)? {
         if let Err(e) = save() {
-            tracing::warn!(error = %crate::engine::error_detail(&e), "final checkpoint not saved");
+            tracing::warn!(
+                "Couldn't save final progress: {}",
+                crate::engine::error_detail(&e)
+            );
         }
     }
     Ok(())
@@ -1031,11 +1170,36 @@ mod tests {
         assert_eq!(table.claim_for(10, true), Some(1));
     }
 
+    /// Lanes get the lowest free number, a replacement may keep its
+    /// predecessor's, and a number is free again once its worker leaves.
+    #[test]
+    fn lanes_are_numbered_and_reused() {
+        let pool = Pool::new(3);
+        let mut slots: Vec<_> = (0..3).map(|_| pool.join(None)).collect();
+        assert_eq!(
+            slots.iter().map(Slot::number).collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert_eq!(pool.join(Some(1)).number(), 4, "lane 2 is taken");
+        drop(slots.remove(1));
+        assert_eq!(pool.join(None).number(), 2, "the lowest free lane");
+        drop(slots.remove(0));
+        let kept = pool.join(Some(0));
+        assert_eq!(kept.number(), 1, "a replacement keeps its lane");
+        pool.set_target(1);
+        assert!(slots[0].try_retire());
+        assert_eq!(
+            pool.join(Some(2)).number(),
+            3,
+            "a retired lane is free again"
+        );
+    }
+
     #[test]
     fn retire_leaves_only_while_over_target_and_counts_once() {
         let pool = Pool::new(3);
         assert!(pool.take_changed(), "the initial spawn is a pool change");
-        let mut slots: Vec<_> = (0..3).map(|_| pool.join()).collect();
+        let mut slots: Vec<_> = (0..3).map(|_| pool.join(None)).collect();
         assert_eq!(pool.live(), 3);
         assert!(pool.take_changed());
         assert!(!slots[0].try_retire(), "at target: nobody leaves");

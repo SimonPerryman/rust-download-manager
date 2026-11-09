@@ -27,12 +27,12 @@ use serde::Serialize;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing::{Instrument, Subscriber};
-use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::Layer;
 
-use crate::engine::download_log::{DownloadLogs, LogLayer, LogLine, TASK_SPAN};
+use crate::engine::download_log::{capture_filter, DownloadLogs, LogLayer, LogLine, TASK_SPAN};
 use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Store, StoreData};
+use crate::engine::tally::Tally;
 use crate::engine::{
     download, filename, single_segment, state, Checksum, Control, DownloadRequest, DownloadState,
     Error, Progress, RateLimiter, Segment,
@@ -134,6 +134,8 @@ struct Entry {
     segments: Vec<Segment>,
     /// When the running task started, for [`DownloadRecord::active_ms`].
     started: Option<Instant>,
+    /// Totals for the finish summary, across this download's runs here.
+    tally: Arc<Tally>,
 }
 
 impl Entry {
@@ -148,6 +150,7 @@ impl Entry {
             verify_gen: 0,
             segments: Vec::new(),
             started: None,
+            tally: Arc::default(),
         }
     }
 
@@ -358,9 +361,16 @@ impl Inner {
             e.record.status = Status::Downloading;
             if e.record.downloaded == 0 {
                 e.record.active_ms = Some(0);
+                e.tally = Arc::default();
             }
             e.started = Some(Instant::now());
-            e.task = Some(spawn_task(self.clone(), &e.record, control, connections));
+            e.task = Some(spawn_task(
+                self.clone(),
+                &e.record,
+                control,
+                connections,
+                e.tally.clone(),
+            ));
         }
     }
 
@@ -415,6 +425,9 @@ impl Inner {
                 if matches!(other, Error::ChecksumMismatch(_)) {
                     e.record.checksum_state = ChecksumState::Mismatch;
                     e.discard_partial(shared);
+                    if !shared {
+                        tracing::info!("Discarded the downloaded file");
+                    }
                 }
                 e.record.status = Status::Failed;
                 e.record.error = Some(crate::engine::error_detail(&other));
@@ -849,9 +862,10 @@ impl Manager {
     }
 
     /// A tracing layer that keeps the last [`LOG_LINES`](crate::engine::LOG_LINES)
-    /// INFO-and-up lines of each download for [`download_log`](Self::download_log);
-    /// a frontend adds it to its subscriber. It has its own level filter, so it
-    /// works whatever `RUST_LOG` says.
+    /// INFO-and-up lines of each download, plus rdm's own recent DEBUG detail,
+    /// for [`download_log`](Self::download_log); a frontend adds it to its
+    /// subscriber. It has its own level filter, so it works whatever
+    /// `RUST_LOG` says.
     pub fn log_layer<S>(&self) -> impl Layer<S> + Send + Sync + 'static
     where
         S: Subscriber + for<'a> LookupSpan<'a>,
@@ -859,7 +873,7 @@ impl Manager {
         LogLayer {
             logs: self.inner.logs.clone(),
         }
-        .with_filter(LevelFilter::INFO)
+        .with_filter(capture_filter())
     }
 
     /// Download `id`'s recent log lines, oldest first: empty for an unknown id
@@ -951,6 +965,7 @@ fn spawn_task(
     record: &DownloadRecord,
     control: Control,
     connections: u8,
+    tally: Arc<Tally>,
 ) -> JoinHandle<()> {
     let id = record.id;
     inner.logs.open(id);
@@ -960,7 +975,9 @@ fn spawn_task(
     if !record.target_provisional {
         span.record("file", tracing::field::display(file_name(&record.target)));
     }
-    let req = request_for(&inner, record, &control, connections, &span);
+    let active_before = Duration::from_millis(record.active_ms.unwrap_or(0));
+    let req = request_for(&inner, record, &control, connections, &span)
+        .with_history(tally, active_before);
     let handle = inner.handle.clone();
     handle.spawn(
         async move {
@@ -1001,7 +1018,7 @@ fn request_for(
         DownloadRequest::new(&record.url, dir).with_claim_target(move |proposed| {
             let target = inner.claim_target(id, proposed, &control);
             span.record("file", tracing::field::display(file_name(&target)));
-            tracing::debug!(path = %target.display(), "target claimed");
+            tracing::debug!("Saving as {}", target.display());
             target
         })
     } else {

@@ -1473,3 +1473,58 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .with_state(state);
     axum::serve(listener, app).await.expect("serve");
 }
+
+/// Every line rdm logged, as `(level, message)`.
+#[derive(Clone, Default)]
+pub struct Lines(Arc<Mutex<Vec<(tracing::Level, String)>>>);
+
+impl Lines {
+    /// The INFO-and-up messages: what the Log tab shows by default.
+    pub fn concise(&self) -> Vec<String> {
+        self.at(|level| level <= tracing::Level::INFO)
+    }
+
+    /// The DEBUG messages the Detailed view adds.
+    pub fn detail(&self) -> Vec<String> {
+        self.at(|level| level == tracing::Level::DEBUG)
+    }
+
+    pub fn at(&self, keep: impl Fn(tracing::Level) -> bool) -> Vec<String> {
+        let lines = self.0.lock().unwrap();
+        lines
+            .iter()
+            .filter(|(level, _)| keep(*level))
+            .map(|(_, message)| message.clone())
+            .collect()
+    }
+}
+
+struct Message(String);
+
+impl tracing::field::Visit for Message {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        }
+    }
+}
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Lines {
+    fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
+        let meta = event.metadata();
+        if meta.target().starts_with("rdm::") && *meta.level() <= tracing::Level::DEBUG {
+            let mut message = Message(String::new());
+            event.record(&mut message);
+            self.0.lock().unwrap().push((*meta.level(), message.0));
+        }
+    }
+}
+
+/// Route this thread's events into `lines`. `#[tokio::test]` polls the
+/// download on this thread, so its events are caught.
+pub fn capture(lines: &Lines) -> tracing::subscriber::DefaultGuard {
+    tracing::subscriber::set_default(tracing_subscriber::layer::SubscriberExt::with(
+        tracing_subscriber::registry(),
+        lines.clone(),
+    ))
+}

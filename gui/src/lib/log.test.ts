@@ -1,20 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   atBottom,
+  isDetail,
   LOG_POLL_MS,
   logText,
   logTime,
+  logView,
   mergeLog,
   pollLog,
   sameLog,
   STICK_PX,
+  visibleLines,
 } from "./log";
 import type { LogLine } from "./types";
 
 const line = (over: Partial<LogLine> = {}): LogLine => ({
   at: 1_000,
   level: "info",
-  message: "download started",
+  message: "Started · 4.00 MB · resumable · up to 4 lanes",
   fields: "",
   ...over,
 });
@@ -29,18 +32,55 @@ describe("logTime", () => {
 
 describe("logText", () => {
   it("puts the fields after the message", () => {
-    expect(logText(line())).toBe("download started");
-    expect(
-      logText(
-        line({ message: "download failed", fields: "attempts=1 error=server returned HTTP 403" }),
-      ),
-    ).toBe("download failed attempts=1 error=server returned HTTP 403");
+    expect(logText(line({ message: "Paused" }))).toBe("Paused");
+    expect(logText(line({ message: "Target claimed", fields: "path=/data/a.iso" }))).toBe(
+      "Target claimed path=/data/a.iso",
+    );
+  });
+});
+
+describe("visibleLines", () => {
+  const lines = [
+    line(),
+    line({ level: "debug", message: "Lane 2 requested bytes 0–1023 · HTTP 206" }),
+    line({ level: "warn", message: "Lane 2 lost connection — retrying (attempt 2)" }),
+    line({ level: "trace", message: "ramp window" }),
+    line({ level: "error", message: "Failed: server returned HTTP 403" }),
+  ];
+
+  it("hides per-request detail unless the Detailed view is on", () => {
+    expect(visibleLines(lines, false).map((l) => l.level)).toEqual(["info", "warn", "error"]);
+    expect(visibleLines(lines, true)).toBe(lines);
+  });
+
+  it("counts DEBUG and TRACE as detail", () => {
+    expect(lines.map(isDetail)).toEqual([false, true, false, true, false]);
+  });
+});
+
+describe("logView", () => {
+  const request = line({ level: "debug", message: "Requested the file · HTTP 200 · 4.00 MB" });
+  const view = (lines: LogLine[], detailed: boolean) =>
+    logView(lines, visibleLines(lines, detailed));
+
+  it("says nothing is logged when there are no lines", () => {
+    expect(view([], false)).toBe("empty");
+    expect(view([], true)).toBe("empty");
+  });
+
+  it("says only detail is logged while Detailed is off and nothing else is", () => {
+    expect(view([request], false)).toBe("only-detail");
+    expect(view([request], true)).toBe("list");
+  });
+
+  it("lists the lines once a concise one arrives", () => {
+    expect(view([request, line()], false)).toBe("list");
   });
 });
 
 describe("sameLog", () => {
   it("is true only for the same lines in the same order", () => {
-    const a = [line(), line({ at: 2_000, message: "download finished" })];
+    const a = [line(), line({ at: 2_000, message: "Saved to /data/a.iso" })];
     expect(
       sameLog(
         a,

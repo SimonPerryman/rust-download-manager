@@ -79,12 +79,16 @@ async fn manager_download_lines_carry_its_id() {
     let lines = captured.lines();
     let started = lines
         .iter()
-        .find(|l| l.contains("download started"))
+        .find(|l| l.contains("Started · "))
         .unwrap_or_else(|| panic!("no start line in {lines:#?}"));
-    assert!(started.contains(&format!("task{{id={id}}}")), "{started}");
+    // Logged after the first response, so the claimed name is already on it.
+    assert!(
+        started.contains(&format!("task{{id={id} file=report-final.bin}}")),
+        "{started}"
+    );
     let claimed = lines
         .iter()
-        .find(|l| l.contains("target claimed"))
+        .find(|l| l.contains("Saving as "))
         .unwrap_or_else(|| panic!("no claim line in {lines:#?}"));
     assert!(
         claimed.contains(&format!("task{{id={id} file=report-final.bin}}")),
@@ -92,8 +96,8 @@ async fn manager_download_lines_carry_its_id() {
     );
 }
 
-/// Pausing or cancelling logs at INFO ("download paused"/"download
-/// cancelled"), never ERROR or WARN, still tagged with the download's URL.
+/// Pausing or cancelling logs at INFO ("Paused"/"Cancelled"), never ERROR
+/// or WARN, still tagged with the download's URL.
 #[tokio::test]
 async fn pause_and_cancel_are_not_logged_as_errors() {
     let (captured, _guard) = capture();
@@ -114,7 +118,7 @@ async fn pause_and_cancel_are_not_logged_as_errors() {
     assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
 
     let lines = captured.lines();
-    for msg in ["download paused", "download cancelled"] {
+    for msg in [": Paused", ": Cancelled"] {
         let line = lines
             .iter()
             .find(|l| l.contains(msg))
@@ -162,7 +166,7 @@ async fn failed_download_never_logs_or_reports_url_secrets() {
         assert!(!reported.contains(secret), "{reported}");
         assert!(!logged.contains(secret), "{logged}");
     }
-    assert!(logged.contains("download failed"), "{logged}");
+    assert!(logged.contains("Failed after 2 attempts: "), "{logged}");
     assert!(logged.contains("retrying"), "{logged}");
     assert!(logged.contains("/f.bin?<redacted>"), "{logged}");
 }

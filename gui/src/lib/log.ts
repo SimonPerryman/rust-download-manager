@@ -23,6 +23,29 @@ export function logText(line: LogLine): string {
   return line.fields ? `${line.message} ${line.fields}` : line.message;
 }
 
+/** Whether a line is per-request detail (DEBUG and below), shown only in the Detailed view. */
+export function isDetail(line: LogLine): boolean {
+  return line.level === "debug" || line.level === "trace";
+}
+
+/** The lines the Log tab shows: all of them when `detailed`, else the concise ones. */
+export function visibleLines(lines: readonly LogLine[], detailed: boolean): readonly LogLine[] {
+  return detailed ? lines : lines.filter((l) => !isDetail(l));
+}
+
+/**
+ * What the Log tab shows for `lines` it has read and the `shown` subset:
+ * "empty" when nothing is logged, "only-detail" when every line is hidden
+ * detail (DEBUG lines come before "Started"), else the "list".
+ */
+export function logView(
+  lines: readonly LogLine[],
+  shown: readonly LogLine[],
+): "empty" | "only-detail" | "list" {
+  if (lines.length === 0) return "empty";
+  return shown.length === 0 ? "only-detail" : "list";
+}
+
 /** Whether two reads of a log hold the same lines, so an unchanged poll doesn't re-render. */
 export function sameLog(a: readonly LogLine[], b: readonly LogLine[]): boolean {
   return (
