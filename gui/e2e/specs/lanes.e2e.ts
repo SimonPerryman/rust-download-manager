@@ -12,6 +12,7 @@ import {
   baseUrl,
   dismissOverlays,
   engineRow,
+  rectOf,
   removeAll,
   retype,
   rowById,
@@ -38,9 +39,8 @@ async function laneCount(scope: string, size: "cell" | "pane"): Promise<number> 
 
 /** The height in px of the first lane under `scope` (0 when its size rule is missing). */
 async function laneHeight(scope: string, size: "cell" | "pane"): Promise<number> {
-  return $(`${scope} [data-testid="lanes"][data-size="${size}"] [data-testid="lane"]`).getSize(
-    "height",
-  );
+  return (await rectOf(`${scope} [data-testid="lanes"][data-size="${size}"] [data-testid="lane"]`))
+    .height;
 }
 
 async function waitForLanes(scope: string, size: "cell" | "pane", n: number): Promise<void> {
