@@ -7,7 +7,10 @@
 // - a job-level `write` only where allowed (host: contents);
 // - every workflow release.yml calls (`uses: ./.github/workflows/...`) is
 //   `workflow_call`-only, grants no `write` and calls no workflow itself;
-// - no job passes `secrets:` (a called workflow gets none of the repo's).
+// - no job passes `secrets:` (a called workflow gets none of the repo's);
+// - a job that needs `announce` has an `always()` condition: announce sits
+//   downstream of publish-homebrew-formula, which every pre-release skips, and
+//   the implicit success() would skip the job too.
 //
 // Usage: node scripts/guard-release-workflow.mjs [workflowsDir]   (default: ../.github/workflows)
 //        node scripts/guard-release-workflow.mjs --self-test     (mutated copies must fail)
@@ -45,6 +48,17 @@ function children(ls, at) {
 
 function topLevel(ls) {
   return children([{ indent: -1, text: "" }, ...ls], 0).map((c) => ({ ...c, at: c.at - 1 }));
+}
+
+/** The job names a `needs:` entry lists, inline (`[a, b]`) or as a block. */
+function needsOf(ls, entry) {
+  if (entry.value) return entry.value.replace(/[[\]]/g, "").split(",").map((s) => s.trim()).filter(Boolean);
+  const out = [];
+  for (let i = entry.at + 1; i < ls.length && ls[i].indent > ls[entry.at].indent; i++) {
+    const m = /^-\s*([\w-]+)$/.exec(ls[i].text);
+    if (m) out.push(m[1]);
+  }
+  return out;
 }
 
 /** Violations for one permissions block (`value` inline, or its children). */
@@ -90,6 +104,10 @@ export function checkWorkflow(text, { reusable }) {
     if (props.some((p) => p.key === "secrets")) errors.push(`job ${job.key}: passes \`secrets:\` to a called workflow`);
     const uses = props.find((p) => p.key === "uses");
     if (reusable && uses) errors.push(`job ${job.key}: a called workflow must not call another (${uses.value})`);
+    const needs = props.find((p) => p.key === "needs");
+    const condition = props.find((p) => p.key === "if")?.value ?? "";
+    if (!reusable && needs && needsOf(ls, needs).includes("announce") && !/\balways\(\)/.test(condition))
+      errors.push(`job ${job.key}: needs announce, so its \`if:\` must use always()`);
   }
   return errors;
 }
@@ -123,6 +141,7 @@ export function selfTest(dir) {
       "  build-global-artifacts:\n    permissions:\n      contents: write\n",
     ),
     "secrets on a custom job": release.replace(/^( {4}uses: \.\/\.github\/workflows\/release-gui\.yml)$/m, "$1\n    secrets: inherit"),
+    "no always() on the release checks": release.replace(/^ {4}if: .*always\(\).*announce.*\n(?= {4}permissions:\n {6}contents: read\n {4}uses: \.\/\.github\/workflows\/release-checks\.yml)/m, ""),
     "packages: write on the host job": release.replace(/^( {4}permissions:\n {6}contents: write)/m, "$1\n      packages: write"),
   };
   const escaped = [];
