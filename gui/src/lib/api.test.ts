@@ -53,3 +53,25 @@ describe("archive and tags", () => {
     ]);
   });
 });
+
+describe("the updater", () => {
+  beforeEach(() => invoke.mockReset().mockResolvedValue(undefined));
+
+  // The release page is the backend's to choose: the webview never passes a URL.
+  it("sends only what each command needs", async () => {
+    await api.checkForUpdate();
+    await api.installUpdate("on-quit", "0.3.1");
+    await api.openUpdateNotes();
+    await api.setAutoCheck(true);
+    await api.resumePausedForUpdate();
+    await api.forgetPausedForUpdate();
+    expect(invoke.mock.calls).toEqual([
+      ["check_for_update"],
+      ["install_update", { when: "on-quit", version: "0.3.1" }],
+      ["open_update_notes"],
+      ["set_auto_check", { on: true }],
+      ["resume_paused_for_update"],
+      ["forget_paused_for_update"],
+    ]);
+  });
+});

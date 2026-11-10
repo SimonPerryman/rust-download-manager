@@ -92,6 +92,24 @@
     animation: slideIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
+  /* The first-run question, bottom left of the main area (beside the sidebar), under the
+     dialogs. Toasts and finish notifications sit above it while it shows (FirstRunCard). */
+  .first-run-card {
+    @apply fixed z-25 rounded-lg bg-raised p-4 text-sm;
+    left: 216px;
+    bottom: 48px;
+    width: min(340px, calc(100vw - 232px));
+    color: var(--ink);
+    box-shadow:
+      var(--sh-pop),
+      0 0 0 1px var(--line);
+  }
+
+  :root[data-first-run] .toast-stack,
+  :root[data-first-run] .notif-stack {
+    bottom: calc(56px + var(--first-run-h, 0px));
+  }
+
   .name-filter {
     width: 192px;
   }

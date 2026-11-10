@@ -5,7 +5,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { SettingsPatch } from "./settings";
-import type { DownloadSnapshot, LogLine, Settings, Status } from "./types";
+import type {
+  DownloadSnapshot,
+  InstallWhen,
+  LogLine,
+  Settings,
+  Status,
+  UpdateInfo,
+  UpdatePrefs,
+  UpdateProgress,
+} from "./types";
 
 /** One-shot snapshot of every download, in display order. */
 export const list = () => invoke<DownloadSnapshot[]>("list");
@@ -97,6 +106,31 @@ export const pickFolder = () => invoke<string | null>("pick_folder");
 export const openDownload = (id: number) => invoke<void>("open_download", { id });
 /** Show a completed download's file in its folder (by id, like `openDownload`). */
 export const revealDownload = (id: number) => invoke<void>("reveal_download", { id });
+
+/** Resume exactly the downloads an update restart paused (the after-update bar's Resume all). */
+export const resumePausedForUpdate = () => invoke<void>("resume_paused_for_update");
+/** Leave the downloads an update restart paused as they are, and stop offering to resume them. */
+export const forgetPausedForUpdate = () => invoke<void>("forget_paused_for_update");
+
+/** Ask the release feed for a newer rdm; null when this is the newest. Rejects if the check fails. */
+export const checkForUpdate = () => invoke<UpdateInfo | null>("check_for_update");
+/**
+ * Download and verify `version`, the update the notice shows, then restart into it now or install
+ * it at quit. The backend refuses a version it didn't find or stage.
+ */
+export const installUpdate = (when: InstallWhen, version: string) =>
+  invoke<void>("install_update", { when, version });
+/** The version staged to install at quit, if any. */
+export const stagedUpdate = () => invoke<string | null>("staged_update");
+/** Open the found update's release page. No URL: the backend opens only that page. */
+export const openUpdateNotes = () => invoke<void>("open_update_notes");
+/** Whether to check automatically (null: not asked yet), this version, and what it updated from. */
+export const updatePrefs = () => invoke<UpdatePrefs>("update_prefs");
+/** Turn automatic update checks on or off. */
+export const setAutoCheck = (on: boolean) => invoke<void>("set_auto_check", { on });
+/** Subscribe to an update's download progress. */
+export const onUpdateProgress = (cb: (progress: UpdateProgress) => void): Promise<UnlistenFn> =>
+  listen<UpdateProgress>("update-progress", (e) => cb(e.payload));
 
 /** Subscribe to live snapshots pushed from the backend's watch channel. */
 export const onDownloadsChanged = (

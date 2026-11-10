@@ -23,7 +23,7 @@ export function Toasts({ pending, onUndo, toast, onDismissToast }: Props) {
     <div
       role="status"
       aria-live="polite"
-      className="pointer-events-none fixed bottom-12 left-1/2 z-70 grid -translate-x-1/2 justify-items-center gap-2"
+      className="toast-stack pointer-events-none fixed bottom-12 left-1/2 z-70 grid -translate-x-1/2 justify-items-center gap-2"
     >
       {pending && pending.seq !== hiddenSeq && (
         <Card

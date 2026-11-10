@@ -32,6 +32,8 @@ import { useStopDialog } from "./lib/useStopDialog";
 import { useTableInput } from "./lib/useTableInput";
 import { useTagsDialog } from "./lib/useTagsDialog";
 import { useToast } from "./lib/useToast";
+import { pausedBarCount, updatedHeading, willPauseCount } from "./lib/updater";
+import { useUpdater } from "./lib/useUpdater";
 import { useUrlIntake } from "./lib/useUrlIntake";
 import { useView } from "./lib/useView";
 import { DetailsPane } from "./components/details/DetailsPane";
@@ -49,6 +51,9 @@ import type { RowHandlers } from "./components/table/rowHandlers";
 import { DownloadTable } from "./components/table/DownloadTable";
 import { RowMenu } from "./components/table/RowMenu";
 import { Toolbar } from "./components/toolbar/Toolbar";
+import { FirstRunCard } from "./components/updater/FirstRunCard";
+import { PausedForUpdateBar } from "./components/updater/PausedForUpdateBar";
+import { UpdateNotice } from "./components/updater/UpdateNotice";
 
 // State wiring only: every download fact comes from the engine's snapshots,
 // and every action is a thin api call.
@@ -62,6 +67,7 @@ export default function App() {
   const history = useSpeedHistory(downloads);
   const laneWork = useLaneWork(downloads);
   const pane = usePaneHeight();
+  const [updates, updater] = useUpdater();
 
   const {
     setFilter,
@@ -270,6 +276,13 @@ export default function App() {
           }
           confirmRemove={confirmRemove}
           onConfirmRemove={updateConfirmRemove}
+          updates={{
+            prefs: updates.prefs,
+            check: updates.check,
+            onCheck: () => void updater.checkNow(),
+            onAutoCheck: (on) => updater.setAutoCheck(on).catch(fail),
+            onLeave: () => updater.clearCheckResult(),
+          }}
           onAdd={() => openAdd()}
           prefs={prefs}
           resolved={resolved}
@@ -291,6 +304,25 @@ export default function App() {
             tableRef.current?.focus({ preventScroll: true });
           }}
         />
+        <div data-testid="update-bars" data-checks-done={updates.checksDone}>
+          <UpdateNotice
+            notice={updates.notice}
+            willPause={willPauseCount(downloads)}
+            staged={updates.staged}
+            onRestart={() => void updater.install("now")}
+            onInstallOnQuit={() => void updater.install("on-quit")}
+            onLater={() => updater.later()}
+            onNotes={() => api.openUpdateNotes().catch(fail)}
+            onRetry={() => void updater.retry()}
+            onDismiss={() => updater.dismiss()}
+          />
+          <PausedForUpdateBar
+            count={pausedBarCount(downloads, updates)}
+            heading={updatedHeading(updates.prefs)}
+            onResumeAll={() => updater.resumePaused().catch(fail)}
+            onDismiss={() => updater.forgetPaused().catch(fail)}
+          />
+        </div>
         <DownloadTable
           rows={visible}
           sort={sort}
@@ -371,6 +403,9 @@ export default function App() {
         onReveal={(d) => revealDownload(downloads.find((x) => x.id === d.id) ?? d)}
         onDismiss={finish.dismissNotification}
       />
+      {updates.prefs?.autoCheck === null && (
+        <FirstRunCard onAnswer={(yes) => updater.answer(yes).catch(fail)} />
+      )}
       {draggingUrl && <DropOverlay />}
     </div>
   );

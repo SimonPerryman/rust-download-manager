@@ -58,6 +58,8 @@ export interface DownloadSnapshot {
   archived: boolean;
   /** User labels, in the order added; unique ignoring case. */
   tags: string[];
+  /** Paused by an update restart and still paused (Resume all after the update resumes it). */
+  paused_for_update: boolean;
 }
 
 /** Mirrors the engine's `LogLevel`. */
@@ -71,6 +73,35 @@ export interface LogLine {
   message: string;
   /** The event's other fields as space-separated `name=value` pairs. */
   fields: string;
+}
+
+/** Mirrors the GUI crate's `UpdateInfo` (gui/src-tauri/src/updater/mod.rs): a newer rdm. */
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  /** The release page; opened through `openUpdateNotes`, never directly. */
+  notesUrl: string;
+  /** False where rdm can't replace itself (a `.deb` install): offer the release page instead. */
+  canInstall: boolean;
+}
+
+/** When to install a downloaded update. */
+export type InstallWhen = "now" | "on-quit";
+
+/** An update's download progress, in bytes. */
+export interface UpdateProgress {
+  downloaded: number;
+  total: number | null;
+}
+
+/** Mirrors the GUI crate's `UpdatePrefs` (gui/src-tauri/src/updater/prefs.rs). */
+export interface UpdatePrefs {
+  /** Null until the first-run question is answered. */
+  autoCheck: boolean | null;
+  /** This app's version. */
+  version: string;
+  /** The version the previous run was, on the first run after an update. */
+  updatedFrom: string | null;
 }
 
 /** Mirrors the engine's manager-wide `Settings` (see src/engine/store.rs). */
