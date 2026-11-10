@@ -1,7 +1,7 @@
 ---
 id: M9
 title: In-app updater
-status: todo
+status: in-progress
 depends-on: [M6]
 tags: [gui, ci, testing]
 ---
