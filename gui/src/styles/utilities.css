@@ -1,0 +1,5 @@
+/* Tailwind's utilities, last in the utilities layer so they beat the component classes
+   imported before them. */
+@layer utilities {
+  @tailwind utilities source(none);
+}

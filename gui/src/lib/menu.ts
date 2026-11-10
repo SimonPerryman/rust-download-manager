@@ -1,5 +1,5 @@
 // The right-click menu's items for the rows it acts on, fitted to their
-// statuses. Pure; App runs the chosen command.
+// statuses. Pure; useTableInput runs the chosen command.
 
 import { isArchivable, toRemove } from "./archive";
 import { removeDiskNote } from "./copy";

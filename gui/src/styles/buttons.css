@@ -1,0 +1,63 @@
+/* Buttons. In the utilities layer, ahead of Tailwind's utilities (see index.css). */
+@layer utilities {
+  /* ---------- buttons: one solid primary per view, soft / ghost / link below it ---------- */
+  .btn {
+    @apply inline-flex h-8 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-sm font-medium;
+  }
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
+    cursor: default;
+    opacity: 0.45;
+  }
+  .btn-primary {
+    background: var(--btn);
+    color: var(--on-btn);
+    box-shadow: 0 1px 2px rgba(28, 27, 25, 0.18);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--btn-h);
+  }
+  .btn-soft {
+    background: var(--primary-soft);
+    color: var(--primary-ink);
+  }
+  .btn-soft:hover:not(:disabled) {
+    background: var(--primary-soft-h);
+  }
+  .btn-ghost {
+    color: var(--g600);
+  }
+  .btn-ghost:hover:not(:disabled, [aria-disabled="true"]) {
+    background: var(--hover);
+    color: var(--ink);
+  }
+  .btn-danger {
+    background: var(--danger-fill);
+    color: #fff;
+  }
+  .btn-sm {
+    @apply h-6 gap-1 rounded-sm px-2 text-xs;
+  }
+  .btn-link {
+    @apply inline-flex items-center whitespace-nowrap font-medium;
+    color: var(--accent);
+  }
+  .btn-link:hover {
+    text-decoration: underline;
+  }
+  .icon-btn {
+    @apply inline-grid h-8 w-8 shrink-0 place-items-center rounded-md;
+    color: var(--g600);
+  }
+  .icon-btn:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+  .icon-btn-sm {
+    @apply h-6 w-6 rounded-sm;
+  }
+  .icon-btn[aria-pressed="true"] {
+    background: var(--primary-soft);
+    color: var(--primary-ink);
+  }
+}

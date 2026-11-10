@@ -1,0 +1,204 @@
+/* Design tokens and base element styles: the Console palette, light and dark. */
+
+/* The Console palette's design tokens. Every colour is a CSS variable from the palette
+   below; several are hex in one theme and rgba in the other, so they're used without
+   `/opacity` modifiers. Font sizes and radii replace Tailwind's scales; colours and shadows
+   extend them. */
+@theme {
+  /* The design plan's type scale: 12 13 14 16 20 24. */
+  --text-*: initial;
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 20px;
+  --text-base: 14px;
+  --text-base--line-height: 20px;
+  --text-lg: 16px;
+  --text-lg--line-height: 24px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 32px;
+
+  --radius-*: initial;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --color-ink: var(--ink);
+  --color-g600: var(--g600);
+  --color-g400: var(--g400);
+  --color-g300: var(--g300);
+  --color-g200: var(--g200);
+  --color-surface: var(--surface);
+  --color-sidebar: var(--sidebar);
+  --color-raised: var(--raised);
+  --color-hover: var(--hover);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-track: var(--track);
+  --color-accent: var(--accent);
+  --color-btn: var(--btn);
+  --color-btn-h: var(--btn-h);
+  --color-on-btn: var(--on-btn);
+  --color-fill: var(--fill);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-h: var(--primary-soft-h);
+  --color-primary-ink: var(--primary-ink);
+  --color-sel: var(--sel);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-ink: var(--success-ink);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-ink: var(--warn-ink);
+  --color-danger: var(--danger);
+  --color-danger-fill: var(--danger-fill);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-ink: var(--danger-ink);
+  --color-muted-fill: var(--muted-fill);
+  --color-toast-bg: var(--toast-bg);
+  --color-toast-ink: var(--toast-ink);
+  --color-toast-action: var(--toast-action);
+  --color-success-linger: var(--success-linger);
+
+  --shadow-raised: var(--sh-raised);
+  --shadow-pop: var(--sh-pop);
+  --shadow-dialog: var(--sh-dialog);
+
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+
+/* The Console palette, verbatim from .ai-cache/mockups/m5/d-combined.html.
+   Dark overrides key off the `.dark` class that prefs.ts and the inline script
+   in index.html put on <html>; "system" is already resolved to that class
+   before first paint, so there's no prefers-color-scheme block to fight an
+   explicit Light choice. */
+@layer base {
+  :root {
+    --ink: #1c1b19;
+    --g600: #5e5a53;
+    --g400: #9a958c;
+    --g300: #cbc7bf;
+    --g200: #e2dfd8;
+    --surface: #f7f6f3;
+    --sidebar: #efede8;
+    --raised: #ffffff;
+    --hover: rgba(28, 27, 25, 0.04);
+    --line: rgba(28, 27, 25, 0.08);
+    --line-strong: rgba(28, 27, 25, 0.14);
+    --track: #e7e4de;
+    --accent: #2b4acb;
+    --btn: #2b4acb;
+    --btn-h: #233eae;
+    --on-btn: #ffffff;
+    --fill: #2b4acb;
+    --primary-soft: #e8ecfa;
+    --primary-soft-h: #dce2f8;
+    --primary-ink: #2340ae;
+    --sel: #e9edfb;
+    --success: #1f8a5b;
+    --success-soft: #e1f1e8;
+    --success-ink: #15673f;
+    --warn: #b7791f;
+    --warn-soft: #f7eedc;
+    --warn-ink: #80530e;
+    --danger: #c0392b;
+    --danger-fill: #c0392b;
+    --danger-soft: #f8e5e2;
+    --danger-ink: #972b1f;
+    --muted-fill: #6f6a62;
+    --toast-bg: #1c1b19;
+    --toast-ink: #f7f6f3;
+    --toast-action: #a9b8f7;
+    --success-linger: rgba(31, 138, 91, 0.06);
+    --sh-raised: 0 1px 2px rgba(28, 27, 25, 0.1), 0 1px 4px rgba(28, 27, 25, 0.05);
+    --sh-pop: 0 2px 4px rgba(28, 27, 25, 0.1), 0 12px 32px rgba(28, 27, 25, 0.14);
+    --sh-dialog: 0 4px 8px rgba(28, 27, 25, 0.12), 0 24px 64px rgba(28, 27, 25, 0.24);
+    --backdrop: rgba(28, 27, 25, 0.32);
+    --drop-tint: rgba(43, 74, 203, 0.06);
+    --row-h: 32px;
+    --sh-pane: 0 -1px 0 var(--line-strong), 0 -8px 24px rgba(28, 27, 25, 0.06);
+    --lane-from: #a9b8f4;
+    --lane-to: #2b4acb;
+    --lane-track: #eceae4;
+    --lane-track-hover: #e2dfd7;
+    --lane-muted: #9a958c;
+    --lane-done: #1f8a5b;
+    color-scheme: light;
+  }
+  :root[data-density="comfortable"] {
+    --row-h: 48px;
+  }
+  :root.dark {
+    --ink: #eeece7;
+    --g600: #aba69c;
+    --g400: #7c786f;
+    --g300: #4b4842;
+    --g200: #35332f;
+    --surface: #181715;
+    --sidebar: #201f1c;
+    --raised: #26251f;
+    --hover: rgba(255, 255, 255, 0.04);
+    --line: rgba(255, 255, 255, 0.07);
+    --line-strong: rgba(255, 255, 255, 0.13);
+    --track: #2f2d29;
+    --accent: #8299f3;
+    --btn: #3d5ad6;
+    --btn-h: #4b67e0;
+    --on-btn: #ffffff;
+    --fill: #3d5ad6;
+    --primary-soft: rgba(130, 153, 243, 0.15);
+    --primary-soft-h: rgba(130, 153, 243, 0.22);
+    --primary-ink: #b0bff8;
+    --sel: rgba(130, 153, 243, 0.13);
+    --success: #45b884;
+    --success-soft: rgba(69, 184, 132, 0.13);
+    --success-ink: #82d5ae;
+    --warn: #e0a54a;
+    --warn-soft: rgba(224, 165, 74, 0.13);
+    --warn-ink: #eec47f;
+    --danger: #e2675a;
+    --danger-fill: #b8402f;
+    --danger-soft: rgba(226, 103, 90, 0.14);
+    --danger-ink: #f2a398;
+    --muted-fill: #5f5b54;
+    --toast-bg: #eeece7;
+    --toast-ink: #1c1b19;
+    --toast-action: #2b4acb;
+    --success-linger: rgba(69, 184, 132, 0.07);
+    --sh-raised: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0, 0, 0, 0.25);
+    --sh-pop: 0 2px 4px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+    --sh-dialog: 0 4px 8px rgba(0, 0, 0, 0.45), 0 24px 64px rgba(0, 0, 0, 0.6);
+    --backdrop: rgba(0, 0, 0, 0.55);
+    --drop-tint: rgba(130, 153, 243, 0.08);
+    --sh-pane: 0 -1px 0 var(--line-strong), 0 -8px 24px rgba(0, 0, 0, 0.35);
+    --lane-from: #34489e;
+    --lane-to: #a9b8f7;
+    --lane-track: #2c2a26;
+    --lane-track-hover: #36332e;
+    --lane-muted: #6b675f;
+    --lane-done: #3fa877;
+    color-scheme: dark;
+  }
+
+  * {
+    border-color: var(--line);
+  }
+  body {
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  /* Tailwind 3's preflight gave buttons a pointer; Tailwind 4's leaves the default. */
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}

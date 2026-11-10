@@ -1,0 +1,15 @@
+/* The sidebar's speed sparkline. In the utilities layer, ahead of Tailwind's utilities (see
+   index.css). */
+@layer utilities {
+  /* ---------- sidebar sparkline ---------- */
+  .spark {
+    margin-top: auto;
+    padding: 16px 8px 0;
+  }
+  .spark svg {
+    display: block;
+    width: 100%;
+    height: 40px;
+    margin-top: 8px;
+  }
+}

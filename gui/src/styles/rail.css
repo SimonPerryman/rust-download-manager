@@ -1,0 +1,14 @@
+/* Outside the layers so the icon rail beats the sidebar's own utility classes. */
+@media (max-width: 759px) {
+  .brand {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .f-item {
+    position: relative;
+    justify-content: center;
+    height: 40px;
+    padding: 0;
+  }
+}

@@ -1,0 +1,184 @@
+/* The details pane: its frame, tabs, Overview and Speed. In the utilities layer, ahead of
+   Tailwind's utilities (see index.css). */
+@layer utilities {
+  /* ---------- details pane ---------- */
+  .pane {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    background: var(--surface);
+    box-shadow: var(--sh-pane);
+  }
+  .pane-resize {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -4px;
+    z-index: 4;
+    height: 8px;
+    cursor: ns-resize;
+    touch-action: none;
+  }
+  .pane-resize::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 2px;
+    width: 32px;
+    height: 4px;
+    margin-left: -16px;
+    border-radius: 2px;
+    background: var(--g300);
+    opacity: 0;
+  }
+  .pane-resize:hover::after,
+  .pane-resize:focus-visible::after {
+    opacity: 1;
+  }
+  .pane-head {
+    @apply flex items-center gap-3;
+    padding: 12px 12px 0 16px;
+  }
+  .pane-title {
+    @apply flex min-w-0 flex-1 items-center gap-2;
+  }
+  .pane-title h2 {
+    @apply min-w-0 text-base font-semibold;
+  }
+  .pane-state {
+    @apply whitespace-nowrap text-sm;
+    color: var(--g600);
+  }
+  .pane-tabs {
+    @apply flex gap-1;
+    padding: 4px 16px 0;
+    box-shadow: inset 0 -1px 0 var(--line);
+  }
+  .tab-btn {
+    @apply h-8 px-2 text-sm font-medium;
+    color: var(--g600);
+    box-shadow: inset 0 -2px 0 transparent;
+  }
+  .tab-btn:hover {
+    color: var(--ink);
+  }
+  .tab-btn[aria-selected="true"] {
+    color: var(--ink);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .pane-body {
+    @apply min-h-0 flex-1 overflow-auto p-4;
+  }
+  .ov {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 340px);
+    gap: 32px;
+  }
+  .stats {
+    @apply mb-4 flex flex-wrap items-baseline;
+    gap: 8px 32px;
+  }
+  .queue-moves {
+    @apply flex gap-1;
+  }
+  .stat .big,
+  .summary .big {
+    @apply text-xl font-semibold tabular-nums;
+    letter-spacing: -0.01em;
+  }
+  .summary {
+    @apply mb-4 flex flex-wrap items-baseline;
+    gap: 4px 8px;
+  }
+  .summary .rest {
+    @apply text-base tabular-nums;
+    color: var(--g600);
+  }
+  .map-head {
+    @apply mb-2 flex items-baseline justify-between gap-4;
+  }
+  .facts {
+    @apply grid content-start gap-3;
+  }
+  .fact {
+    @apply grid items-start gap-2;
+    grid-template-columns: 16px minmax(0, 1fr);
+    color: var(--g600);
+  }
+  .fact-icon {
+    margin-top: 2px;
+    color: var(--g400);
+  }
+  .url {
+    @apply min-w-0 text-xs;
+    word-break: break-all;
+    line-height: 1.45;
+  }
+  .hash {
+    @apply mt-1 block text-xs;
+    word-break: break-all;
+    color: var(--g400);
+    line-height: 1.45;
+  }
+  .verify {
+    @apply mt-2 flex gap-2;
+  }
+  .verify input {
+    @apply h-7 min-w-0 flex-1 rounded-sm border px-2 text-xs;
+    border-color: var(--line-strong);
+    background: var(--raised);
+    color: var(--ink);
+  }
+  .verify input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .verify input[aria-invalid="true"] {
+    border-color: var(--danger);
+  }
+  .verify-err {
+    @apply mt-1 text-xs;
+    color: var(--danger-ink);
+  }
+  .callout {
+    @apply mb-4 flex gap-3 rounded-md px-4 py-3;
+    max-width: 640px;
+    background: var(--danger-soft);
+    color: var(--danger-ink);
+  }
+  .spd {
+    @apply flex h-full flex-col;
+    min-height: 120px;
+  }
+  .spd-stats {
+    @apply mb-2 flex flex-wrap items-baseline gap-6;
+  }
+  .spd-stats b {
+    @apply text-lg font-semibold tabular-nums;
+  }
+  .graph {
+    position: relative;
+    flex: 1;
+    min-height: 96px;
+  }
+  .graph svg {
+    position: absolute;
+    inset: 0;
+  }
+  .graph-label {
+    font-size: 12px;
+    fill: var(--g400);
+    font-variant-numeric: tabular-nums;
+  }
+  .graph-limit {
+    font-size: 12px;
+    font-weight: 500;
+    fill: var(--warn-ink);
+  }
+  .graph-empty {
+    font-size: 13px;
+    fill: var(--g600);
+  }
+}

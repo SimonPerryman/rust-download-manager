@@ -1,0 +1,57 @@
+/* The details pane's Log tab. In the utilities layer, ahead of Tailwind's utilities (see
+   index.css). */
+@layer utilities {
+  .log {
+    @apply grid gap-1 text-sm;
+  }
+  .log li {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 12px;
+    color: var(--ink);
+  }
+  .log time {
+    color: var(--g400);
+    font-variant-numeric: tabular-nums;
+  }
+  .log li > span {
+    overflow-wrap: anywhere;
+  }
+  .log li[data-level="warn"] > span {
+    color: var(--warn-ink);
+  }
+  .log li[data-level="error"] > span {
+    color: var(--danger-ink);
+  }
+  .log li[data-level="debug"] > span,
+  .log li[data-level="trace"] > span {
+    color: var(--g600);
+  }
+  /* Pinned above the lines while they scroll; the negative margin covers the
+     pane body's top padding, so lines don't show through above it. Sticky
+     offsets count from the scroller's content edge, inside that padding, so
+     the offset must undo the same 1rem: at top-0 the bar sat 1rem low and
+     covered the first line. */
+  .log-bar {
+    @apply sticky -top-4 z-1 -mt-4 mb-2 flex items-center justify-end gap-3 pt-4 pb-1 text-sm;
+    background: var(--surface);
+  }
+  .log-bar .copied {
+    color: var(--success-ink);
+  }
+  .log-bar-sep {
+    width: 1px;
+    height: 16px;
+    background: var(--line-strong);
+  }
+  .log-detail {
+    @apply flex cursor-pointer items-center gap-2;
+    color: var(--g600);
+  }
+  .log-detail input {
+    accent-color: var(--btn);
+  }
+  .log-empty {
+    @apply grid gap-1 text-sm;
+  }
+}

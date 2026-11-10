@@ -4,7 +4,7 @@ import type { DownloadSnapshot } from "../../lib/types";
 import { trapTab } from "./trapTab";
 
 type Props = {
-  /** The live rows still stoppable; App closes the dialog once none is. */
+  /** The live rows still stoppable; useStopDialog closes the dialog once none is. */
   ds: DownloadSnapshot[];
   onCancel: () => void;
   onConfirm: (keep: boolean) => void;
