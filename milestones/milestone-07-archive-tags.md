@@ -1,7 +1,7 @@
 ---
 id: M7
 title: Archive & tags
-status: todo
+status: done
 depends-on: [M5, M6]
 tags: [engine, gui, persistence, testing]
 ---
@@ -188,27 +188,27 @@ Ordering assertions use Manager status, not progress bytes._
   turns it off, and the Settings toggle turns it back on.
 
 **E2E (`gui/e2e/specs/`, against the fixture server):**
-- [ ] **Archive finished + undo:** with a completed and a stopped download,
+- [x] **Archive finished + undo:** with a completed and a stopped download,
   Archive finished removes both rows from All and the Archived count reads
   2. Undo brings them back and the count returns to 0. (`archive.e2e.ts`)
-- [ ] **Archived view + unarchive:** an archived row appears only under
+- [x] **Archived view + unarchive:** an archived row appears only under
   Archived; Unarchive returns it to All and to Done. (`archive.e2e.ts`)
-- [ ] **Remove keeps the file:** removing an archived completed download
+- [x] **Remove keeps the file:** removing an archived completed download
   from the Archived view drops the row, and the file is still in the
   download directory (checked from the spec with Node `fs`).
   (`archive.e2e.ts`)
-- [ ] **Tag at add:** adding a URL with tag `work` shows the tag on the row
+- [x] **Tag at add:** adding a URL with tag `work` shows the tag on the row
   and a `work` entry under Tags with count 1. (`tags.e2e.ts`)
-- [ ] **Tag filter counts:** with two downloads tagged `work` and one
+- [x] **Tag filter counts:** with two downloads tagged `work` and one
   untagged, the `work` filter shows exactly two rows and its count reads 2;
   archiving one drops the count to 1. (`tags.e2e.ts`)
-- [ ] **Archived tags:** in the Archived view the Tags section lists only
+- [x] **Archived tags:** in the Archived view the Tags section lists only
   archived tags, and selecting one narrows the Archived view.
   (`tags.e2e.ts`)
-- [ ] **Remove asks first:** Remove opens the confirmation; Cancel keeps the
+- [x] **Remove asks first:** Remove opens the confirmation; Cancel keeps the
   row, Remove drops it; with "Don't ask again" ticked the next Remove skips
   the dialog, and the Settings toggle brings it back. (`archive.e2e.ts`)
-- [ ] The updated `clear` spec (now Archive finished) and the other existing
+- [x] The updated `clear` spec (now Archive finished) and the other existing
   specs pass.
 
 ## Open questions
