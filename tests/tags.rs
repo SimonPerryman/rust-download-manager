@@ -105,6 +105,18 @@ async fn remove_tags_matches_ignoring_case() {
     assert_eq!(mgr.remove_tags(&[a], &strings(&["absent"])), 0);
 }
 
+/// A repeated id counts once.
+#[tokio::test]
+async fn repeated_ids_count_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    let a = idle(&mgr, dir.path());
+
+    assert_eq!(mgr.add_tags(&[a, a], &strings(&["work"])).unwrap(), 1);
+    assert_eq!(tags_of(&mgr, a), ["work"]);
+    assert_eq!(mgr.remove_tags(&[a, a], &strings(&["work"])), 1);
+}
+
 /// AC: `add_with` stores the given tags under the same rules, and rejects
 /// invalid ones without adding anything.
 #[tokio::test]

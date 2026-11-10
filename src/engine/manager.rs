@@ -544,6 +544,11 @@ impl Manager {
             if rec.checksum_state == ChecksumState::Pending {
                 rec.checksum_state = ChecksumState::None;
             }
+            // Only a finished download is archived; a hand-edited store
+            // can't hide a resumable one from every working view.
+            if !rec.status.is_terminal() {
+                rec.archived = false;
+            }
             // The on-disk state is authoritative for how far we got (a
             // multi-segment `.part` is pre-allocated, so not its length), but
             // only for a record that owns it: a stopped one whose partial was
@@ -872,11 +877,11 @@ impl Manager {
         let added = tags::normalize(tags)?;
         let st = &mut *self.inner.state.lock().unwrap();
         let mut updates = Vec::new();
-        for id in ids {
-            if let Some(e) = st.entries.get(id) {
+        for id in unique(ids) {
+            if let Some(e) = st.entries.get(&id) {
                 let merged = tags::merged(&e.record.tags, &added)?;
                 if merged != e.record.tags {
-                    updates.push((*id, merged));
+                    updates.push((id, merged));
                 }
             }
         }
@@ -888,9 +893,9 @@ impl Manager {
     pub fn remove_tags(&self, ids: &[u64], tags: &[String]) -> usize {
         let removed: Vec<String> = tags.iter().map(|t| t.trim().to_string()).collect();
         let st = &mut *self.inner.state.lock().unwrap();
-        let updates = ids
-            .iter()
-            .filter_map(|id| st.entries.get(id).map(|e| (*id, &e.record.tags)))
+        let updates = unique(ids)
+            .into_iter()
+            .filter_map(|id| st.entries.get(&id).map(|e| (id, &e.record.tags)))
             .filter_map(|(id, current)| {
                 let kept: Vec<String> = current
                     .iter()
@@ -1209,6 +1214,12 @@ fn unique_target(st: &ManagerState, base: PathBuf) -> PathBuf {
     unreachable!("the range is effectively unbounded")
 }
 
+/// `ids` without repeats, in first-seen order.
+fn unique(ids: &[u64]) -> Vec<u64> {
+    let mut seen = HashSet::new();
+    ids.iter().copied().filter(|id| seen.insert(*id)).collect()
+}
+
 /// Move `id` to position `index` (clamped) among the entries of `order` that
 /// are `waiting`, leaving every other entry where it is.
 fn move_among(order: &mut [u64], waiting: impl Fn(u64) -> bool, id: u64, index: usize) {
@@ -1410,6 +1421,33 @@ mod tests {
         .unwrap();
         let states: Vec<_> = mgr.snapshot().iter().map(|s| s.checksum_state).collect();
         assert_eq!(states, [ChecksumState::None, ChecksumState::Verified]);
+    }
+
+    /// A store can't load a resumable download as archived, which would hide
+    /// it from every working view.
+    #[tokio::test]
+    async fn load_keeps_only_finished_downloads_archived() {
+        let paused = DownloadRecord {
+            archived: true,
+            ..record(1, None)
+        };
+        let done = DownloadRecord {
+            id: 2,
+            status: Status::Completed,
+            ..paused.clone()
+        };
+        let data = StoreData {
+            next_id: 3,
+            downloads: vec![paused, done],
+            ..StoreData::default()
+        };
+        let mgr = Manager::load(
+            Box::new(FixedStore(data)),
+            tokio::runtime::Handle::current(),
+        )
+        .unwrap();
+        let archived: Vec<_> = mgr.snapshot().iter().map(|s| s.archived).collect();
+        assert_eq!(archived, [false, true]);
     }
 
     /// Only a completed download whose file is still on disk hands out a path,
