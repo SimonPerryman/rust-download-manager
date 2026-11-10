@@ -216,22 +216,22 @@ Roadmap: [roadmap.md](../roadmap.md).
   secrets exist.
 
 ### PR B — the notice and Settings (GUI)
-- [ ] Mock-ups of the first-run prompt, the notice and the Settings items,
+- [x] Mock-ups of the first-run prompt, the notice and the Settings items,
   approved by the owner.
-- [ ] The one-time "Check for updates automatically?" prompt.
-- [ ] The "Update available" notice with Restart now, Install when I quit,
+- [x] The one-time "Check for updates automatically?" prompt.
+- [x] The "Update available" notice with Restart now, Install when I quit,
   Later, progress and errors (Download on `.deb`); the checks on start and
   daily while open, honouring the setting.
-- [ ] After an update restart, the "N downloads were paused for the update"
+- [x] After an update restart, the "N downloads were paused for the update"
   notice with Resume all and a dismiss.
-- [ ] Settings: the current version, Check for updates, and "Check for
+- [x] Settings: the current version, Check for updates, and "Check for
   updates automatically".
-- [ ] Settings tidy-up (its own commit): "Ask before removing a download
-  for good" moves from Display to Downloads, and "Downloads at once" is
-  renamed "Concurrent downloads".
-- [ ] Vitest for the notice and the check scheduling; an e2e spec against
+- [x] Settings tidy-up (its own commit): "Ask before removing a download
+  for good" moves from Display to Downloads, and "Max concurrent
+  downloads" is renamed "Concurrent downloads".
+- [x] Vitest for the notice and the check scheduling; an e2e spec against
   the fixture.
-- [ ] Docs and CHANGELOG (see Scope).
+- [x] Docs and CHANGELOG (see Scope).
 
 ## Acceptance criteria
 _Standing gates (fmt / clippy / test, CI green on Linux and Windows,
@@ -268,28 +268,28 @@ and apply here without being restated._
   CSP's `connect-src` is unchanged (a test or guard).
 
 **Frontend (Vitest):**
-- [ ] The first-run prompt shows once; no check runs before it's answered,
+- [x] The first-run prompt shows once; no check runs before it's answered,
   and its answer is saved.
-- [ ] The notice shows the version, Restart now, Install when I quit and
+- [x] The notice shows the version, Restart now, Install when I quit and
   Later; Restart now names the downloads that will pause; Install shows
   progress; an error shows its message and leaves the app usable; a `.deb`
   install shows Download instead.
-- [ ] After an update restart, the paused-for-the-update notice shows the
+- [x] After an update restart, the paused-for-the-update notice shows the
   count; Resume all resumes those and hides it; dismiss hides it.
-- [ ] The automatic check runs on start and daily only while the setting is
+- [x] The automatic check runs on start and daily only while the setting is
   on; Check for updates runs regardless and reports "You're up to date" or
   an error.
 
 **E2E (`gui/e2e/specs/updater.e2e.ts`, against the fixture server):**
-- [ ] On a first start the prompt appears and no check has run; answering
+- [x] On a first start the prompt appears and no check has run; answering
   Yes runs the check.
-- [ ] With the fixture offering a newer version, the notice appears;
+- [x] With the fixture offering a newer version, the notice appears;
   Restart now with a download running warns that it will pause, pauses it
   and reaches the test seam's stop point; the download shows Paused and
   is marked as paused for the update.
-- [ ] With the fixture offering the same version, no notice appears, and
+- [x] With the fixture offering the same version, no notice appears, and
   Check for updates says you're up to date.
-- [ ] With automatic checks off, no check runs on start.
+- [x] With automatic checks off, no check runs on start.
 
 **Release pipeline:**
 - [x] The signature check fails on bundles signed with a different key or

@@ -3,10 +3,11 @@
 // server on loopback — never the real network — with all app state in a
 // throwaway temp dir.
 
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { baseConfig, startFixture, startTauriDriver, stopAll } from "./launch";
+import { bundleKind, startUpdateFeed } from "./updateFeed";
 
 // One temp root per run: created when the launcher loads this config, and
 // inherited (via the environment) by the workers that load it again.
@@ -39,6 +40,16 @@ export const config: WebdriverIO.Config = {
     // open_download / reveal_download log here instead of launching an OS handler.
     process.env.RDM_OPEN_LOG = path.join(e2eRoot, "opened.log");
     console.log(`E2E temp root: ${e2eRoot}`);
+
+    // Automatic update checks answered "no", so only the updater spec ever
+    // sees the first-run question or checks (against the local feed).
+    writeFileSync(path.join(rdmHome, "updater.json"), JSON.stringify({ auto_check: false }));
+    const feed = await startUpdateFeed(e2eRoot);
+    process.env.RDM_E2E_UPDATE_FEED = feed.base;
+    process.env.RDM_UPDATE_ENDPOINT = `${feed.base}/latest.json`;
+    process.env.RDM_UPDATE_PUBKEY = feed.pubkey;
+    process.env.RDM_UPDATE_BUNDLE = bundleKind();
+    process.env.RDM_UPDATE_DRY_INSTALL = "1";
 
     process.env.RDM_E2E_BASE_URL = await startFixture([
       "--slow-delay-ms",

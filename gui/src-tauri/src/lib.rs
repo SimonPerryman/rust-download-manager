@@ -342,12 +342,12 @@ const HOME_ENV: &str = "RDM_HOME";
 /// Overrides the Add dialog's default download directory (default: the OS one).
 const DOWNLOAD_DIR_ENV: &str = "RDM_DOWNLOAD_DIR";
 
-/// When set, `open_download` / `reveal_download` append `open <path>` / `reveal <path>` lines to
-/// this file instead of launching the OS handler. Lets the webview E2E suite check what
-/// would open without starting another program.
+/// When set, `open_download` / `reveal_download` / `open_update_notes` append `open <path>` /
+/// `reveal <path>` / `url <url>` lines to this file instead of launching the OS handler. Lets
+/// the webview E2E suite check what would open without starting another program.
 const OPEN_LOG_ENV: &str = "RDM_OPEN_LOG";
 
-/// One `RDM_OPEN_LOG` line (without its newline): `kind` is `open` or `reveal`.
+/// One `RDM_OPEN_LOG` line (without its newline): `kind` is `open`, `reveal` or `url`.
 fn open_log_line(kind: &str, path: &std::path::Path) -> String {
     format!("{kind} {}", path.display())
 }
@@ -477,13 +477,20 @@ fn create_private_dir(dir: &std::path::Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)
 }
 
-/// Build the `Manager` over `~/.rdm/state.json` (or `$RDM_HOME/state.json`) and
-/// spawn the snapshot bridge.
-fn init_manager(app: &tauri::AppHandle) -> Result<Arc<Manager>, Box<dyn std::error::Error>> {
-    let dir = match env_dir(HOME_ENV) {
+/// Where rdm keeps its state and logs: `$RDM_HOME`, else `~/.rdm`.
+fn rdm_home(app: &tauri::AppHandle) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    Ok(match env_dir(HOME_ENV) {
         Some(dir) => dir,
         None => app.path().home_dir()?.join(".rdm"),
-    };
+    })
+}
+
+/// Build the `Manager` over `dir/state.json` and spawn the snapshot bridge.
+fn init_manager(
+    app: &tauri::AppHandle,
+    dir: &std::path::Path,
+) -> Result<Arc<Manager>, Box<dyn std::error::Error>> {
+    let dir = dir.to_path_buf();
     create_private_dir(&dir)?;
     let store = JsonStore::new(dir.join("state.json"));
 
@@ -577,14 +584,48 @@ async fn check_for_update(
 
 /// Download the update [`check_for_update`] found (progress as
 /// `update-progress` events), then restart into it now or install it at quit.
+/// `version` is the one the notice shows; any other update is refused.
 #[tauri::command]
 async fn install_update(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     updater: State<'_, updater::UpdaterState>,
     when: updater::InstallWhen,
+    version: String,
 ) -> Result<(), String> {
-    updater::install_command(&app, &updater, &state.manager, when).await
+    updater::install_command(&app, &updater, &state.manager, when, &version).await
+}
+
+/// Open the release page of the update the last check found. It takes no
+/// URL, so the webview can open only that page.
+#[tauri::command]
+fn open_update_notes(
+    app: tauri::AppHandle,
+    updater: State<'_, updater::UpdaterState>,
+) -> Result<(), String> {
+    let url = updater
+        .notes_url()
+        .ok_or("No update found. Check for updates first.")?;
+    if let Some(log) = env_dir(OPEN_LOG_ENV) {
+        return append_open_log(&log, "url", url.as_ref()).map_err(|e| e.to_string());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+/// Whether to check for updates automatically (`null` until the first-run
+/// question is answered), this app's version, and the version it was updated
+/// from when this is the first run since.
+#[tauri::command]
+fn update_prefs(prefs: State<'_, updater::prefs::PrefsStore>) -> updater::prefs::UpdatePrefs {
+    prefs.prefs()
+}
+
+/// Turn automatic update checks on or off.
+#[tauri::command]
+fn set_auto_check(prefs: State<'_, updater::prefs::PrefsStore>, on: bool) -> Result<(), String> {
+    prefs.set_auto_check(on)
 }
 
 /// The version waiting to install at quit, if any.
@@ -605,8 +646,10 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updater::UpdaterState::new(updater::Seam::current()))
         .setup(|app| {
-            let manager = match init_manager(app.handle()) {
-                Ok(manager) => manager,
+            let started = rdm_home(app.handle())
+                .and_then(|home| Ok((init_manager(app.handle(), &home)?, home)));
+            let (manager, home) = match started {
+                Ok(started) => started,
                 Err(err) => {
                     // No window: the dialog's callback ends the app.
                     report_startup_error(app.handle(), &*err);
@@ -614,6 +657,8 @@ pub fn run() {
                 }
             };
             app.manage(AppState { manager });
+            let version = app.package_info().version.to_string();
+            app.manage(updater::prefs::PrefsStore::open(&home, &version));
             create_main_window(app.handle())?;
             Ok(())
         })
@@ -647,6 +692,9 @@ pub fn run() {
             check_for_update,
             install_update,
             staged_update,
+            open_update_notes,
+            update_prefs,
+            set_auto_check,
         ])
         .build(tauri::generate_context!())
         .expect("error while building rdm GUI")

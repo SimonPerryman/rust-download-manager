@@ -14,6 +14,7 @@ see [Installing rdm](install.md#desktop-app); to build it, see
 - [Completed and failed downloads](#completed-and-failed-downloads)
 - [Archive and tags](#archive-and-tags)
 - [Settings](#settings)
+- [Updates](#updates)
 - [State and logs](#state-and-logs)
 
 ## Adding downloads
@@ -154,10 +155,54 @@ the partial file.
 
 ## Settings
 
-**Settings** (the sliders button) holds the theme, whether Remove asks first,
-the max number of concurrent downloads, the global speed limit and the max connections per
-download. The status bar shows the total speed, and you can click the global
-limit there to change it.
+**Settings** (the sliders button) holds the theme under **Display**, and
+under **Downloads** the number of concurrent downloads, the global speed
+limit, the max connections per download and whether Remove asks first, and
+under **Updates** this version, **Check for updates** and **Check for updates
+automatically** (see [Updates](#updates)). The status bar shows the total
+speed, and you can click the global limit there to change it.
+
+## Updates
+
+The desktop app can update itself from the project's GitHub releases.
+
+- **Asked once.** The first time it starts, a small card at the bottom left
+  asks **Check for updates automatically?** Nothing is checked until you
+  answer. With **Yes, check**, rdm checks right away, on every start, and
+  once a day while it stays open (soon after waking, if the computer slept
+  through it); with **No thanks**, it never checks on its own. Change it any
+  time in Settings.
+- **Check for updates** in Settings always checks, whatever that setting,
+  and says how it went: you're up to date, a newer version is available, or
+  why it couldn't check. A failed automatic check shows nothing; it's in the
+  log.
+- **The notice.** When a newer version is out, a bar under the toolbar names
+  it, with **What's new** (its release page) and three choices:
+  - **Restart now** downloads the update (with its progress), checks its
+    signature and restarts into it. Downloads running or waiting pause, as on
+    a normal quit, and the bar says how many first.
+  - **Install when I quit** downloads and checks it now without interrupting
+    anything, then installs it when you next quit; downloads keep going until
+    then. **Restart now instead** is there if you change your mind (it, too,
+    says which downloads will pause). If a newer version comes out before
+    you quit, its bar says the staged one still installs at the quit unless
+    you install the newer one.
+  - **Later** hides the bar until the next check (the next start, or the next
+    day).
+
+  If the download fails or its signature doesn't check out, nothing changes:
+  the bar says why, with **Try again** and **Dismiss**, and stays until you
+  choose one (or a check finds a newer version). Installed from a
+  `.deb`, rdm can't replace itself: the bar offers **Download**, which opens
+  the release page, instead.
+- **After the restart**, a bar says how many downloads the update paused
+  ("Updated to rdm 0.3.1 · 2 downloads were paused for the update."). Nothing
+  resumes on its own: **Resume all** resumes exactly those (not ones you had
+  paused yourself), and **✕** leaves them paused. The bar also goes once
+  you've resumed them all by hand.
+
+Whether to check, and the version that last ran, are kept in
+`~/.rdm/updater.json`.
 
 ## State and logs
 

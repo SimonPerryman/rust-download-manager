@@ -10,6 +10,7 @@ import { Play } from "../icons/Play";
 import { Plus } from "../icons/Plus";
 import { Retry } from "../icons/Retry";
 import { SettingsMenu } from "../settings/SettingsMenu";
+import type { UpdateSettingsProps } from "../settings/UpdateSettings";
 import { DensityToggle } from "./DensityToggle";
 import { NameFilter } from "./NameFilter";
 import { SelectionBar } from "./SelectionBar";
@@ -45,6 +46,8 @@ type Props = {
   /** Whether Remove asks first (a Settings toggle). */
   confirmRemove: boolean;
   onConfirmRemove: (ask: boolean) => void;
+  /** Settings' Updates section. */
+  updates: UpdateSettingsProps;
   /** Two or more rows selected: the toolbar turns into their actions. */
   selection: { count: number; actions: MenuCommand[] } | null;
   onSelectionCommand: (cmd: MenuCommand) => void;
@@ -148,6 +151,7 @@ export function Toolbar(p: Props) {
           onApplied={p.onSettingsApplied}
           confirmRemove={p.confirmRemove}
           onConfirmRemove={p.onConfirmRemove}
+          updates={p.updates}
         />
       </div>
     </header>

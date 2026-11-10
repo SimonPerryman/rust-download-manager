@@ -76,7 +76,17 @@ async fn after_an_update_restart(
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     let part = state::part_path(&snap(&mgr, running).target);
+    let rx = mgr.subscribe();
     mgr.shutdown_for_restart();
+    // A frontend watching the snapshots sees the pause before the process goes.
+    let published = rx
+        .borrow()
+        .iter()
+        .find(|s| s.id == running)
+        .cloned()
+        .unwrap();
+    assert_eq!(published.status, Status::Paused);
+    assert!(published.paused_for_update);
     // The Exit handler's plain shutdown runs after it and keeps the marks.
     mgr.shutdown();
     drop(mgr);

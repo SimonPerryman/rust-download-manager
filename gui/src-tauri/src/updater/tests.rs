@@ -3,6 +3,7 @@
 
 use std::io::{BufRead, BufReader, Cursor, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -137,6 +138,9 @@ fn b64(s: &str) -> String {
 /// `/slow` a large file that trickles (a download that stays running).
 struct Feed {
     base: String,
+    /// How many times `/update` was served (for a manifest feed from
+    /// [`feed_offering`], its payload feed's count).
+    updates: Arc<AtomicUsize>,
 }
 
 impl Feed {
@@ -144,13 +148,16 @@ impl Feed {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let manifest = Arc::new(manifest.to_string());
+        let updates = Arc::new(AtomicUsize::new(0));
+        let served = updates.clone();
         std::thread::spawn(move || {
             for stream in listener.incoming().flatten() {
                 let manifest = manifest.clone();
-                std::thread::spawn(move || respond(stream, &manifest));
+                let served = served.clone();
+                std::thread::spawn(move || respond(stream, &manifest, &served));
             }
         });
-        Self { base }
+        Self { base, updates }
     }
 
     fn url(&self, path: &str) -> String {
@@ -158,7 +165,7 @@ impl Feed {
     }
 }
 
-fn respond(mut stream: TcpStream, manifest: &str) {
+fn respond(mut stream: TcpStream, manifest: &str, updates: &AtomicUsize) {
     let mut line = String::new();
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     if reader.read_line(&mut line).is_err() {
@@ -176,9 +183,12 @@ fn respond(mut stream: TcpStream, manifest: &str) {
     };
     let _ = match path {
         "/latest.json" => stream.write_all(format!("{}{manifest}", ok(manifest.len())).as_bytes()),
-        "/update" => stream
-            .write_all(ok(PAYLOAD.len()).as_bytes())
-            .and_then(|_| stream.write_all(PAYLOAD)),
+        "/update" => {
+            updates.fetch_add(1, Ordering::SeqCst);
+            stream
+                .write_all(ok(PAYLOAD.len()).as_bytes())
+                .and_then(|_| stream.write_all(PAYLOAD))
+        }
         "/slow" => {
             let _ = stream.write_all(ok(64 * 1024 * 1024).as_bytes());
             let deadline = Instant::now() + Duration::from_secs(30);
@@ -224,7 +234,10 @@ fn feed_offering(version: &str, signer: &Key, trusted: &Key) -> (Feed, Seam) {
     let (bundle, key) = this_kind();
     // The manifest names the payload's URL, so it's served by a second feed.
     let payload = Feed::serve(json!({}));
-    let feed = Feed::serve(manifest(&payload.base, version, &[&key], signer));
+    let feed = Feed {
+        updates: payload.updates.clone(),
+        ..Feed::serve(manifest(&payload.base, version, &[&key], signer))
+    };
     let seam = Seam {
         endpoint: Some(feed.url("/latest.json").parse().unwrap()),
         pubkey: Some(trusted.public()),
@@ -377,6 +390,8 @@ fn a_release_without_this_installer_kind_offers_nothing() {
 struct Fixture {
     app: tauri::App<MockRuntime>,
     state: UpdaterState,
+    /// The release feed the seam points at.
+    updates: Feed,
     manager: Arc<Manager>,
     dir: tempfile::TempDir,
     runtime: tokio::runtime::Runtime,
@@ -392,7 +407,7 @@ impl Fixture {
     /// The fixture with its test seam adjusted.
     fn with(tweak: impl FnOnce(&mut Seam)) -> Self {
         let key = Key::new();
-        let (_updates, mut seam) = feed_offering("0.3.1", &key, &key);
+        let (updates, mut seam) = feed_offering("0.3.1", &key, &key);
         tweak(&mut seam);
         let dir = tempfile::tempdir().unwrap();
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -405,6 +420,7 @@ impl Fixture {
         Self {
             app: app(),
             state: UpdaterState::new(seam),
+            updates,
             manager,
             dir,
             runtime,
@@ -465,12 +481,23 @@ impl Fixture {
             .unwrap()
     }
 
+    /// Install 0.3.1, the version the fixture's feed offers.
     fn install(&self, when: InstallWhen) -> Result<(), String> {
+        self.install_in(&self.state, when, "0.3.1")
+    }
+
+    fn install_in(
+        &self,
+        state: &UpdaterState,
+        when: InstallWhen,
+        version: &str,
+    ) -> Result<(), String> {
         self.runtime.block_on(install_command(
             self.app.handle(),
-            &self.state,
+            state,
             &self.manager,
             when,
+            version,
         ))
     }
 }
@@ -603,16 +630,107 @@ fn an_install_that_cant_update_in_place_is_refused() {
             &state,
             &f.manager,
             InstallWhen::Now,
+            "0.3.1",
         ))
         .unwrap_err();
     assert!(err.contains("can't update itself"), "{err}");
+}
+
+/// "Restart now instead" after Install when I quit: the staged update
+/// installs without another check or download.
+#[test]
+fn restart_now_installs_the_update_staged_for_the_quit() {
+    let f = Fixture::new();
+    let id = f.start_download();
+    f.check().unwrap();
+    f.install(InstallWhen::OnQuit).unwrap();
+    // Staging again reuses the staged bytes.
+    f.install(InstallWhen::OnQuit).unwrap();
+    assert_eq!(f.updates.updates.load(Ordering::SeqCst), 1);
+
+    f.install(InstallWhen::Now).unwrap();
+
+    assert_eq!(f.state.staged_version(), None);
+    assert_eq!(f.saved()["downloads"][0]["id"], id);
+    assert_eq!(f.saved()["downloads"][0]["paused_for_update"], true);
+}
+
+/// A check that finds the version already staged doesn't make Restart now
+/// download it again: the staged, verified bytes are used.
+#[test]
+fn a_staged_update_found_again_is_not_downloaded_again() {
+    let f = Fixture::new();
+    f.check().unwrap();
+    f.install(InstallWhen::OnQuit).unwrap();
+    assert_eq!(f.updates.updates.load(Ordering::SeqCst), 1);
+    assert_eq!(f.check().unwrap().version, "0.3.1");
+
+    f.install(InstallWhen::Now).unwrap();
+
+    assert_eq!(f.updates.updates.load(Ordering::SeqCst), 1);
+    assert_eq!(f.state.staged_version(), None);
+}
+
+/// The release page the frontend opens is the found (or staged) update's.
+#[test]
+fn the_notes_link_follows_the_update_found() {
+    let f = Fixture::new();
+    assert_eq!(f.state.notes_url(), None);
+    f.check().unwrap();
+    let page = "https://github.com/SimonPerryman/rust-download-manager/releases/tag/v0.3.1";
+    assert_eq!(f.state.notes_url().as_deref(), Some(page));
+    f.install(InstallWhen::OnQuit).unwrap();
+    assert_eq!(f.state.notes_url().as_deref(), Some(page));
 }
 
 #[test]
 fn install_needs_a_checked_update() {
     let f = Fixture::new();
     let err = f.install(InstallWhen::Now).unwrap_err();
-    assert!(err.contains("Check for updates first"), "{err}");
+    assert!(err.contains("Check for updates again"), "{err}");
+}
+
+/// 0.3.1 is staged and a later check found 0.3.2: Restart now for the 0.3.1
+/// the notice shows installs the staged bytes, not 0.3.2.
+#[test]
+fn restart_now_installs_the_version_the_notice_shows() {
+    let f = Fixture::new();
+    f.check().unwrap();
+    f.install(InstallWhen::OnQuit).unwrap();
+    let key = Key::new();
+    let (newer, seam) = feed_offering("0.3.2", &key, &key);
+    let state = UpdaterState::new(seam);
+    *lock(&state.staged) = lock(&f.state.staged).take();
+    let found = f
+        .runtime
+        .block_on(check_command(f.app.handle(), &state, f.manager.clone()))
+        .unwrap();
+    assert_eq!(found.unwrap().version, "0.3.2");
+
+    f.install_in(&state, InstallWhen::Now, "0.3.1").unwrap();
+
+    assert_eq!(f.updates.updates.load(Ordering::SeqCst), 1);
+    assert_eq!(newer.updates.load(Ordering::SeqCst), 0);
+    assert_eq!(state.staged_version(), None);
+}
+
+/// A version that's neither found nor staged is refused, not swapped for
+/// the one that is.
+#[test]
+fn install_refuses_a_version_it_did_not_find() {
+    let f = Fixture::new();
+    f.check().unwrap();
+    f.install(InstallWhen::OnQuit).unwrap();
+
+    for when in [InstallWhen::Now, InstallWhen::OnQuit] {
+        let err = f.install_in(&f.state, when, "0.3.2").unwrap_err();
+        assert!(
+            err.contains("rdm 0.3.2 isn't the update rdm found"),
+            "{err}"
+        );
+    }
+    assert_eq!(f.updates.updates.load(Ordering::SeqCst), 1);
+    assert_eq!(f.state.staged_version().as_deref(), Some("0.3.1"));
 }
 
 // ---- The seam can't reach a release build ----

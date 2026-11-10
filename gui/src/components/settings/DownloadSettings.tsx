@@ -106,8 +106,8 @@ export function DownloadSettings({
 
   return (
     <div className="space-y-3" data-testid="download-settings">
-      <SettingRow label="Max concurrent downloads" error={errors.concurrent}>
-        {input("concurrent", "Max concurrent downloads")}
+      <SettingRow label="Concurrent downloads" error={errors.concurrent}>
+        {input("concurrent", "Concurrent downloads")}
       </SettingRow>
       <SettingRow
         label="Global speed limit"

@@ -25,6 +25,10 @@
     .app {
       grid-template-columns: 160px minmax(0, 1fr);
     }
+    .first-run-card {
+      left: 176px;
+      width: min(340px, calc(100vw - 192px));
+    }
     .c-prog {
       width: 112px;
     }
@@ -37,6 +41,10 @@
   @media (max-width: 759px) {
     .app {
       grid-template-columns: 56px minmax(0, 1fr);
+    }
+    .first-run-card {
+      left: 72px;
+      width: min(340px, calc(100vw - 88px));
     }
     .brand-name,
     .f-label,

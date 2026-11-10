@@ -7,6 +7,23 @@ desktop app share one version.
 
 ## Unreleased
 
+### Added
+
+- In-app updates (desktop app): a one-time question asks whether to check
+  for updates automatically (on start and daily); Settings has the version
+  and Check for updates. A newer version shows a bar with What's new,
+  **Restart now** (downloads pause, as on a quit), **Install when I quit**
+  and **Later**; after an update restart, **Resume all** resumes exactly the
+  downloads it paused. Updates are signed and checked before install. `.deb`
+  installs get a link to the new `.deb` instead. Copies installed from 0.2.0
+  or earlier need one manual update to get the updater.
+
+### Changed
+
+- Settings (desktop app): **Ask before removing a download for good** moved
+  from Display to Downloads, and "Max concurrent downloads" is now
+  **Concurrent downloads**.
+
 ## 0.2.0 - 2026-11-10
 
 ### Added

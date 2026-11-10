@@ -3,6 +3,7 @@ import type { Prefs, ThemePref } from "../../lib/prefs";
 import type { SettingsField } from "../../lib/settings";
 import type { Settings } from "../../lib/types";
 import { DownloadSettings } from "./DownloadSettings";
+import { UpdateSettings, type UpdateSettingsProps } from "./UpdateSettings";
 import { Monitor } from "../icons/Monitor";
 import { Moon } from "../icons/Moon";
 import { Sliders } from "../icons/Sliders";
@@ -22,11 +23,19 @@ type Props = {
   /** Whether Remove (from the archive) asks first. */
   confirmRemove: boolean;
   onConfirmRemove: (ask: boolean) => void;
+  updates: UpdateSettingsProps;
 };
 
-// The toolbar's settings popover: the theme and Remove's confirmation (kept in
-// localStorage) and the engine-backed Downloads settings.
-export function SettingsMenu({ prefs, onPrefs, onApplied, confirmRemove, onConfirmRemove }: Props) {
+// The toolbar's settings popover: the theme (kept in localStorage), the
+// engine-backed Downloads settings and Remove's confirmation, and Updates.
+export function SettingsMenu({
+  prefs,
+  onPrefs,
+  onApplied,
+  confirmRemove,
+  onConfirmRemove,
+  updates,
+}: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -72,6 +81,9 @@ export function SettingsMenu({ prefs, onPrefs, onApplied, confirmRemove, onConfi
             value={prefs.theme}
             onChange={(theme) => onPrefs({ theme })}
           />
+          <div className="-mx-4 h-px bg-line" />
+          <SectionHeading>Downloads</SectionHeading>
+          <DownloadSettings onApplied={onApplied} />
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -82,8 +94,8 @@ export function SettingsMenu({ prefs, onPrefs, onApplied, confirmRemove, onConfi
             Ask before removing a download for good
           </label>
           <div className="-mx-4 h-px bg-line" />
-          <SectionHeading>Downloads</SectionHeading>
-          <DownloadSettings onApplied={onApplied} />
+          <SectionHeading>Updates</SectionHeading>
+          <UpdateSettings {...updates} />
         </div>
       )}
     </div>

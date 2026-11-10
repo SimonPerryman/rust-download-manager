@@ -86,9 +86,14 @@ The CLI installed by the shell installer or Homebrew isn't affected.
 - **CLI, shell or PowerShell installer:** run the same one-liner again; it
   replaces `rdm` in place.
 - **CLI, Homebrew:** `brew upgrade rdm`.
-- **Desktop app:** download and install the new version from the Releases
-  page over the old one. Your download list and settings are kept: they live
-  in `~/.rdm`, not in the app.
+- **Desktop app:** it updates itself: when a newer version is out it offers
+  **Restart now** or **Install when I quit** (see
+  [Updates](gui.md#updates)). Installed from a `.deb`, download the new `.deb`
+  from the release page it links to and install it over the old one. Your
+  download list and settings are kept: they live in `~/.rdm`, not in the app.
+- **Desktop app 0.2.0 or earlier:** these have no updater, so update once by
+  hand: download and install the new version from the Releases page over the
+  old one. From then on it updates itself.
 
 ## Building from source
 
