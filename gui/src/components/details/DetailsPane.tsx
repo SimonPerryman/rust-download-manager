@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { PANE_MIN_H, statePhrase } from "../../lib/details";
 import { filterKeyOf } from "../../lib/filters";
+import type { LaneWork } from "../../lib/laneWork";
 import type { DownloadSnapshot } from "../../lib/types";
 import { X } from "../icons/X";
 import { StatusGlyph } from "../table/StatusGlyph";
@@ -15,6 +16,8 @@ const KEY_STEP = 16;
 
 type Props = {
   d: DownloadSnapshot;
+  /** What this download's lanes have written. */
+  work: LaneWork;
   tab: PaneTab;
   onTab: (t: PaneTab) => void;
   height: number;
@@ -35,6 +38,7 @@ type Props = {
 // title and state, the tab strip and the open tab's panel.
 export function DetailsPane({
   d,
+  work,
   tab,
   onTab,
   height,
@@ -111,7 +115,7 @@ export function DetailsPane({
         aria-labelledby={tabId(tab)}
       >
         {tab === "overview" && (
-          <OverviewTab d={d} onReveal={onReveal} spot={spot} onMove={onMove} />
+          <OverviewTab d={d} work={work} onReveal={onReveal} spot={spot} onMove={onMove} />
         )}
         {tab === "speed" && <SpeedTab d={d} samples={samples} globalLimit={globalLimit} />}
         {tab === "log" && <LogTab key={d.id} id={d.id} />}

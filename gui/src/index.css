@@ -616,7 +616,7 @@
     text-decoration: underline;
   }
 
-  /* ---------- lanes: one line per piece of the file, drawn across the whole file ---------- */
+  /* ---------- cell lanes: one hairline per piece of the file, drawn across the whole file ---------- */
   .lanes {
     position: relative;
     height: calc(var(--n) * var(--lh) + (var(--n) - 1) * var(--gap));
@@ -631,11 +631,6 @@
   }
   .lanes-cell.dense {
     --gap: 1px;
-  }
-  .lanes-pane {
-    --lh: 6px;
-    --gap: 2px;
-    --bar: 10px;
   }
   .lane {
     position: absolute;
@@ -671,6 +666,74 @@
   .lanes.converged .lane-fill {
     background: var(--lane-done);
     transition: background-color 0.6s ease-out 0.9s;
+  }
+  /* ---------- pane lane rows: one row per live connection, each only its own work ---------- */
+  .lane-row {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    height: 16px;
+    overflow: hidden;
+    animation: laneIn 0.6s ease-out;
+  }
+  /* A closing lane merges back up into the rows above. */
+  .lane-row.leaving {
+    animation: laneOut 0.6s ease-in forwards;
+  }
+  .lane-row.single {
+    animation: none;
+  }
+  .lane-label {
+    @apply whitespace-nowrap text-xs;
+    color: var(--g400);
+  }
+  .lane-track {
+    position: relative;
+    height: 6px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--lane-track);
+  }
+  .lane-own,
+  .lane-now,
+  .lane-gap {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+  }
+  /* Pieces the lane finished: softer than the one it's on now. */
+  .lane-own {
+    background: var(--lane-from);
+  }
+  /* Work just moved here from a lane that closed. */
+  .lane-own.fresh {
+    animation: foldIn 1.2s ease-out;
+  }
+  .lane-now {
+    background: var(--lane-to);
+  }
+  /* Where the lane is writing. */
+  .lane-now::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--ink);
+    opacity: 0.5;
+  }
+  /* Started, handed back, and waiting for a lane. */
+  .lane-gap {
+    border: 1px dashed var(--accent);
+    border-radius: 2px;
+  }
+  .lane-rows.muted .lane-own {
+    background: var(--lane-muted);
+  }
+  .lane-rows.done .lane-own {
+    background: var(--lane-done);
   }
   .lane-scale {
     @apply mt-1 flex justify-between text-xs tabular-nums;
@@ -900,8 +963,16 @@
      the offset must undo the same 1rem: at top-0 the bar sat 1rem low and
      covered the first line. */
   .log-bar {
-    @apply sticky -top-4 z-1 -mt-4 mb-2 flex justify-end pt-4 pb-1 text-sm;
+    @apply sticky -top-4 z-1 -mt-4 mb-2 flex items-center justify-end gap-3 pt-4 pb-1 text-sm;
     background: var(--surface);
+  }
+  .log-bar .copied {
+    color: var(--success-ink);
+  }
+  .log-bar-sep {
+    width: 1px;
+    height: 16px;
+    background: var(--line-strong);
   }
   .log-detail {
     @apply flex cursor-pointer items-center gap-2;
@@ -1126,6 +1197,25 @@
   }
   100% {
     background-color: var(--success-linger);
+  }
+}
+@keyframes laneIn {
+  from {
+    height: 0;
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@keyframes laneOut {
+  to {
+    height: 0;
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@keyframes foldIn {
+  from {
+    background-color: var(--lane-to);
   }
 }
 @keyframes bump {

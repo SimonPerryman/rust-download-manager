@@ -7,9 +7,10 @@
 //! worker steals the back half of the largest remaining segment.
 //!
 //! The pool starts on one worker and ramps (see [`ramp`](super::ramp)): each
-//! measurement window the coordinator may add a worker, or retire the last
-//! trial one, which leaves at its next chunk boundary and hands its segment
-//! back.
+//! measurement window the coordinator may add a worker, or retire one. The
+//! highest-numbered lane leaves at its next chunk boundary and hands its
+//! segment back; if it is stuck for [`SHED_GRACE`], the next lane to reach a
+//! boundary leaves instead.
 //!
 //! Workers are futures polled by the coordinator inside the caller's task (no
 //! spawned tasks), so the whole [`download`](crate::download) future stays
@@ -42,6 +43,11 @@ pub(crate) const MAX_CONNECTIONS: u8 = 16;
 /// Lane numbers a pool can hand out; above [`MAX_CONNECTIONS`], since a
 /// retiring worker holds its lane until it leaves.
 const LANES: usize = 32;
+
+/// How long the highest-numbered lane gets to leave an over-target pool
+/// before any lane may. Three ramp windows: a lane silent that long is stuck
+/// on the server, and a shed shouldn't wait on it much longer than that.
+pub(crate) const SHED_GRACE: Duration = Duration::from_secs(3);
 
 /// How often per-segment progress is made durable in the sidecar.
 const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(1);
@@ -93,9 +99,9 @@ pub(crate) fn plan(total: u64, connections: u8, min: u64) -> Vec<Segment> {
 }
 
 /// Work stealing: split the segment with the most bytes left in half, pushing
-/// the back half as a new segment and returning its index. Segments with less
-/// than `2 * min` left are not worth a second connection.
-pub(crate) fn steal(segments: &mut Vec<Segment>, min: u64) -> Option<usize> {
+/// the back half as a new segment; returns `(victim, tail)` indices. Segments
+/// with less than `2 * min` left are not worth a second connection.
+pub(crate) fn steal(segments: &mut Vec<Segment>, min: u64) -> Option<(usize, usize)> {
     let threshold = min.max(1).saturating_mul(2);
     let (victim, remaining) = segments
         .iter()
@@ -112,7 +118,7 @@ pub(crate) fn steal(segments: &mut Vec<Segment>, min: u64) -> Option<usize> {
     };
     seg.end = mid;
     segments.push(tail);
-    Some(segments.len() - 1)
+    Some((victim, segments.len() - 1))
 }
 
 /// Parse a `Content-Range: bytes <first>-<last>/<total>` value. Unsatisfied
@@ -176,43 +182,76 @@ pub(crate) struct Job<'a> {
     pub min_segment_size: u64,
     pub read_timeout: Duration,
     pub ramp: Ramping,
+    pub shed_grace: Duration,
     pub first: Option<reqwest::Response>,
     pub tally: &'a Tally,
 }
 
-/// The shared work table: segments plus which ones a worker currently owns.
+/// The shared work table: segments plus which lane, if any, is on each.
 struct Table {
     segments: Vec<Segment>,
-    owned: Vec<bool>,
+    /// The lane (zero-based) fetching each segment.
+    owner: Vec<Option<u8>>,
     /// Set once the host has refused a request as a rate limit this attempt.
     rate_limited: bool,
 }
 
+/// How a lane came by the segment it claimed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Claim {
+    /// One nobody has started.
+    Fresh,
+    /// One another lane started and handed back.
+    HandedBack,
+    /// The back half of segment `victim`, split off while lane `from` was on it.
+    Split { victim: usize, from: Option<u8> },
+}
+
 impl Table {
-    /// [`Table::claim`] for a worker; one that hasn't sent a request yet gets
-    /// nothing once the host has rate-limited us, since its first request
-    /// would be a new connection (the outer backoff resumes that work).
-    fn claim_for(&mut self, min: u64, fresh: bool) -> Option<usize> {
+    /// [`Table::claim`] for `lane`, which first lets go of what it held; one
+    /// that hasn't sent a request yet gets nothing once the host has
+    /// rate-limited us, since its first request would be a new connection
+    /// (the outer backoff resumes that work).
+    fn claim_for(&mut self, min: u64, fresh: bool, lane: u8) -> Option<(usize, Claim)> {
+        self.release(lane);
         if fresh && self.rate_limited {
             return None;
         }
-        self.claim(min)
+        self.claim(min, lane)
     }
 
-    /// Hand out an unowned unfinished segment, else steal one.
-    fn claim(&mut self, min: u64) -> Option<usize> {
-        let queued =
-            (0..self.segments.len()).find(|&i| !self.owned[i] && !self.segments[i].is_complete());
-        let idx = match queued {
-            Some(i) => i,
+    /// Hand `lane` an unowned unfinished segment, else steal one. Releasing
+    /// and claiming under one lock means a lane is never seen holding nothing
+    /// between two segments.
+    fn claim(&mut self, min: u64, lane: u8) -> Option<(usize, Claim)> {
+        let queued = (0..self.segments.len())
+            .find(|&i| self.owner[i].is_none() && !self.segments[i].is_complete());
+        let (idx, how) = match queued {
+            Some(i) if self.segments[i].done > 0 => (i, Claim::HandedBack),
+            Some(i) => (i, Claim::Fresh),
             None => {
-                let i = steal(&mut self.segments, min)?;
-                self.owned.push(false);
-                i
+                let (victim, tail) = steal(&mut self.segments, min)?;
+                self.owner.push(None);
+                let from = self.owner[victim];
+                (tail, Claim::Split { victim, from })
             }
         };
-        self.owned[idx] = true;
-        Some(idx)
+        self.owner[idx] = Some(lane);
+        Some((idx, how))
+    }
+
+    /// Let go of whatever `lane` holds.
+    fn release(&mut self, lane: u8) {
+        for owner in &mut self.owner {
+            if *owner == Some(lane) {
+                *owner = None;
+            }
+        }
+    }
+
+    /// Each segment's lane, numbered from 1 as the log names it.
+    fn lanes(&self) -> Vec<Option<u8>> {
+        self.owner.iter().map(|o| o.map(|lane| lane + 1)).collect()
     }
 
     fn done(&self) -> u64 {
@@ -223,8 +262,8 @@ impl Table {
     fn has_unowned_work(&self) -> bool {
         self.segments
             .iter()
-            .zip(&self.owned)
-            .any(|(seg, &owned)| !owned && !seg.is_complete())
+            .zip(&self.owner)
+            .any(|(seg, owner)| owner.is_none() && !seg.is_complete())
     }
 }
 
@@ -234,37 +273,53 @@ struct Pool {
     live: AtomicU8,
     target: AtomicU8,
     changed: AtomicBool,
-    /// Lane numbers in use, one bit each; a lane's number is what the log
-    /// calls it by.
-    lanes: Mutex<u32>,
+    /// Lane numbers in use and when the pool went over target. `live` only
+    /// changes under this lock, so a leave is judged against a stable pool.
+    lanes: Mutex<LaneSet>,
+    /// How long the bottom lane gets to leave before any lane may.
+    grace: Duration,
+}
+
+#[derive(Debug, Default)]
+struct LaneSet {
+    /// One bit per lane number in use; a lane's number is what the log calls it by.
+    used: u32,
+    /// When a leave first fell due, while one is pending.
+    over_since: Option<Instant>,
+}
+
+impl LaneSet {
+    /// The highest lane number in use (zero-based).
+    fn bottom(&self) -> Option<u8> {
+        (self.used != 0).then(|| (31 - self.used.leading_zeros()) as u8)
+    }
 }
 
 impl Pool {
-    fn new(target: u8) -> Self {
+    fn new(target: u8, grace: Duration) -> Self {
         Self {
             live: AtomicU8::new(0),
             target: AtomicU8::new(target),
             // The first window holds the initial spawn.
             changed: AtomicBool::new(true),
-            lanes: Mutex::new(0),
+            lanes: Mutex::new(LaneSet::default()),
+            grace,
         }
     }
 
     /// Count a new worker in, on lane `prefer` if it's free, else the lowest
     /// free one; it is counted out when the slot drops.
     fn join(&self, prefer: Option<u8>) -> Slot<'_> {
+        let mut lanes = self.lanes.lock().unwrap();
+        let used = lanes.used;
+        let free = |lane: &u8| usize::from(*lane) < LANES && used & (1 << lane) == 0;
+        let lane = prefer
+            .filter(free)
+            .or_else(|| (0..LANES as u8).find(free))
+            .unwrap_or(LANES as u8 - 1);
+        lanes.used |= 1 << lane;
         self.live.fetch_add(1, Ordering::SeqCst);
         self.changed.store(true, Ordering::SeqCst);
-        let lane = {
-            let mut used = self.lanes.lock().unwrap();
-            let free = |lane: &u8| usize::from(*lane) < LANES && *used & (1 << lane) == 0;
-            let lane = prefer
-                .filter(free)
-                .or_else(|| (0..LANES as u8).find(free))
-                .unwrap_or(LANES as u8 - 1);
-            *used |= 1 << lane;
-            lane
-        };
         Slot {
             pool: self,
             held: true,
@@ -272,8 +327,16 @@ impl Pool {
         }
     }
 
-    fn free_lane(&self, lane: u8) {
-        *self.lanes.lock().unwrap() &= !(1 << lane);
+    /// Count `lane`'s worker out.
+    fn leave(&self, lanes: &mut LaneSet, lane: u8) {
+        lanes.used &= !(1 << lane);
+        self.live.fetch_sub(1, Ordering::SeqCst);
+        self.changed.store(true, Ordering::SeqCst);
+    }
+
+    /// The highest lane number in use (zero-based): the next to be shed.
+    fn bottom(&self) -> Option<u8> {
+        self.lanes.lock().unwrap().bottom()
     }
 
     fn live(&self) -> u8 {
@@ -293,6 +356,17 @@ impl Pool {
     }
 }
 
+/// Whether a worker left an over-target pool, and in whose place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Leave {
+    /// It stays: the pool isn't over target, or it isn't this lane's turn.
+    Stay,
+    /// It left as the highest-numbered lane.
+    Bottom,
+    /// It left because the bottom lane (zero-based) didn't within the grace.
+    InsteadOf(u8),
+}
+
 /// One worker's place in the [`Pool`].
 struct Slot<'a> {
     pool: &'a Pool,
@@ -302,22 +376,38 @@ struct Slot<'a> {
 }
 
 impl Slot<'_> {
-    /// Leave the pool if it is over target. The check and the decrement are
-    /// one CAS, so a pending retire lapses if the pool shrank some other way.
-    fn try_retire(&mut self) -> bool {
+    /// Leave the pool if it is over target and it is this lane's turn.
+    fn try_retire(&mut self) -> Leave {
+        self.try_retire_at(Instant::now())
+    }
+
+    /// [`Slot::try_retire`] at `now`. The bottom lane leaves first, so Lane 1
+    /// stays; once a leave has been due for the pool's grace, another lane may
+    /// go, so a bottom lane stuck on the server can't hold the shed up. Lane 1
+    /// goes instead only when it is the one other lane.
+    fn try_retire_at(&mut self, now: Instant) -> Leave {
         let pool = self.pool;
-        let left = pool
-            .live
-            .try_update(Ordering::SeqCst, Ordering::SeqCst, |live| {
-                (live > pool.target()).then(|| live - 1)
-            })
-            .is_ok();
-        if left {
-            self.held = false;
-            pool.changed.store(true, Ordering::SeqCst);
-            pool.free_lane(self.lane);
+        let mut lanes = pool.lanes.lock().unwrap();
+        let live = pool.live();
+        if !self.held || live <= pool.target() {
+            lanes.over_since = None;
+            return Leave::Stay;
         }
-        left
+        let since = *lanes.over_since.get_or_insert(now);
+        let bottom = lanes.bottom().unwrap_or(self.lane);
+        let leave = if self.lane == bottom {
+            Leave::Bottom
+        } else if now.saturating_duration_since(since) >= pool.grace
+            && (self.lane != 0 || lanes.used.count_ones() <= 2)
+        {
+            Leave::InsteadOf(bottom)
+        } else {
+            return Leave::Stay;
+        };
+        pool.leave(&mut lanes, self.lane);
+        lanes.over_since = (live - 1 > pool.target()).then_some(now);
+        self.held = false;
+        leave
     }
 
     /// The lane's number as the log shows it, from 1.
@@ -329,9 +419,8 @@ impl Slot<'_> {
 impl Drop for Slot<'_> {
     fn drop(&mut self) {
         if self.held {
-            self.pool.live.fetch_sub(1, Ordering::SeqCst);
-            self.pool.changed.store(true, Ordering::SeqCst);
-            self.pool.free_lane(self.lane);
+            let mut lanes = self.pool.lanes.lock().unwrap();
+            self.pool.leave(&mut lanes, self.lane);
         }
     }
 }
@@ -343,7 +432,7 @@ enum Outcome {
     /// The stop signal was raised.
     Stopped,
     /// The worker left the pool mid-segment; the segment needs a new owner.
-    Retired,
+    Retired(Leave),
 }
 
 /// State shared by the coordinator and its workers (borrowed, never spawned).
@@ -397,9 +486,10 @@ pub(crate) async fn run(
 ) -> Result<u64, Failure> {
     let total = job.state.total.unwrap_or(0);
     let segments = job.state.segments.clone().unwrap_or_default();
-    let mut owned = vec![false; segments.len()];
+    let mut owner = vec![None; segments.len()];
     if job.first.is_some() {
-        owned[0] = true;
+        // The first response serves segment 0, on the first lane.
+        owner[0] = Some(0);
     }
     let ceiling = u8::try_from(job.workers)
         .unwrap_or(MAX_CONNECTIONS)
@@ -421,12 +511,12 @@ pub(crate) async fn run(
         part: job.part,
         table: Mutex::new(Table {
             segments,
-            owned,
+            owner,
             rate_limited: false,
         }),
         progressed: Notify::new(),
         stop,
-        pool: Pool::new(ramp.target()),
+        pool: Pool::new(ramp.target(), job.shed_grace),
         waited: AtomicU64::new(0),
         tally: job.tally,
         lane_failures: Mutex::new([0; LANES]),
@@ -436,9 +526,13 @@ pub(crate) async fn run(
     let started = Instant::now();
     let report = |meter: &mut SpeedMeter, on_progress: &mut dyn FnMut(Progress)| {
         // One lock, so the readout and the segments always agree.
-        let (downloaded, segments) = {
+        let (downloaded, segments, lanes) = {
             let table = shared.table.lock().unwrap();
-            (table.done().min(total), table.segments.clone())
+            (
+                table.done().min(total),
+                table.segments.clone(),
+                table.lanes(),
+            )
         };
         let bytes_per_sec = meter.observe(started.elapsed(), downloaded);
         on_progress(Progress {
@@ -448,6 +542,7 @@ pub(crate) async fn run(
             eta: progress::eta(downloaded, Some(total), bytes_per_sec),
             connections: shared.pool.live(),
             segments,
+            lanes,
         });
     };
 
@@ -590,14 +685,24 @@ pub(crate) async fn run(
                 tracing::trace!(?measured, ?decision, target = ramp.target(), "ramp window");
                 match decision {
                     Decision::Add if !shared.is_stopping() && job.control.poll() == Flow::Continue => {
-                        workers.push(worker(&shared, None, shared.pool.join(None)));
-                        tracing::info!("Ramped to {} lanes", shared.pool.target());
+                        let slot = shared.pool.join(None);
+                        let number = slot.number();
+                        workers.push(worker(&shared, None, slot));
+                        tracing::info!(
+                            "Added Lane {number} — now {}",
+                            human::count(shared.pool.live().into(), "lane", "lanes")
+                        );
                         report(&mut meter, on_progress);
                     }
-                    Decision::Retire => tracing::info!(
-                        "Down to {} — more didn't help",
-                        human::count(shared.pool.target().into(), "lane", "lanes")
-                    ),
+                    Decision::Retire => {
+                        let over = shared.pool.live() > shared.pool.target();
+                        if let Some(bottom) = shared.pool.bottom().filter(|_| over) {
+                            tracing::info!(
+                                "Closing Lane {} — more lanes didn't speed this up",
+                                bottom + 1
+                            );
+                        }
+                    }
                     Decision::Add | Decision::Hold => {}
                 }
             }
@@ -737,7 +842,55 @@ async fn worker(
     mut slot: Slot<'_>,
 ) -> (u8, Result<(), Failure>) {
     let lane = slot.lane;
-    (lane, work(shared, first, &mut slot).await)
+    let result = work(shared, first, &mut slot).await;
+    // However it ended, the lane is no longer on any segment.
+    shared.table.lock().unwrap().release(lane);
+    (lane, result)
+}
+
+/// Say that lane `number` left the pool in another lane's place, if it did.
+fn say_left(number: u8, leave: Leave) {
+    if let Leave::InsteadOf(bottom) = leave {
+        tracing::info!(
+            "Lane {} is still busy, so Lane {number} closes instead",
+            bottom + 1
+        );
+    }
+}
+
+/// What lane `number` says when it claims segment `idx` of `count` (`seg` as
+/// it is now), having last finished segment `finished`, if any.
+fn claim_line(
+    number: u8,
+    finished: Option<usize>,
+    idx: usize,
+    count: usize,
+    seg: Segment,
+    how: Claim,
+) -> String {
+    let piece = idx + 1;
+    let range = format!("{} – {}", human::bytes(seg.start), human::bytes(seg.end));
+    let lead = match finished {
+        Some(f) => format!("Lane {number} finished piece {}, now on", f + 1),
+        None => format!("Lane {number} started"),
+    };
+    match how {
+        Claim::Fresh => format!("{lead} piece {piece} of {count} ({range})"),
+        Claim::HandedBack => format!(
+            "{lead} piece {piece} of {count} from {}",
+            human::bytes(seg.start + seg.done)
+        ),
+        Claim::Split { victim, from } => {
+            let whose = match from {
+                Some(lane) => format!("Lane {}'s piece", lane + 1),
+                None => "piece".to_owned(),
+            };
+            format!(
+                "Lane {number} took over the back half of {whose} {} ({range}) as piece {piece}",
+                victim + 1
+            )
+        }
+    }
 }
 
 /// [`worker`]'s loop, on `slot`'s lane.
@@ -756,7 +909,8 @@ async fn work(
     // sibling's segment is handed back after a 429.
     let mut fresh = first.is_none();
     let number = slot.number();
-    tracing::debug!("Lane {number} started");
+    let mut finished = None;
+    tracing::debug!("Lane {number} opened");
     loop {
         if shared.is_stopping() {
             return Ok(());
@@ -764,42 +918,48 @@ async fn work(
         let (idx, resp) = match first.take() {
             Some((idx, resp)) => (idx, Some(resp)),
             None => {
-                if slot.try_retire() {
+                let leave = slot.try_retire();
+                if leave != Leave::Stay {
+                    say_left(number, leave);
                     tracing::debug!("Lane {number} closed");
                     return Ok(());
                 }
                 let claimed = {
                     let mut table = shared.table.lock().unwrap();
-                    let queued = table.segments.len();
                     table
-                        .claim_for(shared.min, fresh)
-                        .map(|idx| (idx, table.segments[idx], table.segments.len() > queued))
+                        .claim_for(shared.min, fresh, slot.lane)
+                        .map(|(idx, how)| (idx, how, table.segments[idx], table.segments.len()))
                 };
-                let Some((idx, seg, stolen)) = claimed else {
-                    tracing::debug!("Lane {number} finished: no work left");
+                let Some((idx, how, seg, count)) = claimed else {
+                    tracing::debug!("Lane {number} done — nothing left to fetch");
                     return Ok(());
                 };
-                let how = if stolen { "took over" } else { "picked up" };
-                tracing::debug!(
-                    "Lane {number} {how} bytes {}–{}",
-                    seg.start + seg.done,
-                    seg.end - 1
-                );
+                tracing::debug!("{}", claim_line(number, finished, idx, count, seg, how));
                 (idx, None)
             }
         };
         fresh = false;
         match fetch_segment(shared, &mut file, idx, resp, &mut stop, slot).await {
-            Ok(Outcome::Done) => {}
+            Ok(Outcome::Done) => finished = Some(idx),
             Ok(Outcome::Stopped) => return Ok(()),
-            Ok(Outcome::Retired) => {
-                shared.table.lock().unwrap().owned[idx] = false;
-                tracing::debug!("Lane {number} closed");
+            Ok(Outcome::Retired(leave)) => {
+                let at = {
+                    let mut table = shared.table.lock().unwrap();
+                    table.owner[idx] = None;
+                    let seg = table.segments[idx];
+                    seg.start + seg.done
+                };
+                say_left(number, leave);
+                tracing::debug!(
+                    "Lane {number} closed; piece {} goes back in the queue at {}",
+                    idx + 1,
+                    human::bytes(at)
+                );
                 return Ok(());
             }
             Err(failure) => {
                 let mut table = shared.table.lock().unwrap();
-                table.owned[idx] = false;
+                table.owner[idx] = None;
                 // Under the same lock as the hand-back, so no fresh worker
                 // can claim the segment in between. This worker's slot is
                 // still live, hence `> 1` for "others live".
@@ -916,10 +1076,11 @@ async fn fetch_segment(
                 Some(Outcome::Stopped)
             } else if complete {
                 Some(Outcome::Done)
-            } else if slot.try_retire() {
-                Some(Outcome::Retired)
             } else {
-                None
+                match slot.try_retire() {
+                    Leave::Stay => None,
+                    leave => Some(Outcome::Retired(leave)),
+                }
             };
             shared.progressed.notify_one();
             if let Some(outcome) = outcome {
@@ -1101,8 +1262,7 @@ mod tests {
     #[test]
     fn steal_halves_the_largest_remaining_segment() {
         let mut segs = vec![seg(0, 100, 90), seg(100, 200, 20), seg(200, 300, 50)];
-        let idx = steal(&mut segs, 10).unwrap();
-        assert_eq!(idx, 3);
+        assert_eq!(steal(&mut segs, 10), Some((1, 3)));
         // Segment 1 has 80 left from 120: split at 160.
         assert_eq!(segs[1], seg(100, 160, 20));
         assert_eq!(segs[3], seg(160, 200, 0));
@@ -1115,7 +1275,7 @@ mod tests {
         assert_eq!(segs.len(), 2);
         // Exactly 2×min left is stealable.
         let mut segs = vec![seg(0, 100, 80)];
-        assert_eq!(steal(&mut segs, 10), Some(1));
+        assert_eq!(steal(&mut segs, 10), Some((0, 1)));
         assert_eq!(segs, vec![seg(0, 90, 80), seg(90, 100, 0)]);
     }
 
@@ -1140,41 +1300,90 @@ mod tests {
     fn claim_prefers_queued_then_steals() {
         let mut table = Table {
             segments: vec![seg(0, 100, 0), seg(100, 200, 100), seg(200, 300, 0)],
-            owned: vec![true, false, false],
+            owner: vec![Some(0), None, None],
             rate_limited: false,
         };
         // Segment 1 is complete, so the queued pick is segment 2.
-        assert_eq!(table.claim(10), Some(2));
+        assert_eq!(table.claim(10, 1), Some((2, Claim::Fresh)));
         // Nothing queued: steal from the largest remaining (segment 0 wins ties).
-        assert_eq!(table.claim(10), Some(3));
+        let split = Claim::Split {
+            victim: 0,
+            from: Some(0),
+        };
+        assert_eq!(table.claim(10, 2), Some((3, split)));
         assert_eq!(table.segments[0], seg(0, 50, 0));
-        assert_eq!(table.owned, vec![true, false, true, true]);
+        assert_eq!(table.owner, vec![Some(0), None, Some(1), Some(2)]);
+        assert_eq!(table.lanes(), vec![Some(1), None, Some(2), Some(3)]);
+    }
+
+    /// A lane lets go of the segment it finished in the same step that hands
+    /// it the next one, and a started segment nobody holds is handed back.
+    #[test]
+    fn a_lane_moves_from_one_segment_to_the_next() {
+        let mut table = Table {
+            segments: vec![seg(0, 100, 100), seg(100, 200, 40), seg(200, 300, 0)],
+            owner: vec![Some(0), None, Some(1)],
+            rate_limited: false,
+        };
+        assert_eq!(table.claim_for(10, false, 0), Some((1, Claim::HandedBack)));
+        assert_eq!(table.owner, vec![None, Some(0), Some(1)]);
+        table.release(1);
+        assert_eq!(table.lanes(), vec![None, Some(1), None]);
     }
 
     #[test]
     fn rate_limit_holds_handed_back_work_from_fresh_workers_only() {
         let mut table = Table {
             segments: vec![seg(0, 100, 100), seg(100, 200, 0)],
-            owned: vec![false, false],
+            owner: vec![None, None],
             rate_limited: true,
         };
         // A worker still starting up would open a new connection: it waits
         // for the outer backoff instead.
-        assert_eq!(table.claim_for(10, true), None);
-        assert_eq!(table.owned, vec![false, false]);
+        assert_eq!(table.claim_for(10, true, 1), None);
+        assert_eq!(table.owner, vec![None, None]);
         // A live worker that finished its own segment may take it.
-        assert_eq!(table.claim_for(10, false), Some(1));
+        assert_eq!(table.claim_for(10, false, 0), Some((1, Claim::Fresh)));
 
         table.rate_limited = false;
-        table.owned[1] = false;
-        assert_eq!(table.claim_for(10, true), Some(1));
+        table.owner[1] = None;
+        assert_eq!(table.claim_for(10, true, 1), Some((1, Claim::Fresh)));
+    }
+
+    #[test]
+    fn claim_lines_name_the_piece_and_where_it_starts() {
+        let mib = 1024 * 1024;
+        let piece = seg(2 * mib, 4 * mib, 0);
+        assert_eq!(
+            claim_line(2, None, 1, 4, piece, Claim::Fresh),
+            "Lane 2 started piece 2 of 4 (2.00 MB – 4.00 MB)"
+        );
+        assert_eq!(
+            claim_line(
+                1,
+                Some(0),
+                1,
+                4,
+                seg(2 * mib, 4 * mib, mib),
+                Claim::HandedBack
+            ),
+            "Lane 1 finished piece 1, now on piece 2 of 4 from 3.00 MB"
+        );
+        let split = Claim::Split {
+            victim: 3,
+            from: Some(1),
+        };
+        assert_eq!(
+            claim_line(1, Some(2), 4, 5, seg(7 * mib, 8 * mib, 0), split),
+            "Lane 1 took over the back half of Lane 2's piece 4 (7.00 MB – 8.00 MB) as piece 5"
+        );
     }
 
     /// Lanes get the lowest free number, a replacement may keep its
     /// predecessor's, and a number is free again once its worker leaves.
     #[test]
     fn lanes_are_numbered_and_reused() {
-        let pool = Pool::new(3);
+        let pool = Pool::new(3, SHED_GRACE);
         let mut slots: Vec<_> = (0..3).map(|_| pool.join(None)).collect();
         assert_eq!(
             slots.iter().map(Slot::number).collect::<Vec<_>>(),
@@ -1187,7 +1396,7 @@ mod tests {
         let kept = pool.join(Some(0));
         assert_eq!(kept.number(), 1, "a replacement keeps its lane");
         pool.set_target(1);
-        assert!(slots[0].try_retire());
+        assert_eq!(slots[0].try_retire(), Leave::Bottom, "lane 3 is the bottom");
         assert_eq!(
             pool.join(Some(2)).number(),
             3,
@@ -1197,30 +1406,102 @@ mod tests {
 
     #[test]
     fn retire_leaves_only_while_over_target_and_counts_once() {
-        let pool = Pool::new(3);
+        let pool = Pool::new(3, SHED_GRACE);
         assert!(pool.take_changed(), "the initial spawn is a pool change");
         let mut slots: Vec<_> = (0..3).map(|_| pool.join(None)).collect();
         assert_eq!(pool.live(), 3);
         assert!(pool.take_changed());
-        assert!(!slots[0].try_retire(), "at target: nobody leaves");
+        assert_eq!(
+            slots[2].try_retire(),
+            Leave::Stay,
+            "at target: nobody leaves"
+        );
 
-        pool.set_target(2);
-        assert!(slots[0].try_retire());
-        assert!(!slots[1].try_retire(), "only one leaves per step");
-        assert_eq!(pool.live(), pool.target());
+        pool.set_target(1);
+        assert_eq!(slots[2].try_retire(), Leave::Bottom);
+        assert_eq!(slots[2].try_retire(), Leave::Stay, "it already left");
+        assert_eq!(pool.live(), 2);
         assert!(pool.take_changed());
 
         // The retired slot was already counted out when it left.
-        slots.remove(0);
+        slots.remove(2);
         assert_eq!(pool.live(), 2);
         assert!(!pool.take_changed());
 
         // A pending retire lapses if the pool shrinks some other way.
-        pool.set_target(1);
-        slots.remove(0);
-        assert!(!slots[0].try_retire());
+        slots.remove(1);
+        assert_eq!(slots[0].try_retire(), Leave::Stay);
         drop(slots);
         assert_eq!(pool.live(), 0);
+    }
+
+    /// The bottom lane is the one shed, so Lane 1 always stays; the others
+    /// leave only once the bottom one has had the grace to and hasn't.
+    #[test]
+    fn the_bottom_lane_leaves_first_unless_it_is_stuck() {
+        let grace = Duration::from_secs(3);
+        let pool = Pool::new(3, grace);
+        let mut slots: Vec<_> = (0..3).map(|_| pool.join(None)).collect();
+        pool.set_target(2);
+        let t0 = Instant::now();
+
+        assert_eq!(slots[0].try_retire_at(t0), Leave::Stay, "Lane 1 stays");
+        assert_eq!(slots[1].try_retire_at(t0), Leave::Stay, "Lane 2 stays");
+        // Lane 3 is stuck: no turn of its own comes. Within the grace the
+        // others still wait for it...
+        let early = t0 + grace - Duration::from_millis(1);
+        assert_eq!(slots[1].try_retire_at(early), Leave::Stay);
+        // ...after it, the next lane to check leaves in its place.
+        assert_eq!(slots[1].try_retire_at(t0 + grace), Leave::InsteadOf(2));
+        assert_eq!(pool.live(), 2);
+        assert_eq!(
+            slots[0].try_retire_at(t0 + grace),
+            Leave::Stay,
+            "one per step"
+        );
+        assert_eq!(slots[2].try_retire_at(t0 + grace), Leave::Stay);
+        assert_eq!(slots[2].number(), 3, "the stuck lane keeps its number");
+    }
+
+    /// Past the grace, Lane 1 still waits for a middle lane to go in the stuck
+    /// bottom lane's place, and goes itself only when it is the one other lane.
+    #[test]
+    fn lane_one_stands_in_for_a_stuck_lane_only_as_the_last_choice() {
+        let grace = Duration::from_secs(3);
+        let pool = Pool::new(3, grace);
+        let mut slots: Vec<_> = (0..3).map(|_| pool.join(None)).collect();
+        pool.set_target(2);
+        let t0 = Instant::now();
+        assert_eq!(slots[0].try_retire_at(t0), Leave::Stay);
+        let late = t0 + grace;
+        assert_eq!(slots[0].try_retire_at(late), Leave::Stay, "Lane 2 can go");
+        assert_eq!(slots[1].try_retire_at(late), Leave::InsteadOf(2));
+
+        pool.set_target(1);
+        let t1 = late + Duration::from_millis(1);
+        assert_eq!(slots[0].try_retire_at(t1), Leave::Stay);
+        assert_eq!(
+            slots[0].try_retire_at(t1 + grace),
+            Leave::InsteadOf(2),
+            "only Lane 1 is left to stand in"
+        );
+        assert_eq!(pool.live(), 1);
+    }
+
+    /// Shedding two lanes takes the bottom two, each in turn.
+    #[test]
+    fn each_shed_gives_the_bottom_lane_its_own_turn() {
+        let grace = Duration::from_secs(3);
+        let pool = Pool::new(4, grace);
+        let mut slots: Vec<_> = (0..4).map(|_| pool.join(None)).collect();
+        pool.set_target(2);
+        let t0 = Instant::now();
+        assert_eq!(slots[3].try_retire_at(t0), Leave::Bottom);
+        // Lane 3 is now the bottom, and gets the grace from when Lane 4 left.
+        let early = t0 + grace - Duration::from_millis(1);
+        assert_eq!(slots[0].try_retire_at(early), Leave::Stay);
+        assert_eq!(slots[2].try_retire_at(early), Leave::Bottom);
+        assert_eq!(pool.live(), 2);
     }
 
     #[test]

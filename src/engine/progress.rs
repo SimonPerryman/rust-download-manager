@@ -27,6 +27,9 @@ pub struct Progress {
     /// while the size is unknown). Work-stealing shows as a range's `end`
     /// shrinking plus a new range appended.
     pub segments: Vec<Segment>,
+    /// For each of `segments`, the lane fetching it now (numbered from 1, as
+    /// the log names it), if any; lets a frontend draw one row per lane.
+    pub lanes: Vec<Option<u8>>,
 }
 
 /// Sliding-window throughput estimator.

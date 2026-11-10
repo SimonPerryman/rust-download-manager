@@ -53,7 +53,10 @@ async fn a_multi_lane_download_tells_its_story() {
 
     let concise = lines.concise();
     assert_eq!(concise.len(), 3, "{concise:#?}");
-    assert_eq!(concise[0], "Started · 4.00 MB · resumable · 4 lanes");
+    assert_eq!(
+        concise[0],
+        "Started · 4.00 MB · resumable · 4 pieces, 4 lanes"
+    );
     assert_eq!(concise[1], format!("Saved to {}", out.display()));
     let done = &concise[2];
     assert!(done.starts_with("Done · 4.00 MB in "), "{done}");
@@ -70,7 +73,14 @@ async fn a_multi_lane_download_tells_its_story() {
         "{detail:#?}"
     );
     for lane in 1..=4 {
-        assert!(has(&detail, &format!("Lane {lane} started")), "{detail:#?}");
+        assert!(has(&detail, &format!("Lane {lane} opened")), "{detail:#?}");
+    }
+    // Lane 1 rides the first response; the others each take a piece.
+    for lane in 2..=4 {
+        assert!(
+            has(&detail, &format!("Lane {lane} started piece ")),
+            "{detail:#?}"
+        );
     }
     assert!(
         detail
@@ -98,8 +108,11 @@ async fn ramping_says_when_it_adds_a_lane() {
     download(&req, &Control::new(), |_| {}).await.unwrap();
 
     let concise = lines.concise();
-    assert_eq!(concise[0], "Started · 4.00 MB · resumable · up to 4 lanes");
-    assert!(has(&concise, "Ramped to 2 lanes"), "{concise:#?}");
+    assert_eq!(
+        concise[0],
+        "Started · 4.00 MB · resumable · 4 pieces, up to 4 lanes"
+    );
+    assert!(has(&concise, "Added Lane 2 — now 2 lanes"), "{concise:#?}");
     assert!(
         concise.last().unwrap().starts_with("Done · 4.00 MB"),
         "{concise:#?}"
@@ -107,7 +120,8 @@ async fn ramping_says_when_it_adds_a_lane() {
 }
 
 /// Against a host that gets no faster past four connections, ramping says
-/// each lane it adds, then that it dropped the last trial lane.
+/// each lane it adds, then closes the last one it added: the highest-numbered,
+/// so Lane 1 stays.
 // Multi-threaded, as in `ramping.rs`, so the fixture's pacing stays even.
 // How far the ramp climbs before backing off varies with the machine (a slow
 // runner reached six), so this checks the shape of the story, not its length.
@@ -125,31 +139,50 @@ async fn ramping_says_when_it_backs_off() {
     let req = DownloadRequest::to_path(server.url("/seg-ramp"), dir.path().join("ramp.bin"))
         .with_connections(8)
         .with_min_segment_size(64 * KIB)
-        .with_ramp(Ramping::Window(Duration::from_millis(500)));
+        .with_ramp(Ramping::Window(Duration::from_millis(500)))
+        // No fallback: on a slow runner the bottom lane must still be the one.
+        .with_shed_grace(Duration::from_secs(3600));
     download(&req, &Control::new(), |_| {}).await.unwrap();
 
     let concise = lines.concise();
     assert!(
-        concise[0].starts_with("Started · ") && concise[0].ends_with(" · up to 8 lanes"),
+        concise[0].starts_with("Started · ") && concise[0].ends_with(" · 8 pieces, up to 8 lanes"),
         "{concise:#?}"
     );
     let ramped: Vec<_> = concise
         .iter()
-        .filter(|l| l.starts_with("Ramped to "))
+        .filter(|l| l.starts_with("Added Lane "))
         .collect();
     assert!(ramped.len() >= 2, "{concise:#?}");
     for (i, line) in ramped.iter().enumerate() {
-        assert_eq!(**line, format!("Ramped to {} lanes", i + 2), "{concise:#?}");
+        let n = i + 2;
+        assert_eq!(
+            **line,
+            format!("Added Lane {n} — now {n} lanes"),
+            "{concise:#?}"
+        );
     }
     let peak = ramped.len() + 1;
     let backed_off: Vec<_> = concise
         .iter()
-        .filter(|l| l.starts_with("Down to "))
+        .filter(|l| l.starts_with("Closing Lane "))
         .collect();
     assert_eq!(
         backed_off,
-        [&format!("Down to {} lanes — more didn't help", peak - 1)],
+        [&format!(
+            "Closing Lane {peak} — more lanes didn't speed this up"
+        )],
         "{concise:#?}"
+    );
+    let detail = lines.detail();
+    let closed: Vec<_> = detail
+        .iter()
+        .filter(|l| l.starts_with("Lane ") && l.contains(" closed"))
+        .collect();
+    assert_eq!(closed.len(), 1, "{detail:#?}");
+    assert!(
+        closed[0].starts_with(&format!("Lane {peak} closed")),
+        "the bottom lane closed, so Lane 1 stays: {detail:#?}"
     );
     let at = |prefix: &str| {
         concise
@@ -158,11 +191,85 @@ async fn ramping_says_when_it_backs_off() {
             .unwrap_or_else(|| panic!("no {prefix:?} in {concise:#?}"))
     };
     assert!(
-        at("Ramped to ") < at("Down to ")
-            && at("Down to ") < at("Saved to ")
+        at("Added Lane ") < at("Closing Lane ")
+            && at("Closing Lane ") < at("Saved to ")
             && at("Saved to ") < at("Done · "),
         "{concise:#?}"
     );
+}
+
+/// When the ramp sheds a lane, the highest-numbered one closes, so Lane 1
+/// stays. Here that lane (and any opened after it) is held by the fixture
+/// with no body; once the grace passes, a lane that can stop closes in its
+/// place, and nothing moves on the held lane until the test releases it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stuck_bottom_lane_does_not_hold_up_a_shed() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_len: 12 * 1024 * 1024,
+        ..FixtureConfig::default()
+    })
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("stuck.bin");
+    let lines = Lines::default();
+    let _guard = capture(&lines);
+
+    let req = DownloadRequest::to_path(server.url("/seg-ramp-stuck"), &out)
+        .with_connections(8)
+        .with_min_segment_size(64 * KIB)
+        .with_ramp(Ramping::Window(Duration::from_millis(500)))
+        .with_shed_grace(Duration::from_millis(200))
+        .with_read_timeout(Duration::from_secs(60));
+    let busy = |lines: &Lines| {
+        lines
+            .concise()
+            .into_iter()
+            .find(|l| l.contains(" is still busy, so Lane "))
+    };
+    let release = async {
+        // The gate holds the stuck lane, so this should end one way: the shed
+        // goes ahead without it. A ramp that never got that far would leave
+        // the download held, so give up (and let it finish) after a while.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        while busy(&lines).is_none() && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        server.gate().release_all();
+    };
+    let control = Control::new();
+    let (result, ()) = tokio::join!(download(&req, &control, |_| {}), release);
+    result.unwrap();
+    assert!(
+        busy(&lines).is_some(),
+        "no lane stood in: {:#?}",
+        lines.concise()
+    );
+
+    let concise = lines.concise();
+    let peak = concise
+        .iter()
+        .filter(|l| l.starts_with("Added Lane "))
+        .count()
+        + 1;
+    assert!(
+        concise.contains(&format!(
+            "Closing Lane {peak} — more lanes didn't speed this up"
+        )),
+        "{concise:#?}"
+    );
+    let line = busy(&lines).unwrap();
+    let (stuck, closer) = line
+        .strip_prefix("Lane ")
+        .and_then(|rest| rest.split_once(" is still busy, so Lane "))
+        .and_then(|(stuck, rest)| Some((stuck, rest.strip_suffix(" closes instead")?)))
+        .unwrap_or_else(|| panic!("{line}"));
+    let (stuck, closer): (usize, usize) = (stuck.parse().unwrap(), closer.parse().unwrap());
+    assert_eq!(
+        stuck, peak,
+        "the bottom lane was the stuck one: {concise:#?}"
+    );
+    assert!(closer < peak, "{concise:#?}");
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
 }
 
 /// A pause and a resume each get a line, the resume saying where it picked
@@ -375,7 +482,10 @@ async fn a_range_fallback_says_it_starts_over() {
     download(&req, &Control::new(), |_| {}).await.unwrap();
 
     let concise = lines.concise();
-    assert_eq!(concise[0], "Started · 4.00 MB · resumable · 4 lanes");
+    assert_eq!(
+        concise[0],
+        "Started · 4.00 MB · resumable · 4 pieces, 4 lanes"
+    );
     assert_eq!(
         concise[1],
         "Server sent the whole file instead of a part — starting over on 1 lane"

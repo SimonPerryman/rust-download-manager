@@ -25,6 +25,7 @@ import {
 import { deriveFolders, folderOf } from "./lib/folders";
 import { focusIsFree } from "./lib/focus";
 import { keyCommand } from "./lib/keymap";
+import { EMPTY_WORK } from "./lib/laneWork";
 import { menuItems, selectionActions, type MenuCommand, type MenuEntry } from "./lib/menu";
 import { loadConfirmRemove, saveConfirmRemove } from "./lib/prefs";
 import { dropIndex, queueOrder, stepIndex } from "./lib/queue";
@@ -44,6 +45,7 @@ import { useArchive } from "./lib/useArchive";
 import { useBulkCommands } from "./lib/useBulkCommands";
 import { useDownloads } from "./lib/useDownloads";
 import { useFinishMoment } from "./lib/useFinishMoment";
+import { useLaneWork } from "./lib/useLaneWork";
 import { usePrefs } from "./lib/usePrefs";
 import { usePaneHeight } from "./lib/usePaneHeight";
 import { useSelection } from "./lib/useSelection";
@@ -88,6 +90,7 @@ export default function App() {
   const finish = useFinishMoment(downloads, seeded);
   const archiver = useArchive(notify);
   const history = useSpeedHistory(downloads);
+  const laneWork = useLaneWork(downloads);
   const pane = usePaneHeight();
 
   const [filter, setFilter] = useState<ViewFilter>(ALL);
@@ -587,6 +590,7 @@ export default function App() {
         {detailsRow && (
           <DetailsPane
             d={detailsRow}
+            work={laneWork.get(detailsRow.id) ?? EMPTY_WORK}
             tab={paneTab}
             onTab={setPaneTab}
             height={pane.height}

@@ -92,6 +92,15 @@ pub struct DownloadSnapshot {
     /// partial kept (reloaded from the sidecar on restart), and once done for
     /// this session only.
     pub segments: Vec<Segment>,
+    /// For each of `segments`, the lane fetching it now (numbered from 1, as
+    /// the log names it), if any; empty unless downloading. Live only, never
+    /// saved.
+    pub lanes: Vec<Option<u8>>,
+    /// The most lanes it has had open at once since it last started from zero
+    /// bytes, this session (0 until it runs), for a finish summary such as "up
+    /// to 3 lanes". Counted at every progress report, not just the published
+    /// snapshots, so a quick ramp isn't missed.
+    pub peak_lanes: u8,
     /// Milliseconds spent running (not waiting or paused) since it last
     /// started from zero bytes, so a frontend can say how long it took; `None`
     /// when unknown (an older build's record, or a run cut short by a crash).
@@ -141,6 +150,10 @@ struct Entry {
     verify_gen: u64,
     /// The latest segment tiling; see [`DownloadSnapshot::segments`].
     segments: Vec<Segment>,
+    /// Each segment's lane; see [`DownloadSnapshot::lanes`].
+    lanes: Vec<Option<u8>>,
+    /// See [`DownloadSnapshot::peak_lanes`].
+    peak_lanes: u8,
     /// When the running task started, for [`DownloadRecord::active_ms`].
     started: Option<Instant>,
     /// Totals for the finish summary, across this download's runs here.
@@ -158,6 +171,8 @@ impl Entry {
             stop_keeping: false,
             verify_gen: 0,
             segments: Vec::new(),
+            lanes: Vec::new(),
+            peak_lanes: 0,
             started: None,
             tally: Arc::default(),
         }
@@ -189,6 +204,12 @@ impl Entry {
             checksum: self.record.checksum.clone(),
             checksum_state: self.record.checksum_state,
             segments: self.segments.clone(),
+            lanes: if self.record.status == Status::Downloading {
+                self.lanes.clone()
+            } else {
+                Vec::new()
+            },
+            peak_lanes: self.peak_lanes,
             active_ms: self.active_ms(),
             archived: self.record.archived,
             tags: self.record.tags.clone(),
@@ -217,6 +238,7 @@ impl Entry {
         self.record.partial_kept = false;
         self.record.downloaded = 0;
         self.segments.clear();
+        self.peak_lanes = 0;
     }
 }
 
@@ -292,6 +314,7 @@ impl Inner {
             if p.downloaded < e.record.downloaded {
                 e.record.active_ms = Some(0);
                 e.started = Some(Instant::now());
+                e.peak_lanes = 0;
             }
             e.record.downloaded = p.downloaded;
             if p.total.is_some() {
@@ -301,6 +324,8 @@ impl Inner {
             e.live.eta_secs = p.eta.map(|d| d.as_secs());
             e.live.connections = p.connections;
             e.segments = p.segments;
+            e.lanes = p.lanes;
+            e.peak_lanes = e.peak_lanes.max(p.connections);
         } else {
             return;
         }

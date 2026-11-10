@@ -4,6 +4,7 @@ import { describeError } from "../../lib/errors";
 import { folderOf } from "../../lib/folders";
 import { formatBytes, formatLeft, formatSpeed } from "../../lib/format";
 import { hasLanes } from "../../lib/lanes";
+import type { LaneWork } from "../../lib/laneWork";
 import type { DownloadSnapshot } from "../../lib/types";
 import { AlertTriangle } from "../icons/AlertTriangle";
 import { Clock } from "../icons/Clock";
@@ -19,6 +20,8 @@ export type QueueSpot = { index: number; count: number };
 
 type Props = {
   d: DownloadSnapshot;
+  /** What this download's lanes have written, for its lane rows. */
+  work: LaneWork;
   onReveal: (d: DownloadSnapshot) => void;
   spot: QueueSpot | null;
   /** Moves the download `delta` places in the queue (negative is sooner). */
@@ -104,8 +107,8 @@ function Stats({ d, spot, onMove }: Pick<Props, "d" | "spot" | "onMove">) {
   }
 }
 
-// Overview: where the download stands, its pieces, and the facts about it.
-export function OverviewTab({ d, onReveal, spot, onMove }: Props) {
+// Overview: where the download stands, its lanes, and the facts about it.
+export function OverviewTab({ d, work, onReveal, spot, onMove }: Props) {
   const done = d.status === "completed";
   const summary = done ? summaryParts(d) : null;
   const dates = datesLine(d);
@@ -125,7 +128,7 @@ export function OverviewTab({ d, onReveal, spot, onMove }: Props) {
           </div>
         )}
         <Stats d={d} spot={spot} onMove={onMove} />
-        {hasLanes(d) && <LanesMap d={d} />}
+        {hasLanes(d) && <LanesMap key={d.id} d={d} work={work} />}
       </div>
       <div className="facts">
         <div className="fact">

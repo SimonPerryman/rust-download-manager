@@ -5,8 +5,9 @@
 // summary), the Detailed toggle adds the per-request lines and takes them
 // away again, it says so when a download hasn't logged anything (one waiting
 // in the queue), keeps polling while it's open (a running download's pause
-// shows up without reopening it), and the list goes away when another tab is
-// chosen or the pane closes.
+// shows up without reopening it), Copy puts the lines shown on the clipboard
+// (through a stubbed clipboard: WebKitGTK's driver can't read the real one),
+// and the list goes away when another tab is chosen or the pane closes.
 
 import { $, $$, browser, expect } from "@wdio/globals";
 import {
@@ -26,6 +27,7 @@ const PANE = '[data-testid="details-pane"]';
 const paneSelector = (id: number) => `${PANE}[data-id="${id}"]`;
 const LOG = `${PANE} [data-testid="log"]`;
 const DETAILED = `${PANE} [data-testid="log-detailed"]`;
+const COPY = `${PANE} [data-testid="log-copy"]`;
 /** Where the Log tab keeps the Detailed choice (see gui/src/lib/prefs.ts). */
 const LOG_DETAILED_KEY = "rdm.gui.logDetailed";
 const tab = (key: string) => $(`${PANE} button[role="tab"][data-tab="${key}"]`);
@@ -60,6 +62,50 @@ async function barGeometry(): Promise<BarGeometry> {
     },
     BODY,
     DETAILED,
+  );
+}
+
+/**
+ * Swaps the clipboard for one that records what is written, so a spec can
+ * check what Copy wrote; `restoreClipboard` puts the real one back.
+ */
+async function stubClipboard(): Promise<void> {
+  await browser.execute(() => {
+    const w = window as unknown as { copied: string[] };
+    w.copied = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (text: string) => void w.copied.push(text) },
+    });
+  });
+}
+
+async function restoreClipboard(): Promise<void> {
+  await browser.execute(() => {
+    delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+  });
+}
+
+/** Clicks Copy and returns what it wrote, once the button says so. */
+async function copyLines(): Promise<{ text: string; shown: number; said: string }> {
+  const before = await browser.execute(
+    () => (window as unknown as { copied: string[] }).copied.length,
+  );
+  await $(COPY).click();
+  await browser.waitUntil(
+    () =>
+      browser.execute((n) => (window as unknown as { copied: string[] }).copied.length > n, before),
+    { timeoutMsg: "Copy never wrote to the clipboard" },
+  );
+  await waitForText(COPY, "Copied");
+  return browser.execute(
+    (log, pane) => ({
+      text: (window as unknown as { copied: string[] }).copied.at(-1) ?? "",
+      shown: document.querySelectorAll(`${log} li`).length,
+      said: document.querySelector(`${pane} .log-bar [role="status"]`)?.textContent ?? "",
+    }),
+    LOG,
+    PANE,
   );
 }
 
@@ -189,6 +235,38 @@ describe("rdm GUI log tab", () => {
     }
     await waitForGone(`${LOG} li[data-level="debug"]`, "the detail stayed after Detailed went off");
     await waitForText(LOG, "Done · ");
+  });
+
+  it("copies the lines shown, as time and text, with or without the detail", async () => {
+    await stubClipboard();
+    try {
+      const plain = await copyLines();
+      const lines = plain.text.split("\n");
+      expect(lines.length).toBe(plain.shown);
+      for (const l of lines) expect(l).toMatch(/^\d\d:\d\d:\d\d {2}\S/);
+      expect(plain.text).toContain("Done · ");
+      expect(plain.text).not.toContain("Requested the file");
+      expect(plain.said).toBe(`Copied ${plain.shown} lines`);
+
+      await $(DETAILED).click();
+      try {
+        await waitForText(LOG, "Requested the file · HTTP 200");
+        const detailed = await copyLines();
+        expect(detailed.text.split("\n").length).toBe(detailed.shown);
+        expect(detailed.shown).toBeGreaterThan(plain.shown);
+        expect(detailed.text).toContain("Requested the file · HTTP 200");
+      } finally {
+        if (await $(DETAILED).isSelected()) await $(DETAILED).click();
+      }
+      await waitForGone(
+        `${LOG} li[data-level="debug"]`,
+        "the detail stayed after Detailed went off",
+      );
+      // The label goes back once it has said so ("Copied" doesn't contain "Copy").
+      await waitForText(COPY, "Copy", "Copy kept saying Copied");
+    } finally {
+      await restoreClipboard();
+    }
   });
 
   it("drops the list when another tab is chosen", async () => {
