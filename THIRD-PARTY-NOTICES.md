@@ -10,10 +10,10 @@ Source: <https://lucide.dev> (<https://github.com/lucide-icons/lucide>)
 These icon components in `gui/src/components/icons/` are copied from Lucide,
 some with a different stroke width or with lines written as paths:
 
-`AlertTriangle`, `Check`, `Clock`, `ExternalLink`, `Folder`, `Gauge`,
-`Monitor`, `Moon`, `Pause`, `Play`, `Plus`, `Retry` (Lucide `rotate-ccw`),
-`ShieldCheck` (Lucide `shield`), `Sliders` (Lucide `settings-2`), `Sun`,
-`Trash`, `X`.
+`AlertTriangle`, `Archive`, `ArchiveRestore`, `Check`, `Clock`,
+`ExternalLink`, `Folder`, `Gauge`, `Monitor`, `Moon`, `Pause`, `Play`, `Plus`,
+`Retry` (Lucide `rotate-ccw`), `ShieldCheck` (Lucide `shield`), `Sliders`
+(Lucide `settings-2`), `Sun`, `Tag`, `Trash`, `X`.
 
 `AlertTriangle`, `Check`, `Clock`, `ExternalLink`, `Monitor`, `Moon`, `Plus`,
 `Trash` and `X` derive from Feather, so the MIT notice below also applies to

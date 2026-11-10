@@ -50,6 +50,8 @@ export interface EngineRow {
   status: string;
   partial_kept: boolean;
   finished_at: number | null;
+  archived: boolean;
+  tags: string[];
 }
 
 /** Waits until nothing matches `selector`. */
@@ -384,6 +386,31 @@ export async function selectFilter(key: string): Promise<void> {
 /** A status filter's live count (assert it inside `waitUntil`, never with one read). */
 export async function filterCount(key: string): Promise<number> {
   return Number(await filterButton(key).getAttribute("data-count"));
+}
+
+const tagButton = (tag: string) => $(`button[data-testid="tag-filter"][data-tag="${tag}"]`);
+
+/** Selects a sidebar tag filter and waits for it to be the current one. */
+export async function selectTag(tag: string): Promise<void> {
+  const button = tagButton(tag);
+  await button.click();
+  await expect(button).toHaveAttribute("aria-current", "true");
+}
+
+/** A tag filter's live count, or null while the Tags section doesn't list it. */
+export async function tagCount(tag: string): Promise<number | null> {
+  const button = tagButton(tag);
+  if (!(await button.isExisting())) return null;
+  return Number(await button.getAttribute("data-count"));
+}
+
+/** The tags the Tags section lists now, in order. */
+export async function listedTags(): Promise<string[]> {
+  return browser.execute(() =>
+    Array.from(document.querySelectorAll('[data-testid="tag-filter"]')).map(
+      (b) => b.getAttribute("data-tag") ?? "",
+    ),
+  );
 }
 
 /**

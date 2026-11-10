@@ -1,6 +1,7 @@
 // The right-click menu's items for the rows it acts on, fitted to their
 // statuses. Pure; App runs the chosen command.
 
+import { isArchivable } from "./archive";
 import { isPausable, isRemovable, isStoppable, toResume } from "./rowView";
 import type { DownloadSnapshot } from "./types";
 
@@ -18,6 +19,9 @@ export type MenuCommand =
   | "copyLink"
   | "addAgain"
   | "deletePartial"
+  | "tags"
+  | "archive"
+  | "unarchive"
   | "remove";
 
 export type MenuEntry =
@@ -33,7 +37,7 @@ const item = (cmd: MenuCommand, label: string, shortcut?: string): MenuEntry => 
   shortcut,
 });
 
-/** What Remove from list leaves behind, said under it; null when nothing stays. */
+/** What Remove leaves behind, said under it; null when nothing stays. */
 function removeNote(list: readonly DownloadSnapshot[]): string | null {
   const removable = list.filter(isRemovable);
   const files = removable.filter((d) => d.status === "completed").length;
@@ -47,12 +51,15 @@ function removeNote(list: readonly DownloadSnapshot[]): string | null {
 
 /**
  * The menu for `list` (the selection, display order). `queue` is the waiting
- * order, for the move items; `failedCount` counts failed rows anywhere.
+ * order, for the move items; `failedCount` counts failed rows anywhere. In the
+ * Archived view (`archivedView`) Del and the last items unarchive and remove;
+ * elsewhere they archive.
  */
 export function menuItems(
   list: readonly DownloadSnapshot[],
   queue: readonly number[],
   failedCount: number,
+  archivedView = false,
 ): MenuEntry[] {
   const out: MenuEntry[] = [];
   const sep = () => {
@@ -88,8 +95,9 @@ export function menuItems(
   sep();
   out.push(item("copyLink", list.length > 1 ? "Copy links" : "Copy link"));
   if (any(done)) out.push(item("addAgain", "Download again"));
+  out.push(item("tags", "Tags…"));
   const kept = (d: DownloadSnapshot) => d.status === "cancelled" && d.partial_kept;
-  if (any(kept) || any(isRemovable)) sep();
+  sep();
   if (any(kept)) {
     out.push(
       item(
@@ -98,16 +106,28 @@ export function menuItems(
       ),
     );
   }
-  if (any(isRemovable)) {
-    out.push(item("remove", "Remove from list", "Del"));
-    const note = removeNote(list);
-    if (note) out.push({ kind: "note", text: note });
+  if (archivedView) {
+    out.push(item("unarchive", "Unarchive"));
+    if (any(isRemovable)) {
+      out.push(item("remove", "Remove", "Del"));
+      const note = removeNote(list);
+      if (note) out.push({ kind: "note", text: note });
+    }
+  } else if (any(isArchivable)) {
+    out.push(item("archive", "Archive", "Del"));
   }
+  if (out[out.length - 1].kind === "separator") out.pop();
   return out;
 }
 
-/** The contextual toolbar's actions for a selection of several rows, each only if it applies to one of them. */
-export function selectionActions(list: readonly DownloadSnapshot[]): MenuCommand[] {
+/**
+ * The contextual toolbar's actions for a selection of several rows, each only
+ * if it applies to one of them; in the Archived view, Unarchive and Remove.
+ */
+export function selectionActions(
+  list: readonly DownloadSnapshot[],
+  archivedView = false,
+): MenuCommand[] {
   const has = (f: (d: DownloadSnapshot) => boolean) => list.some(f);
   const out: MenuCommand[] = [];
   if (has((d) => d.status === "completed")) out.push("open");
@@ -115,6 +135,12 @@ export function selectionActions(list: readonly DownloadSnapshot[]): MenuCommand
   if (toResume(list).length) out.push("resume");
   if (has(isStoppable)) out.push("stop");
   if (has((d) => d.status === "failed")) out.push("retry");
-  if (has(isRemovable)) out.push("remove");
+  out.push("tags");
+  if (archivedView) {
+    out.push("unarchive");
+    if (has(isRemovable)) out.push("remove");
+  } else if (has(isArchivable)) {
+    out.push("archive");
+  }
   return out;
 }

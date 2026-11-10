@@ -93,7 +93,7 @@ describe("rdm GUI", () => {
   });
 
   // Runs after the restore spec, so `slow` is taken and this one is claimed as `slow (1)`.
-  it("stops a running download deleting its partial, then removes it from the list", async () => {
+  it("stops a running download deleting its partial, then archives it", async () => {
     const name = "slow (1)";
     const target = path.join(downloadDir, name);
     const id = await addThroughDialog(`${baseUrl}/slow`);
@@ -111,7 +111,7 @@ describe("rdm GUI", () => {
     });
     expect(existsSync(target)).toBe(false);
 
-    await clickRowAction(id, "Remove from list");
+    await clickRowAction(id, "Archive");
     await waitForGone(rowSelector(id));
   });
 

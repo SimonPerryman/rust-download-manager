@@ -10,7 +10,9 @@ import {
   stopTitle,
   globalLimitLabel,
   removedMessage,
+  removeBody,
   removeTitle,
+  removeTitleFor,
   retryAllMessage,
   stopDeleteHint,
   stopKeepHint,
@@ -92,10 +94,40 @@ describe("removedMessage and removeTitle", () => {
     expect(removedMessage(kept)).toBe(
       "Removed a.iso from the list. Its partial file stays on disk.",
     );
-    expect(removeTitle(kept)).toBe("Remove from list. The partial file stays on disk.");
+    expect(removeTitle(kept)).toBe("Remove from rdm. The partial file stays on disk.");
     const failed = snap({ filename: "a.iso", status: "failed" });
     expect(removedMessage(failed)).toBe("Removed a.iso from the list.");
-    expect(removeTitle(failed)).toBe("Remove from list");
+    expect(removeTitle(failed)).toBe("Remove from rdm. The file stays on disk.");
+  });
+});
+
+describe("Remove dialog copy", () => {
+  it("says files stay, kept partials stay, and failed partials go", () => {
+    expect(removeTitleFor(1)).toBe("Remove this download?");
+    expect(removeTitleFor(3)).toBe("Remove 3 downloads?");
+    expect(removeBody([snap({ status: "completed" })])).toBe(
+      "rdm forgets it for good. Downloaded files stay on disk.",
+    );
+    expect(
+      removeBody([
+        snap({ id: 1, status: "cancelled", partial_kept: true }),
+        snap({ id: 2, status: "failed" }),
+      ]),
+    ).toBe(
+      "rdm forgets them for good. Downloaded files stay on disk. Kept partial files stay too. Unfinished partial files are deleted.",
+    );
+  });
+});
+
+describe("viewTitle and emptyCopy for the archive and tags", () => {
+  it("names Archived and tag views", () => {
+    expect(viewTitle({ kind: "archived" }, [])).toBe("Archived");
+    expect(viewTitle({ kind: "tag", tag: "work", archived: false }, [])).toBe("work");
+    expect(viewTitle({ kind: "tag", tag: "work", archived: true }, [])).toBe("Archived › work");
+    expect(emptyCopy({ kind: "archived" }, "Archived", "").title).toBe("Nothing archived");
+    expect(emptyCopy({ kind: "tag", tag: "iso", archived: false }, "iso", "").title).toBe(
+      "Nothing tagged iso",
+    );
   });
 });
 

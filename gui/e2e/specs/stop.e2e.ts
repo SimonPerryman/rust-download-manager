@@ -3,7 +3,7 @@
 // first, and focus returns to the row each way); Keep leaves the row Stopped
 // with its partial file and a Resume; Delete leaves it Stopped with
 // "Download again" and nothing on disk; a kept
-// partial can be deleted from the row, and survives Remove from list. The row
+// partial can be deleted from the row, and survives Archive and then Remove. The row
 // is tracked by id and its paths re-read from the engine after every restart,
 // since a restart from zero may move it to `name (1)`.
 
@@ -172,17 +172,26 @@ describe("rdm GUI stop dialog", () => {
     await expect(rowById(id).$('button[aria-label="Download again"]')).toBeExisting();
   });
 
-  it("keeps a kept partial file on disk when the row is removed from the list", async () => {
+  it("keeps a kept partial file on disk when the row is archived and removed", async () => {
     part = await restart(id, "Download again");
     const filename = await attr(id, "data-filename");
     await stopThroughDialog(id, "keep");
     await waitForAttr(id, "data-partial-kept", "true");
 
-    await clickRowAction(id, "Remove from list");
+    await clickRowAction(id, "Archive");
+    await waitForGone(rowSelector(id));
+    expect(existsSync(part)).toBe(true);
+
+    await selectFilter("archived");
+    await clickRowAction(id, "Remove");
+    const dialog = $('[data-testid="remove-dialog"]');
+    await dialog.waitForDisplayed();
+    await dialog.$("button=Remove").click();
     await expect($(TOAST)).toHaveText("Its partial file stays on disk", { containing: true });
     await expect($(TOAST)).toHaveText(filename!, { containing: true });
     await waitForGone(rowSelector(id));
     id = 0;
     expect(existsSync(part)).toBe(true);
+    await selectFilter("all");
   });
 });

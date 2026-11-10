@@ -50,6 +50,7 @@ export type RowActionKey =
   | "open"
   | "reveal"
   | "remove"
+  | "archive"
   | "retry"
   | "deletePartial"
   | "downloadAgain";
@@ -66,10 +67,15 @@ const LIMIT = icon("limit", "Speed limit");
 const PAUSE = icon("pause", "Pause");
 const STOP = icon("stop", "Stop");
 const REVEAL = icon("reveal", "Show in folder");
-const REMOVE = icon("remove", "Remove from list");
+const REMOVE = icon("remove", "Remove");
+const ARCHIVE = icon("archive", "Archive");
 
-/** The row's actions, left to right. `lingering` = finished this session and not opened yet. */
+/**
+ * The row's actions, left to right. `lingering` = finished this session and not opened yet.
+ * A finished row's last button archives it, or in the archive removes it.
+ */
 export function rowActions(d: DownloadSnapshot, lingering: boolean): RowAction[] {
+  const lastAction = d.archived ? REMOVE : ARCHIVE;
   switch (d.status) {
     case "downloading":
     case "queued":
@@ -80,18 +86,18 @@ export function rowActions(d: DownloadSnapshot, lingering: boolean): RowAction[]
       return [
         lingering ? { key: "open", label: "Open", style: "primary" } : icon("open", "Open"),
         REVEAL,
-        REMOVE,
+        lastAction,
       ];
     case "failed":
-      return [{ key: "retry", label: "Retry", style: "soft" }, REMOVE];
+      return [{ key: "retry", label: "Retry", style: "soft" }, lastAction];
     case "cancelled":
       return d.partial_kept
         ? [
             { key: "resume", label: "Resume", style: "soft" },
             icon("deletePartial", "Delete partial file"),
-            REMOVE,
+            lastAction,
           ]
-        : [{ key: "downloadAgain", label: "Download again", style: "soft" }, REMOVE];
+        : [{ key: "downloadAgain", label: "Download again", style: "soft" }, lastAction];
   }
 }
 
@@ -140,7 +146,7 @@ export function continues(d: DownloadSnapshot): boolean {
   return d.status === "paused" || (d.status === "cancelled" && d.partial_kept);
 }
 
-/** Finished one way or another: Remove from list applies. */
+/** Finished one way or another: Remove applies (from the Archived view). */
 export function isRemovable(d: DownloadSnapshot): boolean {
   return d.status === "completed" || d.status === "failed" || d.status === "cancelled";
 }

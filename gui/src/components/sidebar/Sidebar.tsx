@@ -1,6 +1,14 @@
 import { useEffect, useRef } from "react";
-import { STATUS_FILTERS, sameFilter, type StatusFilter, type ViewFilter } from "../../lib/filters";
+import {
+  isArchivedView,
+  STATUS_FILTERS,
+  sameFilter,
+  type StatusFilter,
+  type ViewFilter,
+} from "../../lib/filters";
 import type { Folder as FolderEntry } from "../../lib/folders";
+import type { TagCount } from "../../lib/tags";
+import { Archive } from "../icons/Archive";
 import { AlertTriangle } from "../icons/AlertTriangle";
 import { ArrowDown } from "../icons/ArrowDown";
 import { CheckCircle } from "../icons/CheckCircle";
@@ -10,6 +18,7 @@ import { Folder } from "../icons/Folder";
 import { List } from "../icons/List";
 import { Pause } from "../icons/Pause";
 import { Stop } from "../icons/Stop";
+import { Tag } from "../icons/Tag";
 import { FilterButton } from "./FilterButton";
 import { Sparkline } from "./Sparkline";
 
@@ -28,6 +37,9 @@ type Props = {
   onFilter: (f: ViewFilter) => void;
   counts: Record<StatusFilter, number>;
   folders: FolderEntry[];
+  archivedCount: number;
+  /** The Tags section: the archived rows' tags while an Archived view is shown, else the rest's. */
+  tags: TagCount[];
   /** Bumps on each live finish; restarts the Done count's bump. 0 on load. */
   bumpSeq: number;
   /** Total speed now, and its last minute, for the sparkline. */
@@ -42,6 +54,8 @@ export function Sidebar({
   onFilter,
   counts,
   folders,
+  archivedCount,
+  tags,
   bumpSeq,
   speed,
   speedSamples,
@@ -57,6 +71,9 @@ export function Sidebar({
     void el.offsetWidth;
     el.classList.add("bump");
   }, [bumpSeq]);
+
+  const inArchive = isArchivedView(filter);
+  const archivedView: ViewFilter = { kind: "archived" };
 
   return (
     <aside className="sidebar flex min-h-0 flex-col overflow-y-auto bg-sidebar px-2 py-3">
@@ -87,6 +104,19 @@ export function Sidebar({
             );
           })}
         </ul>
+        <ul className="mt-3 grid gap-0.5">
+          <li>
+            <FilterButton
+              testId="filter"
+              data={{ "data-filter": "archived" }}
+              icon={<Archive />}
+              label="Archived"
+              count={archivedCount}
+              selected={inArchive}
+              onClick={() => onFilter(archivedView)}
+            />
+          </li>
+        </ul>
         {folders.length > 0 && (
           <>
             <h2
@@ -107,6 +137,31 @@ export function Sidebar({
                       label={f.label}
                       title={f.dir}
                       count={f.count}
+                      selected={sameFilter(filter, view)}
+                      onClick={() => onFilter(view)}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+        {tags.length > 0 && (
+          <>
+            <h2 id="tags-head" className="side-head px-2 pb-2 pt-6 text-xs font-semibold text-g400">
+              {inArchive ? "Archived tags" : "Tags"}
+            </h2>
+            <ul className="tag-list grid gap-0.5" aria-labelledby="tags-head">
+              {tags.map((t) => {
+                const view: ViewFilter = { kind: "tag", tag: t.tag, archived: inArchive };
+                return (
+                  <li key={t.tag}>
+                    <FilterButton
+                      testId="tag-filter"
+                      data={{ "data-tag": t.tag }}
+                      icon={<Tag />}
+                      label={t.tag}
+                      count={t.count}
                       selected={sameFilter(filter, view)}
                       onClick={() => onFilter(view)}
                     />

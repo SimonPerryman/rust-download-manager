@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import indexHtml from "../../index.html?raw";
 import {
   applyPrefs,
+  CONFIRM_REMOVE_KEY,
   DEFAULT_PREFS,
   LAST_DIR_KEY,
   LOG_DETAILED_KEY,
+  loadConfirmRemove,
   loadLastDir,
   loadLogDetailed,
   loadPaneHeight,
@@ -15,6 +17,7 @@ import {
   parsePrefs,
   PREFS_KEY,
   resolveTheme,
+  saveConfirmRemove,
   saveLastDir,
   saveLogDetailed,
   savePaneHeight,
@@ -209,6 +212,25 @@ describe("loadLogDetailed / saveLogDetailed", () => {
     expect(loadLogDetailed(undefined)).toBe(false);
     expect(saveLogDetailed(true, throwing)).toBe(false);
     expect(saveLogDetailed(true, undefined)).toBe(false);
+  });
+});
+
+describe("loadConfirmRemove / saveConfirmRemove", () => {
+  it("asks by default; Don't ask again and the Settings toggle round-trip", () => {
+    const storage = memoryStorage();
+    expect(loadConfirmRemove(storage)).toBe(true);
+    expect(saveConfirmRemove(false, storage)).toBe(true);
+    expect(storage.data[CONFIRM_REMOVE_KEY]).toBe("false");
+    expect(loadConfirmRemove(storage)).toBe(false);
+    expect(saveConfirmRemove(true, storage)).toBe(true);
+    expect(loadConfirmRemove(storage)).toBe(true);
+  });
+
+  it("asks when storage holds anything else or fails", () => {
+    expect(loadConfirmRemove(memoryStorage({ [CONFIRM_REMOVE_KEY]: "no" }))).toBe(true);
+    expect(loadConfirmRemove(throwing)).toBe(true);
+    expect(loadConfirmRemove(undefined)).toBe(true);
+    expect(saveConfirmRemove(false, throwing)).toBe(false);
   });
 });
 

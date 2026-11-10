@@ -7,8 +7,8 @@ import type { DownloadSnapshot } from "./types";
 const labels = (entries: MenuEntry[]) =>
   entries.map((e) => (e.kind === "item" ? e.label : e.kind === "note" ? `(${e.text})` : "-"));
 
-const menu = (list: DownloadSnapshot[], queue: number[] = [], failed = 0) =>
-  labels(menuItems(list, queue, failed));
+const menu = (list: DownloadSnapshot[], queue: number[] = [], failed = 0, archived = false) =>
+  labels(menuItems(list, queue, failed, archived));
 
 describe("menuItems", () => {
   it("fits a finished download", () => {
@@ -18,19 +18,32 @@ describe("menuItems", () => {
       "-",
       "Copy link",
       "Download again",
+      "Tags…",
       "-",
-      "Remove from list",
-      "(The file stays on disk.)",
+      "Archive",
     ]);
   });
 
   it("fits a running download", () => {
-    expect(menu([snap({ status: "downloading" })])).toEqual(["Pause", "Stop…", "-", "Copy link"]);
+    expect(menu([snap({ status: "downloading" })])).toEqual([
+      "Pause",
+      "Stop…",
+      "-",
+      "Copy link",
+      "Tags…",
+    ]);
   });
 
   it("offers queue moves for one waiting download by its place", () => {
     const q = [1, 2, 3];
-    expect(menu([snap({ id: 1 })], q)).toEqual(["Pause", "Move down", "Stop…", "-", "Copy link"]);
+    expect(menu([snap({ id: 1 })], q)).toEqual([
+      "Pause",
+      "Move down",
+      "Stop…",
+      "-",
+      "Copy link",
+      "Tags…",
+    ]);
     expect(menu([snap({ id: 2 })], q)).toEqual([
       "Pause",
       "Start next",
@@ -39,6 +52,7 @@ describe("menuItems", () => {
       "Stop…",
       "-",
       "Copy link",
+      "Tags…",
     ]);
     expect(menu([snap({ id: 3 })], q)).toEqual([
       "Pause",
@@ -47,19 +61,59 @@ describe("menuItems", () => {
       "Stop…",
       "-",
       "Copy link",
+      "Tags…",
     ]);
   });
 
-  it("says a kept partial survives Remove and offers to delete it", () => {
+  it("offers to delete a kept partial, and archives", () => {
     expect(menu([snap({ status: "cancelled", partial_kept: true })])).toEqual([
       "Resume",
       "-",
       "Copy link",
+      "Tags…",
       "-",
       "Delete partial file",
-      "Remove from list",
+      "Archive",
+    ]);
+  });
+
+  it("in the archive, unarchives and says a kept partial survives Remove", () => {
+    const d = snap({ status: "cancelled", partial_kept: true, archived: true });
+    expect(menu([d], [], 0, true)).toEqual([
+      "Resume",
+      "-",
+      "Copy link",
+      "Tags…",
+      "-",
+      "Delete partial file",
+      "Unarchive",
+      "Remove",
       "(The partial file stays on disk.)",
     ]);
+    const done = snap({ status: "completed", archived: true });
+    expect(menu([done], [], 0, true)).toEqual([
+      "Open",
+      "Show in folder",
+      "-",
+      "Copy link",
+      "Download again",
+      "Tags…",
+      "-",
+      "Unarchive",
+      "Remove",
+      "(The file stays on disk.)",
+    ]);
+    const del = menuItems([done], [], 0, true).find((e) => e.kind === "item" && e.cmd === "remove");
+    expect(del).toMatchObject({ shortcut: "Del" });
+  });
+
+  it("archives only finished rows outside the archive", () => {
+    expect(menu([snap({ status: "paused" })])).not.toContain("Archive");
+    const archive = menuItems([snap({ status: "failed" })], [], 1).find(
+      (e) => e.kind === "item" && e.cmd === "archive",
+    );
+    expect(archive).toMatchObject({ label: "Archive", shortcut: "Del" });
+    expect(menu([snap({ status: "completed" })])).not.toContain("Remove");
   });
 
   it("calls a stopped download with nothing kept Download again", () => {
@@ -67,8 +121,9 @@ describe("menuItems", () => {
       "Download again",
       "-",
       "Copy link",
+      "Tags…",
       "-",
-      "Remove from list",
+      "Archive",
     ]);
     // Space only resumes; it never restarts a download from zero.
     const again = menuItems([snap({ status: "cancelled" })], [], 0).find(
@@ -79,7 +134,7 @@ describe("menuItems", () => {
 
   it("offers Retry all failed only when more than one failed", () => {
     const f = snap({ status: "failed" });
-    expect(menu([f], [], 1)).toEqual(["Retry", "-", "Copy link", "-", "Remove from list"]);
+    expect(menu([f], [], 1)).toEqual(["Retry", "-", "Copy link", "Tags…", "-", "Archive"]);
     expect(menu([f], [], 2)).toContain("Retry all failed");
   });
 
@@ -98,10 +153,10 @@ describe("menuItems", () => {
       "-",
       "Copy links",
       "Download again",
+      "Tags…",
       "-",
       "Delete partial files",
-      "Remove from list",
-      "(Files and kept partial files stay on disk.)",
+      "Archive",
     ]);
   });
 
@@ -121,13 +176,22 @@ describe("menuItems", () => {
 describe("selectionActions", () => {
   it("offers each action that applies to any selected row, in toolbar order", () => {
     expect(selectionActions([snap({ status: "downloading" }), snap({ status: "failed" })])).toEqual(
-      ["pause", "stop", "retry", "remove"],
+      ["pause", "stop", "retry", "tags", "archive"],
     );
     expect(selectionActions([snap({ status: "completed" }), snap({ status: "paused" })])).toEqual([
       "open",
       "resume",
       "stop",
-      "remove",
+      "tags",
+      "archive",
     ]);
+  });
+
+  it("offers Unarchive and Remove in the archive", () => {
+    const list = [
+      snap({ id: 1, status: "completed", archived: true }),
+      snap({ id: 2, status: "failed", archived: true }),
+    ];
+    expect(selectionActions(list, true)).toEqual(["open", "retry", "tags", "unarchive", "remove"]);
   });
 });

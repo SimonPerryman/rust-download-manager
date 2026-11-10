@@ -1,6 +1,6 @@
 // Cosmetic GUI preferences (theme + row density), the finish moment's
 // "not opened yet" ids, the details pane's height, the Add dialog's last
-// folder and the Log tab's level, kept in localStorage. Pure apart from the
+// folder, the Log tab's level and whether Remove asks first, kept in localStorage. Pure apart from the
 // storage/root handles passed in, so it is unit-testable.
 // The inline script in index.html mirrors `parsePrefs` + `applyPrefs` to apply
 // them before first paint; keep the two in step.
@@ -194,6 +194,32 @@ export function saveLogDetailed(
   try {
     if (!storage) return false;
     storage.setItem(LOG_DETAILED_KEY, String(detailed));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether Remove (permanent, from the Archived view) asks first. */
+export const CONFIRM_REMOVE_KEY = "rdm.gui.confirmRemove";
+
+/** Whether Remove asks first: true unless "false" is stored. */
+export function loadConfirmRemove(storage: ReadStorage | undefined = defaultStorage()): boolean {
+  try {
+    return storage?.getItem(CONFIRM_REMOVE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+/** Remembers whether Remove asks first; returns false (and changes nothing) if storage is unavailable. */
+export function saveConfirmRemove(
+  ask: boolean,
+  storage: WriteStorage | undefined = defaultStorage(),
+): boolean {
+  try {
+    if (!storage) return false;
+    storage.setItem(CONFIRM_REMOVE_KEY, String(ask));
     return true;
   } catch {
     return false;

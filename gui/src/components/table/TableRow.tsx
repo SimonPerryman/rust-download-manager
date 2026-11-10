@@ -104,6 +104,8 @@ export function TableRow({
       data-linger={lingering ? "true" : undefined}
       data-partial-kept={String(d.partial_kept)}
       data-finished-at={d.finished_at ?? ""}
+      data-archived={d.archived ? "true" : undefined}
+      data-tags={d.tags.join(",")}
       data-selected={details ? "true" : undefined}
       data-next-up={queueIndex === 0 ? "true" : undefined}
       className={`row st-${filterKeyOf(d.status)}${lingering ? " linger" : ""}${fresh ? " fresh" : ""}${selected ? " selected" : ""}${cursor ? " cursor" : ""}${drag ? ` ${drag}` : ""}`}
@@ -161,6 +163,15 @@ export function TableRow({
               <span className="host">{host(d.url)}</span>
             </span>
           </button>
+          {d.tags.length > 0 && (
+            <span className="row-tags" aria-label={`Tags: ${d.tags.join(", ")}`}>
+              {d.tags.map((t) => (
+                <span key={t} data-testid="row-tag" className="tag-label" title={t}>
+                  {t}
+                </span>
+              ))}
+            </span>
+          )}
         </div>
       </td>
       <td className="c-size num">{sizeText(d)}</td>

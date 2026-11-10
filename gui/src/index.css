@@ -541,6 +541,32 @@
   :root[data-density="comfortable"] .host {
     display: block;
   }
+  /* A row's tags: small labels after its name, cut off before they crowd it. */
+  .row-tags {
+    @apply flex min-w-0 shrink gap-1 overflow-hidden;
+  }
+  .tag-label {
+    @apply inline-block max-w-28 shrink-0 truncate rounded-sm px-1.5 text-xs leading-5;
+    background: var(--hover);
+    box-shadow: inset 0 0 0 1px var(--line);
+    color: var(--g600);
+  }
+  .tag-editor {
+    @apply grid gap-2;
+  }
+  .tag-chip {
+    @apply inline-flex h-6 max-w-full items-center gap-1 rounded-sm pl-2 pr-1 text-sm;
+    background: var(--hover);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .tag-chip button {
+    @apply inline-grid h-4 w-4 place-items-center rounded-sm;
+    color: var(--g600);
+  }
+  .tag-chip button:hover {
+    background: var(--line);
+    color: var(--ink);
+  }
   .st-waiting .fn,
   .st-stopped .fn {
     color: var(--g600);

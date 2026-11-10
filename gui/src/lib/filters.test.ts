@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  archivedCount,
   filterKeyOf,
+  isArchivedView,
   matchesFilter,
   matchesQuery,
   sameFilter,
   statusCounts,
   STATUS_FILTERS,
   type StatusFilter,
+  type ViewFilter,
 } from "./filters";
+import { deriveFolders } from "./folders";
+import { tagCounts } from "./tags";
 import { snap } from "./testSnapshot";
 import type { Status } from "./types";
 
@@ -101,5 +106,71 @@ describe("sameFilter", () => {
     expect(sameFilter({ kind: "folder", dir: "all" }, { kind: "status", status: "all" })).toBe(
       false,
     );
+  });
+});
+
+describe("the archive and tags", () => {
+  // A fixture mixing archived, tagged and plain downloads across two folders.
+  const ds = [
+    snap({ id: 1, status: "completed", tags: ["work"], target: "/a/1.iso" }),
+    snap({ id: 2, status: "completed", tags: ["Work", "iso"], archived: true, target: "/a/2.iso" }),
+    snap({ id: 3, status: "cancelled", archived: true, target: "/b/3.iso" }),
+    snap({ id: 4, status: "failed", tags: ["WORK"], target: "/b/4.iso" }),
+    snap({ id: 5, status: "downloading", target: "/a/5.iso" }),
+    snap({ id: 6, status: "failed", tags: ["old"], archived: true, target: "/a/6.iso" }),
+  ];
+  const ids = (f: ViewFilter) => ds.filter((d) => matchesFilter(d, f)).map((d) => d.id);
+  const live = ds.filter((d) => !d.archived);
+
+  it("leaves archived rows out of All, every status filter and every folder filter", () => {
+    for (const { key } of STATUS_FILTERS) {
+      expect(ids({ kind: "status", status: key }).every((id) => ![2, 3, 6].includes(id))).toBe(
+        true,
+      );
+    }
+    expect(ids({ kind: "status", status: "all" })).toEqual([1, 4, 5]);
+    expect(ids({ kind: "folder", dir: "/a" })).toEqual([1, 5]);
+    expect(ids({ kind: "folder", dir: "/b" })).toEqual([4]);
+  });
+
+  it("shows exactly the archived rows under Archived", () => {
+    expect(ids({ kind: "archived" })).toEqual([2, 3, 6]);
+    expect(isArchivedView({ kind: "archived" })).toBe(true);
+    expect(isArchivedView({ kind: "tag", tag: "x", archived: true })).toBe(true);
+    expect(isArchivedView({ kind: "tag", tag: "x", archived: false })).toBe(false);
+  });
+
+  it("counts what each filter shows: statuses, folders, Archived and tags", () => {
+    const counts = statusCounts(ds);
+    for (const { key } of STATUS_FILTERS) {
+      expect(counts[key]).toBe(ids({ kind: "status", status: key }).length);
+    }
+    for (const f of deriveFolders(live, live)) {
+      expect(f.count).toBe(ids({ kind: "folder", dir: f.dir }).length);
+    }
+    expect(archivedCount(ds)).toBe(ids({ kind: "archived" }).length);
+    for (const archived of [false, true]) {
+      for (const t of tagCounts(ds.filter((d) => d.archived === archived))) {
+        expect(t.count).toBe(ids({ kind: "tag", tag: t.tag, archived }).length);
+      }
+    }
+  });
+
+  it("lists tags from non-archived rows only, once each ignoring case; Archived lists its own", () => {
+    expect(tagCounts(live)).toEqual([{ tag: "work", count: 2 }]);
+    expect(tagCounts(ds.filter((d) => d.archived))).toEqual([
+      { tag: "iso", count: 1 },
+      { tag: "old", count: 1 },
+      { tag: "Work", count: 1 },
+    ]);
+    expect(ids({ kind: "tag", tag: "WORK", archived: false })).toEqual([1, 4]);
+    expect(ids({ kind: "tag", tag: "work", archived: true })).toEqual([2]);
+  });
+
+  it("tells tag views apart by scope, not by case", () => {
+    const a: ViewFilter = { kind: "tag", tag: "work", archived: false };
+    expect(sameFilter(a, { kind: "tag", tag: "Work", archived: false })).toBe(true);
+    expect(sameFilter(a, { kind: "tag", tag: "work", archived: true })).toBe(false);
+    expect(sameFilter({ kind: "archived" }, { kind: "archived" })).toBe(true);
   });
 });

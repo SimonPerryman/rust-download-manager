@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   addLabel,
   addLinks,
+  knownUrls,
   linksToAdd,
   parseLinks,
   partialAddError,
   previewSummary,
+  type Known,
 } from "./batch";
 
-const none = new Set<string>();
+const none = new Map<string, Known>();
 
 describe("parseLinks", () => {
   it("reads one link per line, flagging lines that aren't links", () => {
@@ -69,7 +71,7 @@ describe("parseLinks", () => {
   it("flags links already in the list and repeats within the paste", () => {
     const entries = parseLinks(
       "https://a.example/x\nhttps://a.example/y\nhttps://a.example/x",
-      new Set(["https://a.example/y"]),
+      new Map([["https://a.example/y", "listed" as const]]),
     );
     expect(entries.map((e) => (e.kind === "link" ? e.dup : "bad"))).toEqual([
       null,
@@ -79,11 +81,34 @@ describe("parseLinks", () => {
   });
 });
 
+describe("knownUrls", () => {
+  it("marks archived-only URLs apart from listed ones, listed winning", () => {
+    const known = knownUrls([
+      { url: "https://a.example/x", archived: false },
+      { url: "https://a.example/y", archived: true },
+      { url: "https://a.example/z", archived: true },
+      { url: "https://a.example/z", archived: false },
+    ]);
+    expect([...known]).toEqual([
+      ["https://a.example/x", "listed"],
+      ["https://a.example/y", "archived"],
+      ["https://a.example/z", "listed"],
+    ]);
+  });
+
+  it("notes an archived match and still adds it, so it can be downloaded again", () => {
+    const known = knownUrls([{ url: "https://a.example/y", archived: true }]);
+    const entries = parseLinks("https://a.example/y", known);
+    expect(entries).toMatchObject([{ kind: "link", dup: "archived" }]);
+    expect(linksToAdd(entries)).toEqual(["https://a.example/y"]);
+  });
+});
+
 describe("linksToAdd", () => {
   it("adds listed duplicates but not repeats or non-links", () => {
     const entries = parseLinks(
       "https://a.example/x\nnope\nhttps://a.example/x\nhttps://a.example/y",
-      new Set(["https://a.example/y"]),
+      new Map([["https://a.example/y", "listed" as const]]),
     );
     expect(linksToAdd(entries)).toEqual(["https://a.example/x", "https://a.example/y"]);
   });

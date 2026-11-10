@@ -57,9 +57,6 @@ export const resume = (id: number) => invoke<void>("resume", { id });
 export const stop = (id: number, keepPartial: boolean) => invoke<void>("stop", { id, keepPartial });
 /** Move a waiting download to `index` among the waiting ones. */
 export const moveQueued = (id: number, index: number) => invoke<void>("move_queued", { id, index });
-/** Remove finished downloads in `statuses` (only `ids`, if given). Resolves with the count. */
-export const clear = (statuses: Status[], ids?: number[] | null) =>
-  invoke<number>("clear", { statuses, ids: ids ?? null });
 /** Archive finished downloads by id; others are left as they are. Resolves with the count changed. */
 export const archive = (ids: number[]) => invoke<number>("archive", { ids });
 /** Return archived downloads to the working views. Resolves with the count changed. */
@@ -83,6 +80,7 @@ export const verifyChecksum = (id: number, checksum: string) =>
   invoke<void>("verify_checksum", { id, checksum });
 /** A download's recent log lines, oldest first (empty for an unknown id). */
 export const downloadLog = (id: number) => invoke<LogLine[]>("download_log", { id });
+/** Remove a download for good; its downloaded file stays on disk (see the engine's `remove`). */
 export const remove = (id: number) => invoke<void>("remove", { id });
 export const pauseAll = () => invoke<void>("pause_all");
 /** Resume every paused download (stopped ones stay stopped). */

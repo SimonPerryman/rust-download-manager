@@ -15,6 +15,7 @@ command-line tool and a desktop app.
 - **Never start over:** resumes after a crash, restart or Ctrl-C.
 - **In control:** pause, resume, stop and speed limits.
 - **A queue (GUI):** downloads wait their turn; paste many links at once.
+- **Archive and tags (GUI):** archive finished downloads and filter by tag.
 - **Verified:** optional SHA-256 checksum checked before the file is saved.
 - **Safe names:** files stay in your folder and never overwrite another.
 - **See it work (GUI):** live connection lanes, a speed graph and a per-download log.

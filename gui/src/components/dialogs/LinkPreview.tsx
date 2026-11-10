@@ -2,7 +2,11 @@ import { previewSummary, type BatchEntry } from "../../lib/batch";
 import { AlertTriangle } from "../icons/AlertTriangle";
 import { Check } from "../icons/Check";
 
-const DUP_NOTE = { listed: "Already in your list", repeat: "Listed twice" };
+const DUP_NOTE = {
+  listed: "Already in your list",
+  archived: "In your archive",
+  repeat: "Listed twice",
+};
 
 // What the pasted text holds, before anything starts: each link's filename
 // and site, with lines that aren't links (and repeats) flagged and skipped.

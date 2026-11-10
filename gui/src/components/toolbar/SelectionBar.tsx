@@ -1,10 +1,13 @@
 import type { MenuCommand } from "../../lib/menu";
+import { Archive } from "../icons/Archive";
+import { ArchiveRestore } from "../icons/ArchiveRestore";
 import { ExternalLink } from "../icons/ExternalLink";
 import { ListRemove } from "../icons/ListRemove";
 import { Pause } from "../icons/Pause";
 import { Play } from "../icons/Play";
 import { Retry } from "../icons/Retry";
 import { Stop } from "../icons/Stop";
+import { Tag } from "../icons/Tag";
 import { X } from "../icons/X";
 
 const BUTTON: Partial<
@@ -15,7 +18,10 @@ const BUTTON: Partial<
   resume: { label: "Resume", Icon: Play },
   stop: { label: "Stop", Icon: Stop },
   retry: { label: "Retry", Icon: Retry },
-  remove: { label: "Remove from list", Icon: ListRemove },
+  tags: { label: "Tags…", Icon: Tag },
+  archive: { label: "Archive", Icon: Archive },
+  unarchive: { label: "Unarchive", Icon: ArchiveRestore },
+  remove: { label: "Remove", Icon: ListRemove },
 };
 
 type Props = {
