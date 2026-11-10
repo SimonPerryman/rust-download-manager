@@ -567,3 +567,28 @@ async fn cli_failure_message_redacts_url_secrets() {
     assert!(!stderr.contains("SECRET123"), "stderr: {stderr}");
     assert!(stderr.contains("/missing?<redacted>"), "stderr: {stderr}");
 }
+
+/// `-v` starts with the version and OS line a bug report needs.
+#[tokio::test]
+async fn verbose_logs_the_version_and_os() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .arg(server.url("/file"))
+        .arg("-o")
+        .arg(dir.path().join("out.bin"))
+        .arg("-v")
+        .env_remove("RUST_LOG")
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert!(output.status.success(), "rdm exited with {}", output.status);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let line = format!(
+        "rdm {} · {}",
+        env!("CARGO_PKG_VERSION"),
+        rdm::platform::os_description()
+    );
+    assert!(stderr.contains(&line), "no {line:?} in stderr: {stderr}");
+}

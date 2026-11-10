@@ -216,8 +216,12 @@ hand are brought within the tag rules when it opens. The GUI also
 writes a daily log in `~/.rdm` (`rdm.YYYY-MM-DD.log`, the last 7 kept), with
 its level set by `RUST_LOG` (default `info`); the Log tab always shows
 informational lines and up (and, with **Detailed**, rdm's debug lines too),
-whatever `RUST_LOG` says. On
-Unix, `~/.rdm` is made owner-only (0700), since the state file and logs hold
+whatever `RUST_LOG` says. Each run's log starts with the version, OS,
+WebView, memory use and the settings that matter (no URLs, paths or tags),
+and every crash is recorded there with its details; see
+[When something goes wrong](how-it-works.md#when-something-goes-wrong). If
+an action hits a bug in rdm, it shows an error instead of closing the app.
+On Unix, `~/.rdm` is made owner-only (0700), since the state file holds
 full download URLs.
 
 Logged URLs and error messages drop any `user:password@` and fragment, and

@@ -73,7 +73,7 @@ impl Checksum {
         let (checksum, path) = (self.clone(), path.to_path_buf());
         let actual = tokio::task::spawn_blocking(move || checksum.digest_file(&path))
             .await
-            .map_err(std::io::Error::other)??;
+            .map_err(crate::engine::join_error)??;
         if actual != self.hex {
             tracing::error!(
                 "Checksum mismatch ({}) — expected {}, got {actual}",
@@ -94,6 +94,8 @@ impl Checksum {
     /// The lowercase hex digest of `path` under this checksum's algorithm.
     /// Synchronous and blocking: callers run it via `spawn_blocking`.
     pub fn digest_file(&self, path: &Path) -> std::io::Result<String> {
+        #[cfg(feature = "fault-injection")]
+        crate::engine::fault::panic_on_file(path);
         let mut file = std::fs::File::open(path)?;
         let mut buf = vec![0u8; 64 * 1024];
         match self.algo {

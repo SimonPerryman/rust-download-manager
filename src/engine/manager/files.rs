@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::{Manager, ManagerState};
+use crate::engine::lock::lock;
 use crate::engine::store::{ChecksumState, DownloadRecord, Status};
 use crate::engine::{state, Error};
 
@@ -13,7 +14,7 @@ impl Manager {
     /// reveal: only paths the engine itself downloaded, never arbitrary ones.
     /// Errors if `id` is unknown, hasn't completed, or its file is gone.
     pub fn completed_file(&self, id: u64) -> crate::engine::Result<PathBuf> {
-        let st = self.inner.state.lock().unwrap();
+        let st = lock(&self.inner.state);
         let e = st
             .entries
             .get(&id)

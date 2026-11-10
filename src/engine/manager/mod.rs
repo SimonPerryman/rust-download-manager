@@ -39,6 +39,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::engine::download_log::DownloadLogs;
+use crate::engine::lock::lock;
 use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Store};
 use crate::engine::tally::Tally;
 use crate::engine::{Checksum, Control, RateLimiter, Segment};
@@ -298,11 +299,9 @@ impl Drop for Manager {
         // Stop late task callbacks from touching freed state, and abort any
         // still-running downloads so they don't outlive the manager.
         self.inner.closed.store(true, Ordering::SeqCst);
-        if let Ok(st) = self.inner.state.lock() {
-            for e in st.entries.values() {
-                if let Some(task) = &e.task {
-                    task.abort();
-                }
+        for e in lock(&self.inner.state).entries.values() {
+            if let Some(task) = &e.task {
+                task.abort();
             }
         }
     }
@@ -337,6 +336,39 @@ mod tests {
         fn save(&self, _: &StoreData) -> crate::engine::Result<()> {
             Ok(())
         }
+    }
+
+    /// A panic while the state lock is held (as a bug in a download task
+    /// could cause) leaves the Manager usable: every command still answers
+    /// instead of panicking on the poisoned lock.
+    #[tokio::test]
+    async fn commands_survive_a_poisoned_state_lock() {
+        let data = StoreData {
+            next_id: 2,
+            downloads: vec![record(1, None)],
+            ..StoreData::default()
+        };
+        let mgr = Manager::load(
+            Box::new(FixedStore(data)),
+            tokio::runtime::Handle::current(),
+        )
+        .unwrap();
+        let inner = mgr.inner.clone();
+        let _ = std::thread::spawn(move || {
+            let _held = inner.state.lock();
+            panic!("poison the state lock");
+        })
+        .join();
+        assert!(mgr.inner.state.is_poisoned());
+
+        assert_eq!(mgr.snapshot().len(), 1);
+        mgr.set_max_concurrent(2);
+        assert_eq!(mgr.settings().max_concurrent, 2);
+        mgr.pause(1);
+        mgr.stop(1, true);
+        assert_eq!(mgr.snapshot()[0].status, Status::Cancelled);
+        mgr.remove(1);
+        assert!(mgr.snapshot().is_empty());
     }
 
     pub(super) fn record(id: u64, limit: Option<u64>) -> DownloadRecord {

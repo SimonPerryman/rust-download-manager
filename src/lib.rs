@@ -6,6 +6,7 @@
 //! tests drive it directly against a local server.
 
 pub mod engine;
+pub mod platform;
 
 pub use engine::{
     download, parse_rate, redact_url, AddOptions, Algo, Checksum, ChecksumState, ClaimTarget,

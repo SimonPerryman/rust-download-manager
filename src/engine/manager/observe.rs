@@ -10,6 +10,7 @@ use tracing_subscriber::Layer;
 
 use super::{DownloadSnapshot, Entry, Inner, Manager, ManagerState, PUBLISH_INTERVAL};
 use crate::engine::download_log::{capture_filter, LogLayer, LogLine};
+use crate::engine::lock::lock;
 use crate::engine::Progress;
 
 impl Inner {
@@ -24,7 +25,7 @@ impl Inner {
     /// Publish the current snapshot immediately (used on lifecycle changes).
     pub(super) fn publish(&self, st: &ManagerState) {
         let _ = self.tx.send(self.snapshots(st));
-        *self.last_publish.lock().unwrap() = Instant::now();
+        *lock(&self.last_publish) = Instant::now();
     }
 
     /// Per-chunk progress callback: update counters cheaply, publish at most
@@ -33,7 +34,7 @@ impl Inner {
         if self.closed.load(Ordering::SeqCst) {
             return;
         }
-        let st = &mut *self.state.lock().unwrap();
+        let st = &mut *lock(&self.state);
         if let Some(e) = st.entries.get_mut(&id) {
             // The engine threw the partial away and started over (e.g. the
             // server ignored the resume range), so the clock starts over too.
@@ -56,7 +57,7 @@ impl Inner {
             return;
         }
         let now = Instant::now();
-        let mut last = self.last_publish.lock().unwrap();
+        let mut last = lock(&self.last_publish);
         if now.duration_since(*last) >= PUBLISH_INTERVAL {
             *last = now;
             let _ = self.tx.send(self.snapshots(st));
@@ -88,7 +89,7 @@ impl Manager {
 
     /// A one-shot snapshot of every download, in display order.
     pub fn snapshot(&self) -> Vec<DownloadSnapshot> {
-        let st = self.inner.state.lock().unwrap();
+        let st = lock(&self.inner.state);
         self.inner.snapshots(&st)
     }
 

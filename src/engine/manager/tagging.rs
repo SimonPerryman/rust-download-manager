@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 
 use super::{Manager, ManagerState};
+use crate::engine::lock::lock;
 use crate::engine::tags;
 
 impl Manager {
@@ -14,7 +15,7 @@ impl Manager {
     /// downloads changed.
     pub fn add_tags(&self, ids: &[u64], tags: &[String]) -> crate::engine::Result<usize> {
         let added = tags::normalize(tags)?;
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         let mut updates = Vec::new();
         for id in unique(ids) {
             if let Some(e) = st.entries.get(&id) {
@@ -31,7 +32,7 @@ impl Manager {
     /// download. Returns how many downloads changed.
     pub fn remove_tags(&self, ids: &[u64], tags: &[String]) -> usize {
         let removed: Vec<String> = tags.iter().map(|t| t.trim().to_string()).collect();
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         let updates = unique(ids)
             .into_iter()
             .filter_map(|id| st.entries.get(&id).map(|e| (id, &e.record.tags)))

@@ -3135,6 +3135,7 @@ dependencies = [
  "clap",
  "futures-util",
  "indicatif",
+ "libc",
  "reqwest",
  "rustls",
  "serde",
@@ -3146,6 +3147,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3153,6 +3155,7 @@ name = "rdm-gui"
 version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
+ "futures-util",
  "minisign",
  "rdm",
  "reqwest",

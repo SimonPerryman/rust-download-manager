@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use super::LANES;
+use crate::engine::lock::lock;
 
 /// Live-worker accounting: how many workers run, how many the ramp wants, and
 /// whether the pool changed since the last ramp window.
@@ -49,7 +50,7 @@ impl Pool {
     /// Count a new worker in, on lane `prefer` if it's free, else the lowest
     /// free one; it is counted out when the slot drops.
     pub(super) fn join(&self, prefer: Option<u8>) -> Slot<'_> {
-        let mut lanes = self.lanes.lock().unwrap();
+        let mut lanes = lock(&self.lanes);
         let used = lanes.used;
         let free = |lane: &u8| usize::from(*lane) < LANES && used & (1 << lane) == 0;
         let lane = prefer
@@ -75,7 +76,7 @@ impl Pool {
 
     /// The highest lane number in use (zero-based): the next to be shed.
     pub(super) fn bottom(&self) -> Option<u8> {
-        self.lanes.lock().unwrap().bottom()
+        lock(&self.lanes).bottom()
     }
 
     pub(super) fn live(&self) -> u8 {
@@ -126,7 +127,7 @@ impl Slot<'_> {
     /// goes instead only when it is the one other lane.
     fn try_retire_at(&mut self, now: Instant) -> Leave {
         let pool = self.pool;
-        let mut lanes = pool.lanes.lock().unwrap();
+        let mut lanes = lock(&pool.lanes);
         let live = pool.live();
         if !self.held || live <= pool.target() {
             lanes.over_since = None;
@@ -158,7 +159,7 @@ impl Slot<'_> {
 impl Drop for Slot<'_> {
     fn drop(&mut self) {
         if self.held {
-            let mut lanes = self.pool.lanes.lock().unwrap();
+            let mut lanes = lock(&self.pool.lanes);
             self.pool.leave(&mut lanes, self.lane);
         }
     }

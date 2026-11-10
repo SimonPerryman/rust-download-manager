@@ -26,6 +26,15 @@ const PAUSED_MESSAGE: &str = "Paused — run the same command again to resume";
 /// Exit code after a Ctrl-C (the shell convention for SIGINT, 128 + 2).
 const INTERRUPTED: u8 = 130;
 
+/// Exit code after a bug in rdm: Rust's for a panic that ends `main`.
+const BUG: u8 = 101;
+
+/// This build's version, for the `-v` startup line and the bug-report hint.
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Where to report a bug.
+const ISSUES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/issues");
+
 /// A download manager in Rust.
 #[derive(Parser, Debug)]
 #[command(name = "rdm", version, about)]
@@ -71,6 +80,7 @@ fn parse_checksum(s: &str) -> Result<Checksum, String> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<ExitCode> {
+    install_panic_hook();
     let cli = Cli::parse();
 
     let mut req = match cli.output {
@@ -101,6 +111,7 @@ async fn main() -> anyhow::Result<ExitCode> {
         .progress_chars("=>-"),
     );
     init_logging(&bar, cli.verbose);
+    tracing::info!("rdm {VERSION} · {}", rdm::platform::os_description());
 
     let limiter = Arc::new(RateLimiter::new(cli.limit_rate));
     let control = Control::new().with_limiters([limiter]);
@@ -129,8 +140,50 @@ async fn main() -> anyhow::Result<ExitCode> {
             eprintln!("{PAUSED_MESSAGE}");
             Ok(ExitCode::from(INTERRUPTED))
         }
+        // A bug caught inside the engine (the hook has already asked for a
+        // report): the same exit code as a panic that ends `main`.
+        Err(e @ Error::Internal(_)) => {
+            eprintln!("Error: failed to download {}: {e}", redact_url(&req.url));
+            Ok(ExitCode::from(BUG))
+        }
         Err(e) => Err(e).with_context(|| format!("failed to download {}", redact_url(&req.url))),
     }
+}
+
+/// Log a panic (a bug in rdm) as an ERROR event, let the default hook print
+/// it, then ask the user to report it. The backtrace is logged at DEBUG, so
+/// `RUST_LOG=debug` shows it without `RUST_BACKTRACE`.
+fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let message = info.payload_as_str().unwrap_or("panic with no message");
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_default();
+        let thread = std::thread::current();
+        let thread = thread.name().unwrap_or("<unnamed>");
+        tracing::error!(
+            version = VERSION,
+            thread,
+            location,
+            "rdm panicked: {message}"
+        );
+        if tracing::enabled!(Level::DEBUG) {
+            let backtrace = std::backtrace::Backtrace::force_capture();
+            tracing::debug!("Panic backtrace:\n{backtrace}");
+        }
+        default_hook(info);
+        eprintln!("{}", bug_report_hint());
+    }));
+}
+
+/// What the CLI says after a panic.
+fn bug_report_hint() -> String {
+    format!(
+        "rdm {VERSION} hit a bug. Please report it at {ISSUES_URL} with the output \
+         above (run again with -v for more detail)."
+    )
 }
 
 /// The line printed after a successful download.

@@ -10,6 +10,7 @@ use super::severity::Severity;
 use super::table::Claim;
 use super::wording::{claim_line, say_left};
 use super::{Failure, Shared};
+use crate::engine::lock::lock;
 use crate::engine::{human, Error, Flow};
 
 /// How a worker's fetch of one segment ended (short of failing).
@@ -34,7 +35,7 @@ pub(super) async fn worker(
     let lane = slot.lane;
     let result = work(shared, first, &mut slot).await;
     // However it ended, the lane is no longer on any segment.
-    shared.table.lock().unwrap().release(lane);
+    lock(&shared.table).release(lane);
     (lane, result)
 }
 
@@ -65,7 +66,7 @@ async fn work(
                 // The probe's response already holds this piece, so no claim
                 // logs it; say so the same way.
                 let (seg, count) = {
-                    let table = shared.table.lock().unwrap();
+                    let table = lock(&shared.table);
                     (table.segments[idx], table.segments.len())
                 };
                 tracing::debug!(
@@ -82,7 +83,7 @@ async fn work(
                     return Ok(());
                 }
                 let claimed = {
-                    let mut table = shared.table.lock().unwrap();
+                    let mut table = lock(&shared.table);
                     table
                         .claim_for(shared.min, fresh, slot.lane)
                         .map(|(idx, how)| (idx, how, table.segments[idx], table.segments.len()))
@@ -101,7 +102,7 @@ async fn work(
             Ok(Outcome::Stopped) => return Ok(()),
             Ok(Outcome::Retired(leave)) => {
                 let at = {
-                    let mut table = shared.table.lock().unwrap();
+                    let mut table = lock(&shared.table);
                     table.owner[idx] = None;
                     let seg = table.segments[idx];
                     seg.start + seg.done
@@ -115,7 +116,7 @@ async fn work(
                 return Ok(());
             }
             Err(failure) => {
-                let mut table = shared.table.lock().unwrap();
+                let mut table = lock(&shared.table);
                 table.owner[idx] = None;
                 // Under the same lock as the hand-back, so no fresh worker
                 // can claim the segment in between. This worker's slot is
@@ -145,7 +146,7 @@ async fn fetch_segment(
 ) -> Result<Outcome, Failure> {
     loop {
         let (pos, end) = {
-            let table = shared.table.lock().unwrap();
+            let table = lock(&shared.table);
             let seg = table.segments[idx];
             (seg.start + seg.done, seg.end)
         };
@@ -177,9 +178,8 @@ async fn fetch_segment(
                     resp.status().as_u16()
                 );
                 check_ranged(&resp, pos, end, shared.total, shared.redirected)?;
-                let reconnected = std::mem::take(
-                    &mut shared.lane_failures.lock().unwrap()[usize::from(slot.lane)],
-                );
+                let reconnected =
+                    std::mem::take(&mut lock(&shared.lane_failures)[usize::from(slot.lane)]);
                 if reconnected > 0 {
                     tracing::info!("Lane {} reconnected", slot.number());
                 }
@@ -205,7 +205,7 @@ async fn fetch_segment(
             }
             // The tail may have been stolen since the request was sent.
             let room = {
-                let table = shared.table.lock().unwrap();
+                let table = lock(&shared.table);
                 table.segments[idx].remaining()
             };
             let n = (chunk.len() as u64).min(room);
@@ -214,7 +214,7 @@ async fn fetch_segment(
             // `done` only advances once the bytes are written, so a checkpoint
             // snapshot never claims data that isn't in the file.
             let complete = {
-                let mut table = shared.table.lock().unwrap();
+                let mut table = lock(&shared.table);
                 let seg = &mut table.segments[idx];
                 seg.done = (seg.done + n).min(seg.len());
                 seg.is_complete()

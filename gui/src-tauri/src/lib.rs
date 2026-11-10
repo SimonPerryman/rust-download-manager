@@ -6,6 +6,8 @@
 //! `downloads-changed` event. All download logic lives in the engine — this
 //! crate contains none.
 
+mod commands_guard;
+mod logging;
 mod updater;
 
 use std::path::PathBuf;
@@ -290,13 +292,16 @@ fn default_download_dir(app: tauri::AppHandle) -> Result<String, String> {
 
 /// Open a native folder picker; returns the chosen path, or `None` if cancelled.
 #[tauri::command]
-async fn pick_folder(app: tauri::AppHandle) -> Option<String> {
+async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog().file().pick_folder(move |path| {
-        let _ = tx.send(path);
-    });
-    rx.await.ok().flatten().map(|p| p.to_string())
+    commands_guard::contained("pick_folder", async move {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.dialog().file().pick_folder(move |path| {
+            let _ = tx.send(path);
+        });
+        Ok(rx.await.ok().flatten().map(|p| p.to_string()))
+    })
+    .await
 }
 
 /// Open completed download `id`'s file with the OS default handler. Takes an
@@ -386,81 +391,8 @@ fn default_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| e.to_string())
 }
 
-/// Install the tracing subscriber: human-readable logs to stderr (visible when
-/// run via `tauri dev`) and to `<dir>/rdm.<date>.log`, rotated daily (UTC) with
-/// the last 7 files kept, plus `logs` (the engine's per-download lines for the
-/// Log tab, with its own level). The engine emits the events (download start,
-/// each retry with its reason, failures, finishes), each tagged with its download's id;
-/// the default level is `info`, overridable with `RUST_LOG`. Best-effort:
-/// logging must never stop the app from starting.
-fn init_logging<L>(dir: &std::path::Path, logs: L)
-where
-    L: tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync + 'static,
-{
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-    install_logging(dir, filter, logs);
-}
-
-/// [`init_logging`] with an explicit filter.
-fn install_logging<L>(dir: &std::path::Path, filter: tracing_subscriber::EnvFilter, logs: L)
-where
-    L: tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync + 'static,
-{
-    use tracing_appender::rolling::{Builder, Rotation};
-    use tracing_subscriber::prelude::*;
-
-    let appender = Builder::new()
-        .rotation(Rotation::DAILY)
-        .filename_prefix("rdm")
-        .filename_suffix("log")
-        .max_log_files(7)
-        .build(dir);
-    let (file_writer, file_error) = match appender {
-        Ok(appender) => {
-            let (writer, guard) = tracing_appender::non_blocking(appender);
-            // Keep the non-blocking writer's flush worker alive for the whole process.
-            Box::leak(Box::new(guard));
-            (Some(writer), None)
-        }
-        Err(e) => (None, Some(e)),
-    };
-
-    let _ = logging_subscriber(filter, logs, std::io::stderr, file_writer).try_init();
-    if let Some(e) = file_error {
-        tracing::warn!(dir = %dir.display(), error = %e, "file logging disabled");
-    }
-}
-
-/// The subscriber [`install_logging`] installs: `logs`, plus `stderr` and the
-/// optional `file` output. `filter` applies to the outputs only, so the Log
-/// tab's layer keeps its own level whatever `RUST_LOG` says.
-fn logging_subscriber<L, E, F>(
-    filter: tracing_subscriber::EnvFilter,
-    logs: L,
-    stderr: E,
-    file: Option<F>,
-) -> impl tracing::Subscriber + Send + Sync + 'static
-where
-    L: tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync + 'static,
-    E: for<'w> tracing_subscriber::fmt::MakeWriter<'w> + Send + Sync + 'static,
-    F: for<'w> tracing_subscriber::fmt::MakeWriter<'w> + Send + Sync + 'static,
-{
-    use tracing_subscriber::prelude::*;
-
-    let output = tracing_subscriber::fmt::layer()
-        .with_writer(stderr)
-        .and_then(file.map(|writer| {
-            tracing_subscriber::fmt::layer()
-                .with_ansi(false)
-                .with_writer(writer)
-        }))
-        .with_filter(filter);
-    tracing_subscriber::registry().with(logs).with(output)
-}
-
 /// Create `dir` (and its parents) if missing. On Unix it is made owner-only
-/// (0700): its state file and logs hold full download URLs, which may carry
+/// (0700): its state file holds full download URLs, which may carry
 /// credentials or signed query strings.
 fn create_private_dir(dir: &std::path::Path) -> std::io::Result<()> {
     #[cfg(unix)]
@@ -506,8 +438,13 @@ fn init_manager(
     Box::leak(Box::new(runtime));
 
     let manager = Arc::new(Manager::load(Box::new(store), handle)?);
-    // After the Manager, whose layer it installs; loading logs nothing.
-    init_logging(&dir, manager.log_layer());
+    // After the Manager, whose layer it installs; loading logs nothing. The
+    // default level is `info`, overridable with `RUST_LOG`.
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let level = filter.to_string();
+    logging::install_logging(&dir, filter, manager.log_layer());
+    logging::log_startup(&startup_lines(&manager, &level));
 
     // Bridge the manager's watch channel to a webview event. The receiver
     // always holds the latest coalesced snapshot, so a slow webview never
@@ -523,6 +460,52 @@ fn init_manager(
     });
 
     Ok(manager)
+}
+
+/// What a log needs to tie it to a build and a setup: the version, OS,
+/// WebView, log level and memory use, then the settings that change
+/// behaviour and how many downloads are in each state. No URLs, paths or tags.
+fn startup_lines(manager: &Manager, level: &str) -> Vec<String> {
+    let webview = tauri::webview_version().unwrap_or_else(|_| "unknown".to_owned());
+    let memory = rdm::platform::resident_memory()
+        .map(|bytes| format!("{} MiB", bytes / (1024 * 1024)))
+        .unwrap_or_else(|| "unknown".to_owned());
+    let settings = manager.settings();
+    let limit = settings
+        .global_limit
+        .map(|rate| format!("{rate} B/s"))
+        .unwrap_or_else(|| "none".to_owned());
+    vec![
+        format!(
+            "rdm {} · {} · WebView {webview} · log level {level} · memory {memory}",
+            logging::version(),
+            rdm::platform::os_description(),
+        ),
+        format!(
+            "Settings: {} connections · {} at a time · speed limit {limit} · data dir {} · downloads: {}",
+            settings.max_connections,
+            settings.max_concurrent,
+            if env_dir(HOME_ENV).is_some() { "overridden" } else { "default" },
+            status_counts(&manager.snapshot()),
+        ),
+    ]
+}
+
+/// How many downloads are in each status, e.g. `2 completed, 1 failed`.
+fn status_counts(downloads: &[DownloadSnapshot]) -> String {
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for d in downloads {
+        let status = format!("{:?}", d.status).to_lowercase();
+        match counts.iter_mut().find(|(s, _)| *s == status) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((status, 1)),
+        }
+    }
+    if counts.is_empty() {
+        return "none".to_owned();
+    }
+    let parts: Vec<String> = counts.iter().map(|(s, n)| format!("{n} {s}")).collect();
+    parts.join(", ")
 }
 
 /// Create the main window from its `tauri.conf.json` entry (marked
@@ -579,7 +562,10 @@ async fn check_for_update(
     state: State<'_, AppState>,
     updater: State<'_, updater::UpdaterState>,
 ) -> Result<Option<updater::UpdateInfo>, String> {
-    updater::check_command(&app, &updater, state.manager.clone()).await
+    commands_guard::contained("check_for_update", async move {
+        updater::check_command(&app, &updater, state.manager.clone()).await
+    })
+    .await
 }
 
 /// Download the update [`check_for_update`] found (progress as
@@ -593,7 +579,10 @@ async fn install_update(
     when: updater::InstallWhen,
     version: String,
 ) -> Result<(), String> {
-    updater::install_command(&app, &updater, &state.manager, when, &version).await
+    commands_guard::contained("install_update", async move {
+        updater::install_command(&app, &updater, &state.manager, when, &version).await
+    })
+    .await
 }
 
 /// Open the release page of the update the last check found. It takes no
@@ -640,6 +629,7 @@ fn staged_update(updater: State<'_, updater::UpdaterState>) -> Option<String> {
 /// saved by a newer rdm), it says why in a dialog and exits with status 1,
 /// leaving the list untouched.
 pub fn run() {
+    logging::install_panic_hook();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -662,7 +652,7 @@ pub fn run() {
             create_main_window(app.handle())?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(commands_guard::contain_panics(tauri::generate_handler![
             list,
             add_download,
             get_settings,
@@ -695,12 +685,17 @@ pub fn run() {
             open_update_notes,
             update_prefs,
             set_auto_check,
-        ])
+            #[cfg(feature = "fault-injection")]
+            commands_guard::test_panic,
+            #[cfg(feature = "fault-injection")]
+            commands_guard::test_panic_async,
+        ]))
         .build(tauri::generate_context!())
         .expect("error while building rdm GUI")
         .run(|app, event| {
             // Record running downloads' time before the process goes, then
-            // install an update waiting for the quit.
+            // install an update waiting for the quit, then get every log line
+            // to disk.
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<AppState>() {
                     state.manager.shutdown();
@@ -708,6 +703,7 @@ pub fn run() {
                 if let Some(updater) = app.try_state::<updater::UpdaterState>() {
                     updater::install_at_exit(&updater);
                 }
+                logging::flush_logs();
             }
         });
 }
@@ -814,7 +810,7 @@ mod tests {
             .unwrap();
         let store = rdm::JsonStore::new(dir.join("state.json"));
         let mgr = rdm::Manager::load(Box::new(store), runtime.handle().clone()).unwrap();
-        let subscriber = super::logging_subscriber(
+        let subscriber = super::logging::logging_subscriber(
             tracing_subscriber::EnvFilter::new("error"),
             mgr.log_layer(),
             std::io::sink,
@@ -853,7 +849,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("rdm-gui-log-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         // An explicit filter: an ambient `RUST_LOG=error` would hide the probe.
-        super::install_logging(
+        super::logging::install_logging(
             &dir,
             tracing_subscriber::EnvFilter::new("info"),
             tracing_subscriber::layer::Identity::new(),
@@ -872,7 +868,7 @@ mod tests {
                         .is_ok_and(|s| s.contains("daily rotation probe"))
             });
             if found.is_some() || Instant::now() >= deadline {
-                break found.is_some();
+                break found.map(|e| e.path());
             }
             std::thread::sleep(Duration::from_millis(20));
         };
@@ -881,7 +877,57 @@ mod tests {
             .flatten()
             .map(|e| e.file_name())
             .collect();
+        let today = super::logging::today_log_path(&dir);
         let _ = std::fs::remove_dir_all(&dir);
-        assert!(logged, "no dated log with the probe line in {names:?}");
+        let logged = logged.unwrap_or_else(|| panic!("no dated log with the probe in {names:?}"));
+        // The startup lines and panic records are appended to the file by
+        // this name, so it must be the appender's.
+        assert_eq!(logged, today);
+    }
+
+    /// The startup lines name the build and the settings, and nothing that
+    /// could identify what was downloaded: no URL, path or tag.
+    #[test]
+    fn startup_lines_leave_out_urls_paths_and_tags() {
+        let dir = std::env::temp_dir().join(format!("rdm-gui-startup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let store = rdm::JsonStore::new(dir.join("state.json"));
+        let mgr = rdm::Manager::load(Box::new(store), runtime.handle().clone()).unwrap();
+        assert!(super::startup_lines(&mgr, "info")[1].ends_with("downloads: none"));
+
+        let options = rdm::AddOptions {
+            tags: vec!["secret-tag".to_owned()],
+            ..rdm::AddOptions::default()
+        };
+        let id = runtime.block_on(async {
+            mgr.add_with("http://127.0.0.1:9/private.iso?token=SECRET", &dir, options)
+                .unwrap()
+        });
+        let lines = super::startup_lines(&mgr, "info").join("\n");
+        mgr.remove(id);
+        drop(mgr);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(
+            lines.contains(&format!("rdm {}", env!("CARGO_PKG_VERSION"))),
+            "{lines}"
+        );
+        assert!(lines.contains("log level info"), "{lines}");
+        // Queued or already downloading: one download, counted by status.
+        assert!(lines.contains("downloads: 1 "), "{lines}");
+        for private in [
+            "127.0.0.1",
+            "private.iso",
+            "SECRET",
+            "secret-tag",
+            "rdm-gui-startup",
+        ] {
+            assert!(!lines.contains(private), "{private} in {lines}");
+        }
     }
 }

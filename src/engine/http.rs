@@ -32,7 +32,8 @@ pub(super) fn is_transient(err: &Error) -> bool {
         | Error::ChecksumMismatch(_)
         | Error::UnsupportedState(_)
         | Error::UnsupportedStore(_)
-        | Error::InvalidRequest(_) => false,
+        | Error::InvalidRequest(_)
+        | Error::Internal(_) => false,
     }
 }
 

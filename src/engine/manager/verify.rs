@@ -4,15 +4,16 @@ use std::sync::atomic::Ordering;
 
 use super::files::finished_file;
 use super::{Inner, Manager};
+use crate::engine::lock::lock;
 use crate::engine::store::ChecksumState;
-use crate::engine::{Checksum, Error};
+use crate::engine::{panic_message, Checksum, Error};
 
 impl Manager {
     /// Hash a completed download's file against `checksum`, off the async
     /// runtime: the snapshot's `checksum_state` goes `pending`, then `verified`
     /// or `mismatch`. Errors unless `id` is completed and its file is on disk.
     pub fn verify_checksum(&self, id: u64, checksum: Checksum) -> crate::engine::Result<()> {
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         let e = st
             .entries
             .get_mut(&id)
@@ -27,7 +28,11 @@ impl Manager {
 
         let inner = self.inner.clone();
         self.inner.handle.spawn_blocking(move || {
-            let matched = checksum.digest_file(&path).map(|hex| hex == checksum.hex);
+            // A panic must still end the check, or it stays pending for good.
+            let digest = std::panic::catch_unwind(|| checksum.digest_file(&path));
+            let matched = digest
+                .unwrap_or_else(|panic| Err(std::io::Error::other(panic_message(&*panic))))
+                .map(|hex| hex == checksum.hex);
             inner.finish_verify(id, generation, matched);
         });
         Ok(())
@@ -41,7 +46,7 @@ impl Inner {
         if self.closed.load(Ordering::SeqCst) {
             return;
         }
-        let st = &mut *self.state.lock().unwrap();
+        let st = &mut *lock(&self.state);
         let Some(e) = st.entries.get_mut(&id) else {
             return;
         };

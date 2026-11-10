@@ -38,6 +38,7 @@ use futures_util::StreamExt;
 use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
 
+use crate::engine::lock::lock;
 use crate::engine::ramp::{Decision, Ramp, Ramping, Window};
 use crate::engine::tally::Tally;
 use crate::engine::{
@@ -154,11 +155,11 @@ impl Shared<'_> {
     }
 
     fn snapshot(&self) -> Vec<Segment> {
-        self.table.lock().unwrap().segments.clone()
+        lock(&self.table).segments.clone()
     }
 
     fn downloaded(&self) -> u64 {
-        self.table.lock().unwrap().done().min(self.total)
+        lock(&self.table).done().min(self.total)
     }
 }
 
@@ -213,7 +214,7 @@ pub(crate) async fn run(
     let report = |meter: &mut SpeedMeter, on_progress: &mut dyn FnMut(Progress)| {
         // One lock, so the readout and the segments always agree.
         let (downloaded, segments, lanes) = {
-            let table = shared.table.lock().unwrap();
+            let table = lock(&shared.table);
             (
                 table.done().min(total),
                 table.segments.clone(),
@@ -270,7 +271,7 @@ pub(crate) async fn run(
                 // below, else dropped, so a later worker on the same number
                 // doesn't report a reconnect it never made.
                 let failed_before =
-                    std::mem::take(&mut shared.lane_failures.lock().unwrap()[usize::from(lane)]);
+                    std::mem::take(&mut lock(&shared.lane_failures)[usize::from(lane)]);
                 if let Err(failure) = result {
                     match failure {
                         Failure::Engine(ref e) if is_transient(e) => {
@@ -318,7 +319,7 @@ pub(crate) async fn run(
                             // the host has rate-limited us, though: an instant
                             // retry is a request flood, so it waits for the
                             // outer backoff.
-                            let orphaned = shared.table.lock().unwrap().has_unowned_work();
+                            let orphaned = lock(&shared.table).has_unowned_work();
                             let wanted = usize::from(shared.pool.target());
                             let failures = failed_before + 1;
                             if !rate_limited && orphaned && workers.len() < wanted && replacements_left > 0 && !shared.is_stopping() {
@@ -333,7 +334,7 @@ pub(crate) async fn run(
                                         slot.number(),
                                         failures + 1
                                     );
-                                    shared.lane_failures.lock().unwrap()[usize::from(slot.lane)] = failures;
+                                    lock(&shared.lane_failures)[usize::from(slot.lane)] = failures;
                                 }
                                 workers.push(worker(&shared, None, slot));
                             } else if severity == Severity::Other && !shared.is_stopping() {
@@ -426,11 +427,7 @@ pub(crate) async fn run(
                 checkpoint_blocking(&part, &sidecar, &st, || {})
             }
         });
-        async move {
-            blocking
-                .await
-                .map_err(|e| Error::Io(std::io::Error::other(e)))?
-        }
+        async move { blocking.await.map_err(crate::engine::join_error)? }
     };
 
     if job.control.is_cancelled() {

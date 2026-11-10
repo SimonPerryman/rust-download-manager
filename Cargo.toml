@@ -34,6 +34,12 @@ path = "src/lib.rs"
 name = "rdm"
 path = "src/main.rs"
 
+[features]
+# Tests only: a download of a URL whose path is `/__panic` panics inside its
+# task (see src/engine/fault.rs). Refuses to compile without debug assertions,
+# so a release build can't carry it.
+fault-injection = []
+
 [dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "time", "sync", "signal"] }
 # TLS via rustls with the OS trust store (rustls-platform-verifier). The
@@ -55,6 +61,14 @@ tracing = "0.1"
 # The CLI's stderr subscriber (`RUST_LOG`-filtered), and the engine's
 # per-download log layer that a frontend adds to its subscriber.
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# OS version and process memory for the startup line and diagnostics
+# (src/platform.rs); both crates are already in the tree.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win32_System_SystemInformation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 axum = "0.8"

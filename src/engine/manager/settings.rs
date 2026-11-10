@@ -1,12 +1,13 @@
 //! Manager-wide settings, and each download's own speed limit.
 
 use super::Manager;
+use crate::engine::lock::lock;
 use crate::engine::store::Settings;
 
 impl Manager {
     /// The current manager-wide settings.
     pub fn settings(&self) -> Settings {
-        self.inner.state.lock().unwrap().settings
+        lock(&self.inner.state).settings
     }
 
     /// Set how many downloads may stream at once (at least 1). Raising it
@@ -30,7 +31,7 @@ impl Manager {
     /// Cap one download's speed in bytes/s (`None` or `Some(0)` is
     /// unlimited). Applies live if it's running, and persists across restarts.
     pub fn set_limit(&self, id: u64, limit: Option<u64>) {
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         let Some(e) = st.entries.get_mut(&id) else {
             return;
         };
@@ -41,7 +42,7 @@ impl Manager {
     }
 
     fn update_settings(&self, change: impl FnOnce(&mut Settings)) {
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         change(&mut st.settings);
         st.settings = st.settings.clamped();
         self.inner.global.set_rate(st.settings.global_limit);

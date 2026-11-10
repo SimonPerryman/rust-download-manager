@@ -110,6 +110,14 @@ jobs:
       - name: Doctests
         run: cargo test --doc
 
+      # The test-only `fault-injection` feature (a download that panics):
+      # lint its code, then run the panic-containment tests that need it.
+      - name: Clippy with fault injection (deny warnings)
+        run: cargo clippy --all-targets --features fault-injection -- -D warnings
+
+      - name: Test panic containment (fault injection)
+        run: cargo test --features fault-injection --test panic --test cli_panic
+
   # Builds and tests the GUI on Windows (WebView2). Frontend lint and format
   # checks don't depend on the OS, so they run once, in checks (Linux);
   # gui-linux lints and tests the GUI crate on Linux.
@@ -234,6 +242,10 @@ jobs:
 
       - name: Clippy GUI crate (deny warnings)
         run: cargo clippy -p rdm-gui --all-targets -- -D warnings
+
+      # The e2e build turns on the test-only `fault-injection` feature.
+      - name: Clippy GUI crate with fault injection (deny warnings)
+        run: cargo clippy -p rdm-gui --all-targets --features fault-injection -- -D warnings
 
       - name: Test GUI crate
         run: cargo test -p rdm-gui
@@ -382,8 +394,9 @@ jobs:
           pnpm --dir gui/e2e install --frozen-lockfile
 
       # The debug app with the frontend embedded (tauri build, whose
-      # beforeBuildCommand typechecks and builds gui/dist), plus the loopback
-      # fixture server the specs download from.
+      # beforeBuildCommand typechecks and builds gui/dist) and the test-only
+      # `fault-injection` feature, plus the loopback fixture server the specs
+      # download from.
       - name: Build app and fixture server
         working-directory: gui/e2e
         run: pnpm run build

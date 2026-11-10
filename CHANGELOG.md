@@ -17,12 +17,29 @@ desktop app share one version.
   downloads it paused. Updates are signed and checked before install. `.deb`
   installs get a link to the new `.deb` instead. Copies installed from 0.2.0
   or earlier need one manual update to get the updater.
+- The desktop app's log file starts each run with the version, OS, WebView,
+  memory use and the settings that matter (no URLs, paths or tags), and
+  records every panic with its backtrace, flushed to disk at once. After a
+  warning or error the file is flushed to disk, at most once every 5
+  seconds.
+- The CLI's `-v` output starts with the version and OS, and a panic ends with
+  where to report the bug (exit code 101).
 
 ### Changed
 
 - Settings (desktop app): **Ask before removing a download for good** moved
   from Display to Downloads, and "Max concurrent downloads" is now
   **Concurrent downloads**.
+
+### Fixed
+
+- A bug that panics inside a download now fails just that download, with
+  "internal error, please report it", instead of leaving it stuck as
+  downloading and holding a queue slot until restart.
+- A desktop-app action whose command panics now shows an error instead of
+  closing the app or never finishing.
+- The desktop app's log no longer drops lines under a burst or loses its last
+  lines when the app closes.
 
 ## 0.2.0 - 2026-11-10
 

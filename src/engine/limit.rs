@@ -6,6 +6,8 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
+use crate::engine::lock::lock;
+
 /// Smallest bucket capacity, so a low rate still lets a whole chunk through.
 const MIN_BURST: u64 = 64 * 1024;
 
@@ -61,7 +63,7 @@ impl RateLimiter {
 
     /// The current cap in bytes/s, `None` when unlimited.
     pub fn rate(&self) -> Option<u64> {
-        self.state.lock().unwrap().rate
+        lock(&self.state).rate
     }
 
     /// Bytes that may pass without waiting after an idle spell: a quarter
@@ -74,7 +76,7 @@ impl RateLimiter {
     /// is kept, so changing the rate can't be used to skip a wait.
     pub fn set_rate(&self, rate: Option<u64>) {
         let rate = normalise(rate);
-        let mut bucket = self.state.lock().unwrap();
+        let mut bucket = lock(&self.state);
         // Settle what was earned at the old rate before the new one applies.
         bucket.refill(Instant::now());
         bucket.tokens = match (bucket.rate, rate) {
@@ -90,7 +92,7 @@ impl RateLimiter {
     /// if there is nothing to wait for. `charge(0)` is a non-debiting peek.
     /// Never blocks.
     pub(crate) fn charge(&self, n: u64) -> Option<Instant> {
-        let mut bucket = self.state.lock().unwrap();
+        let mut bucket = lock(&self.state);
         let rate = bucket.rate?;
         let now = Instant::now();
         bucket.refill(now);
@@ -104,7 +106,7 @@ impl RateLimiter {
 
     #[cfg(test)]
     pub(crate) fn balance(&self) -> f64 {
-        self.state.lock().unwrap().tokens
+        lock(&self.state).tokens
     }
 }
 
