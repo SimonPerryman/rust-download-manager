@@ -794,8 +794,8 @@ async fn resume(
     on_progress: &mut impl FnMut(Progress),
 ) -> Result<(u16, PathBuf, u64)> {
     // The offset comes from the handle the bytes will be appended through, not
-    // a by-path lookup, which can disagree with the handle (suspected cause of
-    // a Windows-only flake); a short offset re-requests bytes already held.
+    // a separate by-path lookup, so the requested range starts exactly where
+    // the append lands; a short offset would re-request bytes already held.
     let mut file = tokio::fs::OpenOptions::new()
         .append(true)
         .open(part)
