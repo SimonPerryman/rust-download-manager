@@ -95,6 +95,11 @@ display downloads, but don't fetch anything themselves.
   panic happened mid-update.
 - **A bug in a desktop-app command:** a button whose command panics shows an
   error, as any failed action does, and the app keeps running.
+- **A bug in the desktop app's window:** an error while drawing the window
+  shows a "Something went wrong" screen with Reload instead of a blank
+  window, while downloads carry on. That error, and any other the window
+  doesn't handle, goes into the log file (at most 20 a minute, so one that
+  repeats can't flood it).
 - **The log file (desktop app):** lines are written to the file as they're
   logged, from a background thread, so a crash loses at most the few lines
   still queued. A burst waits rather than dropping lines. After a warning or
@@ -107,5 +112,11 @@ display downloads, but don't fetch anything themselves.
   WebView, memory use and settings). Closing the app writes out every queued
   line.
 - **Privacy:** rdm sends nothing anywhere: no telemetry, no crash reports.
-  Logs stay on your disk, and the URLs they mention are redacted (no
-  `user:password@`, query string or fragment).
+  Logs stay on your disk, and the URLs they mention are redacted: a login
+  shows only as `<redacted>:<redacted>@` (or `<redacted>@`), a query string
+  as `?<redacted>`, and a fragment is dropped, while the site name and path
+  stay. The desktop app's Copy diagnostics only puts a report on your
+  clipboard, for you to read and paste into a bug report yourself, and
+  hides more: links keep only their scheme (sites and paths become
+  `<site-1>` and `<path>`), and the file names and folders of the
+  downloads in your list become `<file-1>.iso` and `<folder-1>`.

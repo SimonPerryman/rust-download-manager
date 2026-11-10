@@ -169,6 +169,11 @@ async fn failed_download_never_logs_or_reports_url_secrets() {
     assert!(logged.contains("Failed after 2 attempts: "), "{logged}");
     assert!(logged.contains("retrying"), "{logged}");
     assert!(logged.contains("/f.bin?<redacted>"), "{logged}");
+    // The login itself shows, so a 401 or 403 can be read in context.
+    assert!(
+        logged.contains("http://<redacted>:<redacted>@127.0.0.1:"),
+        "{logged}"
+    );
 }
 
 /// The error a Manager records for a failed download (shown in the GUI and

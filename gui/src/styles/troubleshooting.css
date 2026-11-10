@@ -1,0 +1,79 @@
+/* The settings menu's Troubleshooting group and the fallback screen. In the utilities
+   layer, ahead of Tailwind's utilities (see index.css). */
+@layer utilities {
+  /* Deliberately quiet: a muted side-heading, small ghost buttons, a muted hint. */
+  .ts {
+    @apply grid gap-1.5;
+  }
+  .ts h3 {
+    @apply text-xs font-semibold;
+    color: var(--g400);
+  }
+  .ts-row {
+    @apply -ml-2 flex flex-wrap gap-1;
+  }
+  .ts-row .btn svg {
+    color: var(--g400);
+  }
+  .ts-row .btn.copied svg {
+    color: var(--success-ink);
+  }
+  .ts-hint {
+    @apply text-xs;
+    color: var(--g400);
+  }
+  .ts-error {
+    @apply text-xs;
+    color: var(--danger-ink);
+  }
+
+  /* Shown in place of the window when drawing it failed. */
+  .fallback {
+    @apply grid h-screen place-items-center overflow-auto p-8;
+    background: var(--surface);
+    color: var(--ink);
+  }
+  .fb {
+    @apply w-full max-w-[560px];
+  }
+  .fb-mark {
+    @apply mb-4 grid h-8 w-8 place-items-center rounded-md;
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+  .fb h1 {
+    @apply text-xl font-semibold tracking-tight;
+  }
+  .fb-say {
+    @apply mt-1 text-sm;
+    color: var(--g600);
+  }
+  .fb-acts {
+    @apply mt-5 flex flex-wrap gap-2;
+  }
+  .fb-acts .btn-ghost.copied svg {
+    color: var(--success-ink);
+  }
+  .fb-report {
+    @apply mt-4 text-xs;
+    color: var(--g600);
+  }
+  .fb-details {
+    @apply mt-4 text-xs;
+    color: var(--g400);
+  }
+  .fb-details summary {
+    @apply w-fit cursor-pointer font-medium;
+  }
+  .fb-details summary:hover {
+    color: var(--ink);
+  }
+  .fb-details pre {
+    @apply mt-2 max-h-48 overflow-auto rounded-md p-3 font-mono text-xs;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: var(--raised);
+    color: var(--g600);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+}

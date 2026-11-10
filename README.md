@@ -72,8 +72,9 @@ Interrupted, or pressed Ctrl-C? Run the same command again to resume. The
 - [Installing rdm](docs/install.md): downloads by platform, unsigned-build
   warnings, updating and building from source.
 - [CLI reference](docs/cli.md): flags, resuming, exit codes and logging.
-- [Using the GUI](docs/gui.md): the window, shortcuts, settings and where
-  state is kept.
+- [Using the GUI](docs/gui.md): the window, shortcuts, settings, where
+  state is kept, and [logs and troubleshooting](docs/gui.md#logs-and-troubleshooting)
+  for a bug report.
 - [How it works](docs/how-it-works.md): segmenting, resume, retries and
   integrity checks.
 - [Contributing](CONTRIBUTING.md): building and testing from source, and

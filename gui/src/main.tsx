@@ -6,10 +6,19 @@ import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/ibm-plex-sans/700.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import App from "./App";
+import { ErrorBoundary } from "./components/troubleshooting/ErrorBoundary";
+import { RenderErrorProbe } from "./components/troubleshooting/RenderErrorProbe";
+import { reportUncaught } from "./lib/errorReport";
 import "./index.css";
+
+reportUncaught();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      {/* A test hook, compiled into the e2e build (`--mode e2e`) only. */}
+      {import.meta.env.MODE === "e2e" && <RenderErrorProbe />}
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

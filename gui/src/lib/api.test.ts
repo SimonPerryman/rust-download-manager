@@ -75,3 +75,29 @@ describe("the updater", () => {
     ]);
   });
 });
+
+describe("troubleshooting", () => {
+  beforeEach(() => invoke.mockReset().mockResolvedValue(null));
+
+  it("names the commands and their arguments as the backend does", async () => {
+    await api.logFrontendError("TypeError: x", "at f", "at App", "render");
+    await api.logsFolder();
+    await api.openLogsFolder();
+    await api.openBugReport();
+    await api.diagnostics();
+    await api.diagnostics("Window error: x");
+    await api.saveTextFile("a.iso.log", "09:00:00  Started");
+    expect(invoke.mock.calls).toEqual([
+      [
+        "log_frontend_error",
+        { message: "TypeError: x", stack: "at f", componentStack: "at App", source: "render" },
+      ],
+      ["logs_folder"],
+      ["open_logs_folder"],
+      ["open_bug_report"],
+      ["diagnostics", { extra: null }],
+      ["diagnostics", { extra: "Window error: x" }],
+      ["save_text_file", { defaultName: "a.iso.log", text: "09:00:00  Started" }],
+    ]);
+  });
+});

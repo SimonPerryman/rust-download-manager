@@ -33,23 +33,28 @@
      the offset must undo the same 1rem: at top-0 the bar sat 1rem low and
      covered the first line. */
   .log-bar {
-    @apply sticky -top-4 z-1 -mt-4 mb-2 flex items-center justify-end gap-3 pt-4 pb-1 text-sm;
+    @apply sticky -top-4 z-1 -mt-4 mb-2 flex items-center gap-1 pt-4 pb-1 text-sm;
     background: var(--surface);
   }
   .log-bar .copied {
     color: var(--success-ink);
   }
-  .log-bar-sep {
-    width: 1px;
-    height: 16px;
-    background: var(--line-strong);
+  /* The view control: a small segmented switch, apart from the actions. */
+  .seg-sm {
+    @apply inline-flex h-6 items-center gap-0.5 rounded-sm p-0.5;
+    background: var(--hover);
   }
-  .log-detail {
-    @apply flex cursor-pointer items-center gap-2;
+  .seg-sm button {
+    @apply h-5 rounded-[3px] px-2 text-xs font-medium;
     color: var(--g600);
   }
-  .log-detail input {
-    accent-color: var(--btn);
+  .seg-sm button:hover {
+    color: var(--ink);
+  }
+  .seg-sm button[aria-pressed="true"] {
+    background: var(--raised);
+    color: var(--ink);
+    box-shadow: var(--sh-raised);
   }
   .log-empty {
     @apply grid gap-1 text-sm;

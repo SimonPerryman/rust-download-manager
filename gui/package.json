@@ -7,9 +7,10 @@
   "packageManager": "pnpm@12.18.0",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && node scripts/check-test-hooks.mjs absent",
+    "build:e2e": "tsc && vite build --mode e2e && node scripts/check-test-hooks.mjs present",
     "preview": "vite preview",
-    "lint": "oxlint src e2e && node scripts/guard-e2e-webkit.mjs && node scripts/guard-ci-pins.mjs && node scripts/guard-release-workflow.mjs && node scripts/guard-release-workflow.mjs --self-test",
+    "lint": "oxlint src e2e && node scripts/guard-e2e-webkit.mjs && node scripts/guard-ci-pins.mjs && node scripts/guard-release-workflow.mjs && node scripts/guard-release-workflow.mjs --self-test && node scripts/check-issue-templates.mjs",
     "format": "oxfmt src e2e",
     "format:check": "oxfmt --check src e2e",
     "test": "vitest run",
@@ -28,11 +29,13 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.2.1",
+    "jsdom": "^31.0.0",
     "oxfmt": "^0.77.0",
     "oxlint": "^1.92.0",
     "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.6",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "yaml": "^2.9.1"
   }
 }

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "cargo build --example fixture_server && pnpm --dir .. tauri build --debug --no-bundle --features fault-injection",
+    "build": "cargo build --example fixture_server && pnpm --dir .. tauri build --debug --no-bundle --features fault-injection --config src-tauri/tauri.e2e.conf.json",
     "test": "wdio run wdio.conf.ts",
     "e2e": "pnpm run build && pnpm run test",
     "screenshots": "pnpm run build && wdio run wdio.screenshots.conf.ts",

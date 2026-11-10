@@ -4,6 +4,7 @@ import type { SettingsField } from "../../lib/settings";
 import type { Settings } from "../../lib/types";
 import { DownloadSettings } from "./DownloadSettings";
 import { UpdateSettings, type UpdateSettingsProps } from "./UpdateSettings";
+import { TroubleshootingSection } from "../troubleshooting/TroubleshootingSection";
 import { Monitor } from "../icons/Monitor";
 import { Moon } from "../icons/Moon";
 import { Sliders } from "../icons/Sliders";
@@ -27,7 +28,8 @@ type Props = {
 };
 
 // The toolbar's settings popover: the theme (kept in localStorage), the
-// engine-backed Downloads settings and Remove's confirmation, and Updates.
+// engine-backed Downloads settings and Remove's confirmation, Updates, and
+// Troubleshooting (last).
 export function SettingsMenu({
   prefs,
   onPrefs,
@@ -96,6 +98,8 @@ export function SettingsMenu({
           <div className="-mx-4 h-px bg-line" />
           <SectionHeading>Updates</SectionHeading>
           <UpdateSettings {...updates} />
+          <div className="-mx-4 h-px bg-line" />
+          <TroubleshootingSection />
         </div>
       )}
     </div>
