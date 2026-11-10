@@ -1,11 +1,11 @@
 import { useCallback, useRef } from "react";
 import * as api from "./api";
-import { unarchivedMessage } from "./archive";
+import { toRemove, unarchivedMessage } from "./archive";
 import { copiedMessage, deletedPartialMessage, deletedPartialsMessage } from "./copy";
 import { folderOf } from "./folders";
 import type { MenuCommand } from "./menu";
 import { stepIndex } from "./queue";
-import { isPausable, isRemovable, isStoppable, toResume } from "./rowView";
+import { isPausable, isStoppable, toResume } from "./rowView";
 import type { DownloadSnapshot } from "./types";
 
 type Deps = {
@@ -19,7 +19,7 @@ type Deps = {
   retryAll: () => void;
   /** Opens the Stop dialog for these (stoppable) ids. */
   askStop: (ids: number[]) => void;
-  /** Removes these (finished) rows for good, asking first unless told not to. */
+  /** Removes these (archived, finished) rows for good, asking first unless told not to. */
   askRemove: (rows: DownloadSnapshot[]) => void;
   /** Opens the Tags editor for these ids. */
   askTags: (ids: number[]) => void;
@@ -109,7 +109,7 @@ export function useBulkCommands(deps: Deps): (cmd: MenuCommand, ids: readonly nu
           .catch(fail);
       }
       case "remove": {
-        const targets = list.filter(isRemovable);
+        const targets = toRemove(list);
         if (targets.length) askRemove(targets);
         return;
       }

@@ -55,20 +55,16 @@ function labels(dirs: string[]): Map<string, string> {
   return out;
 }
 
-/**
- * One folder per distinct target dir in `all`, with its count of `shown` rows
- * (so a folder fully hidden by a pending clear stays listed with 0). Sorted by
- * label, then dir.
- */
-export function deriveFolders(all: DownloadSnapshot[], shown: DownloadSnapshot[]): Folder[] {
-  const dirs = [...new Set(all.map((d) => folderOf(d.target)))];
+/** One folder per distinct target dir in `ds`, with its row count. Sorted by label, then dir. */
+export function deriveFolders(ds: readonly DownloadSnapshot[]): Folder[] {
   const counts = new Map<string, number>();
-  for (const d of shown) {
+  for (const d of ds) {
     const dir = folderOf(d.target);
     counts.set(dir, (counts.get(dir) ?? 0) + 1);
   }
+  const dirs = [...counts.keys()];
   const label = labels(dirs);
   return dirs
-    .map((dir) => ({ dir, label: label.get(dir)!, count: counts.get(dir) ?? 0 }))
+    .map((dir) => ({ dir, label: label.get(dir)!, count: counts.get(dir)! }))
     .sort((a, b) => a.label.localeCompare(b.label) || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0));
 }

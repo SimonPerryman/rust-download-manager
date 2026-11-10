@@ -1,7 +1,8 @@
 // The right-click menu's items for the rows it acts on, fitted to their
 // statuses. Pure; App runs the chosen command.
 
-import { isArchivable } from "./archive";
+import { isArchivable, toRemove } from "./archive";
+import { removeDiskNote } from "./copy";
 import { isPausable, isRemovable, isStoppable, toResume } from "./rowView";
 import type { DownloadSnapshot } from "./types";
 
@@ -37,23 +38,11 @@ const item = (cmd: MenuCommand, label: string, shortcut?: string): MenuEntry => 
   shortcut,
 });
 
-/** What Remove leaves behind, said under it; null when nothing stays. */
-function removeNote(list: readonly DownloadSnapshot[]): string | null {
-  const removable = list.filter(isRemovable);
-  const files = removable.filter((d) => d.status === "completed").length;
-  const partials = removable.filter((d) => d.status === "cancelled" && d.partial_kept).length;
-  if (files && partials) return "Files and kept partial files stay on disk.";
-  if (files) return files === 1 ? "The file stays on disk." : "The files stay on disk.";
-  if (partials)
-    return partials === 1 ? "The partial file stays on disk." : "The partial files stay on disk.";
-  return null;
-}
-
 /**
  * The menu for `list` (the selection, display order). `queue` is the waiting
- * order, for the move items; `failedCount` counts failed rows anywhere. In the
- * Archived view (`archivedView`) Del and the last items unarchive and remove;
- * elsewhere they archive.
+ * order, for the move items; `failedCount` counts failed rows outside the
+ * archive. In the Archived view (`archivedView`) Del and the last items
+ * unarchive and remove; elsewhere they archive.
  */
 export function menuItems(
   list: readonly DownloadSnapshot[],
@@ -90,7 +79,8 @@ export function menuItems(
   if (any(isStoppable)) out.push(item("stop", "Stop…"));
   if (any(failed)) {
     out.push(item("retry", "Retry"));
-    if (failedCount > 1) out.push(item("retryAll", "Retry all failed"));
+    // Retry all failed acts on the working views, so the archive doesn't offer it.
+    if (failedCount > 1 && !archivedView) out.push(item("retryAll", "Retry all failed"));
   }
   sep();
   out.push(item("copyLink", list.length > 1 ? "Copy links" : "Copy link"));
@@ -110,7 +100,7 @@ export function menuItems(
     out.push(item("unarchive", "Unarchive"));
     if (any(isRemovable)) {
       out.push(item("remove", "Remove", "Del"));
-      const note = removeNote(list);
+      const note = removeDiskNote(toRemove(list));
       if (note) out.push({ kind: "note", text: note });
     }
   } else if (any(isArchivable)) {
