@@ -81,6 +81,7 @@ impl Manager {
             active_ms: Some(0),
             archived: false,
             tags: options.tags,
+            paused_for_update: false,
         };
         let entry = Entry::new(record, limiter);
 
@@ -137,6 +138,7 @@ impl Manager {
             e.record.target = target;
         }
         e.record.status = Status::Queued;
+        e.record.paused_for_update = false;
         e.record.archived = false;
         e.record.error = None;
         e.record.finished_at = None;
@@ -145,6 +147,40 @@ impl Manager {
         self.inner.schedule(st);
         self.inner.persist(st);
         self.inner.publish(st);
+    }
+
+    /// The downloads an update restart paused that are still paused, in list
+    /// order.
+    pub fn paused_for_update(&self) -> Vec<u64> {
+        let st = self.inner.state.lock().unwrap();
+        st.order
+            .iter()
+            .filter(|id| st.entries.get(id).is_some_and(Entry::is_paused_for_update))
+            .copied()
+            .collect()
+    }
+
+    /// Resume every download an update restart paused, in list order (the
+    /// queue limit decides which start now), and clear the marks.
+    pub fn resume_paused_for_update(&self) {
+        for id in self.paused_for_update() {
+            self.resume(id);
+        }
+        self.forget_paused_for_update();
+    }
+
+    /// Clear the paused-for-update marks without resuming anything, as when
+    /// the user dismisses the offer.
+    pub fn forget_paused_for_update(&self) {
+        let st = &mut *self.inner.state.lock().unwrap();
+        let mut changed = false;
+        for e in st.entries.values_mut() {
+            changed |= std::mem::take(&mut e.record.paused_for_update);
+        }
+        if changed {
+            self.inner.persist(st);
+            self.inner.publish(st);
+        }
     }
 
     /// Cancel a running, queued or paused download and discard its partial
@@ -220,6 +256,20 @@ impl Manager {
     /// lose the time the way a crash does. Call it last: no download starts or
     /// reports progress afterwards.
     pub fn shutdown(&self) {
+        self.close(false);
+    }
+
+    /// [`shutdown`](Self::shutdown) ahead of a restart into an update: they
+    /// pause the same way, and the downloads running or queued now are also
+    /// marked as paused for the update, so after the restart a frontend can
+    /// offer to resume exactly those
+    /// ([`resume_paused_for_update`](Self::resume_paused_for_update)).
+    /// Calling `shutdown` afterwards keeps the marks.
+    pub fn shutdown_for_restart(&self) {
+        self.close(true);
+    }
+
+    fn close(&self, for_restart: bool) {
         self.inner.closed.store(true, Ordering::SeqCst);
         let st = &mut *self.inner.state.lock().unwrap();
         for e in st.entries.values_mut() {
@@ -228,6 +278,9 @@ impl Manager {
             }
             e.record.active_ms = e.active_ms();
             e.started = None;
+            if for_restart && e.record.status.is_running() {
+                e.record.paused_for_update = true;
+            }
             if e.record.status == Status::Downloading {
                 e.record.status = Status::Paused;
             }

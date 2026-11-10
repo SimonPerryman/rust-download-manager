@@ -14,9 +14,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::engine::{segment, Error, Result, DEFAULT_CONNECTIONS};
 
-/// Current store schema version. Bump when the on-disk shape changes; a
-/// document newer than this fails to load (see [`Error::UnsupportedStore`]).
-/// v2 added [`DownloadRecord::archived`] and [`DownloadRecord::tags`].
+/// Current store schema version. Bump when the on-disk shape changes in a
+/// way an older build mustn't silently drop; a document newer than this fails
+/// to load (see [`Error::UnsupportedStore`]). v2 added
+/// [`DownloadRecord::archived`] and [`DownloadRecord::tags`].
+/// [`DownloadRecord::paused_for_update`] needed no bump: an older build
+/// dropping it only loses the offer to resume those downloads together.
 pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 /// Lifecycle status of a managed download.
@@ -145,6 +148,12 @@ pub struct DownloadRecord {
     /// User labels, in the order added; unique ignoring case.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// Running or queued when the app restarted to install an update
+    /// ([`Manager::shutdown_for_restart`](crate::engine::Manager::shutdown_for_restart)),
+    /// so a frontend can offer to resume exactly those. Cleared once resumed
+    /// or forgotten.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub paused_for_update: bool,
 }
 
 /// Manager-wide download settings, persisted with the download list.
@@ -321,6 +330,7 @@ mod tests {
             active_ms: None,
             archived: false,
             tags: Vec::new(),
+            paused_for_update: false,
         }
     }
 

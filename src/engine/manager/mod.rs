@@ -86,6 +86,9 @@ pub struct DownloadSnapshot {
     pub connections: u8,
     /// Stopped with its `.part` + sidecar kept, so resuming continues them.
     pub partial_kept: bool,
+    /// Paused by a restart into an update and not resumed since (see
+    /// [`Manager::paused_for_update`]).
+    pub paused_for_update: bool,
     /// The expected checksum as `"sha256:<hex>"`, if one was given.
     pub checksum: Option<String>,
     /// Where the checksum check of the finished file stands.
@@ -181,6 +184,11 @@ impl Entry {
         }
     }
 
+    /// Marked by an update restart and still paused.
+    fn is_paused_for_update(&self) -> bool {
+        self.record.paused_for_update && self.record.status == Status::Paused
+    }
+
     fn snapshot(&self) -> DownloadSnapshot {
         DownloadSnapshot {
             id: self.record.id,
@@ -204,6 +212,7 @@ impl Entry {
             limit: self.record.limit,
             connections: self.live.connections,
             partial_kept: self.record.partial_kept,
+            paused_for_update: self.is_paused_for_update(),
             checksum: self.record.checksum.clone(),
             checksum_state: self.record.checksum_state,
             segments: self.segments.clone(),
@@ -350,6 +359,7 @@ mod tests {
             active_ms: None,
             archived: false,
             tags: Vec::new(),
+            paused_for_update: false,
         }
     }
 }
