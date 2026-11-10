@@ -333,6 +333,16 @@ const DOWNLOAD_DIR_ENV: &str = "RDM_DOWNLOAD_DIR";
 /// would open without starting another program.
 const OPEN_LOG_ENV: &str = "RDM_OPEN_LOG";
 
+/// When `1`, the main window opens unfocused and behind other windows, with WebView2's
+/// occlusion throttling off. Set by the webview E2E launcher on Windows so a local run doesn't
+/// take over the developer's desktop.
+const E2E_BACKGROUND_ENV: &str = "RDM_E2E_BACKGROUND";
+
+/// Whether an [`E2E_BACKGROUND_ENV`] value asks for a background window: only `1` does.
+fn is_e2e_background(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_some_and(|v| v == "1")
+}
+
 /// One `RDM_OPEN_LOG` line (without its newline): `kind` is `open` or `reveal`.
 fn open_log_line(kind: &str, path: &std::path::Path) -> String {
     format!("{kind} {}", path.display())
@@ -506,7 +516,8 @@ fn init_manager(app: &tauri::AppHandle) -> Result<Arc<Manager>, Box<dyn std::err
 
 /// Create the main window from its `tauri.conf.json` entry (marked
 /// `create: false` so it's built here), with the webview profile under
-/// `$RDM_HOME/webview` when that override is set (ignored on macOS).
+/// `$RDM_HOME/webview` when that override is set (ignored on macOS), and in
+/// the background when `RDM_E2E_BACKGROUND=1`.
 fn create_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let config = app
         .config()
@@ -518,6 +529,19 @@ fn create_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::
     let mut builder = tauri::WebviewWindowBuilder::from_config(app, config)?;
     if let Some(home) = env_dir(HOME_ENV) {
         builder = builder.data_directory(home.join("webview"));
+    }
+    if is_e2e_background(std::env::var_os(E2E_BACKGROUND_ENV).as_deref()) {
+        // WebView2 throttles a window it sees as covered, which would skew the suite's timing
+        // and screenshots, so turn its occlusion tracking off. It's set here, not through
+        // WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS, because msedgedriver overwrites that variable.
+        // Setting browser arguments drops wry's defaults, so they're repeated.
+        builder = builder
+            .focused(false)
+            .always_on_bottom(true)
+            .additional_browser_args(concat!(
+                "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,",
+                "CalculateNativeWinOcclusion --autoplay-policy=no-user-gesture-required",
+            ));
     }
     builder.build()?;
     Ok(())
@@ -628,6 +652,21 @@ mod tests {
             super::startup_error_message(&*other),
             "rdm couldn't start.\n\nno home directory"
         );
+    }
+
+    /// Only `RDM_E2E_BACKGROUND=1` opens the window in the background, so a
+    /// stray or empty value leaves the released app's behaviour alone.
+    #[test]
+    fn only_one_asks_for_a_background_window() {
+        use std::ffi::OsStr;
+        assert!(super::is_e2e_background(Some(OsStr::new("1"))));
+        for value in ["0", "", "true", " 1"] {
+            assert!(
+                !super::is_e2e_background(Some(OsStr::new(value))),
+                "{value:?}"
+            );
+        }
+        assert!(!super::is_e2e_background(None));
     }
 
     #[test]

@@ -68,7 +68,10 @@ which needs `tauri-driver` and, on Windows, Microsoft Edge WebDriver.
 [`docs/screenshots`](docs/screenshots/) used by the README and docs.
 Each run picks free ports for `tauri-driver`, so parallel runs (e.g. in
 separate worktrees) are safe; set `RDM_E2E_DRIVER_PORT` /
-`RDM_E2E_NATIVE_PORT` to pin them.
+`RDM_E2E_NATIVE_PORT` to pin them. On Windows the app opens unfocused and
+behind your other windows, so a run doesn't take over the desktop (it still
+shows in the taskbar); set `RDM_E2E_BACKGROUND=0` to have it open in front
+and watch the run.
 
 ## Cutting a release
 
