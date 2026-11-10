@@ -32,7 +32,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M3 | Multi-segment parallel downloads | done | [[milestone-03-multi-segment]] |
 | M4 | Queue & throughput management | done | [[milestone-04-queue-throughput]] |
 | M5 | GUI rethink — Console layout | done | [[milestone-05-gui-rethink]] |
-| M6 | Releases & install | todo | [[milestone-06-releases-install]] |
+| M6 | Releases & install | done | [[milestone-06-releases-install]] |
 | M7 | Archive & tags | todo | [[milestone-07-archive-tags]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
