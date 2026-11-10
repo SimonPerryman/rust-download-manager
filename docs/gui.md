@@ -140,8 +140,10 @@ the partial file.
   good: the downloaded file, and a partial file kept by Stop, stay on disk,
   while a failed download's partial file is deleted. Remove asks first; tick
   **Don't ask again** to skip that, and turn **Ask before removing** back on
-  in [Settings](#settings). Retrying or resuming an archived download moves it
-  back too, and **Retry all failed** leaves archived ones alone.
+  in [Settings](#settings). If its downloads leave the archive while it asks
+  (Undo on the archive toast, say), the dialog closes and nothing is removed.
+  Retrying or resuming an archived download moves it back too, and **Retry
+  all failed** leaves archived ones alone (it isn't offered in Archived).
 - **Tags** label downloads (up to 16, each up to 32 characters; case doesn't
   make a different tag). Add them in the Add dialog, from **Tags…** in a row's
   menu or the selection toolbar, or in the details pane's Overview, where a

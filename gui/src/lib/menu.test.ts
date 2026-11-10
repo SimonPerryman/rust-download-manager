@@ -138,6 +138,21 @@ describe("menuItems", () => {
     expect(menu([f], [], 2)).toContain("Retry all failed");
   });
 
+  it("leaves Retry all failed out of the archive, where it would retry other rows", () => {
+    const f = snap({ status: "failed", archived: true });
+    expect(menu([f], [], 2, true)).not.toContain("Retry all failed");
+    expect(menu([f], [], 2, true)).toContain("Retry");
+  });
+
+  it("in the archive, says Remove deletes a failed download's partial file", () => {
+    const f = snap({ status: "failed", archived: true });
+    expect(menu([f], [], 0, true).slice(-2)).toEqual(["Remove", "(Its partial file is deleted.)"]);
+    const done = snap({ id: 2, status: "completed", archived: true });
+    expect(menu([f, done], [], 0, true).slice(-1)).toEqual([
+      "(The file stays on disk. The failed download's partial file is deleted.)",
+    ]);
+  });
+
   it("covers a mixed selection with each action that applies to any of it", () => {
     const list = [
       snap({ id: 1, status: "completed" }),

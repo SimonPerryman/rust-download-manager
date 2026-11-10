@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { archivedMessage, finishedToArchive, isArchivable, restoredMessage } from "./archive";
+import {
+  archivedMessage,
+  finishedToArchive,
+  isArchivable,
+  restoredMessage,
+  toRemove,
+} from "./archive";
 import { snap } from "./testSnapshot";
 
 describe("finishedToArchive", () => {
@@ -20,6 +26,26 @@ describe("isArchivable", () => {
     expect(isArchivable(snap({ status: "failed" }))).toBe(true);
     expect(isArchivable(snap({ status: "paused" }))).toBe(false);
     expect(isArchivable(snap({ status: "completed", archived: true }))).toBe(false);
+  });
+});
+
+describe("toRemove", () => {
+  it("keeps only archived, finished rows, in order", () => {
+    const ds = [
+      snap({ id: 1, status: "completed", archived: true }),
+      snap({ id: 2, status: "completed" }),
+      snap({ id: 3, status: "queued", archived: true }),
+      snap({ id: 4, status: "failed", archived: true }),
+      snap({ id: 5, status: "cancelled", archived: true }),
+    ];
+    expect(toRemove(ds).map((d) => d.id)).toEqual([1, 4, 5]);
+  });
+
+  it("drops a row unarchived or resumed since it was picked", () => {
+    const picked = snap({ id: 1, status: "completed", archived: true });
+    expect(toRemove([{ ...picked, archived: false }])).toEqual([]);
+    const failed = snap({ id: 2, status: "failed", archived: true });
+    expect(toRemove([{ ...failed, status: "downloading" }])).toEqual([]);
   });
 });
 

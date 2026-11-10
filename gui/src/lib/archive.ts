@@ -2,6 +2,7 @@
 // reversible, so it happens at once and the toast's Undo unarchives the same
 // ids; `useArchive` wires that to the api.
 
+import { isRemovable } from "./rowView";
 import type { DownloadSnapshot, Status } from "./types";
 
 /** What Archive finished takes: done and stopped downloads. */
@@ -21,6 +22,14 @@ export function isArchivable(d: DownloadSnapshot): boolean {
   return (
     !d.archived && (d.status === "completed" || d.status === "failed" || d.status === "cancelled")
   );
+}
+
+/**
+ * What Remove takes from `ds`: archived, finished rows. Remove is for good,
+ * so a row resumed or unarchived since it was picked stays.
+ */
+export function toRemove(ds: readonly DownloadSnapshot[]): DownloadSnapshot[] {
+  return ds.filter((d) => d.archived && isRemovable(d));
 }
 
 /** The ids Archive finished would take from `ds`. */

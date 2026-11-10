@@ -113,11 +113,46 @@ export function removedMessage(d: DownloadSnapshot): string {
   return `Removed ${d.filename} from the list.`;
 }
 
-/** Remove's tooltip; a kept partial says it survives. */
+/**
+ * What Remove does on disk to `ds`, as a sentence or two; null when it leaves
+ * nothing. A finished file and a kept partial stay; a failed one's partial goes.
+ */
+export function removeDiskNote(ds: readonly DownloadSnapshot[]): string | null {
+  const files = ds.filter((d) => d.status === "completed").length;
+  const kept = ds.filter((d) => d.status === "cancelled" && d.partial_kept).length;
+  const failed = ds.filter((d) => d.status === "failed").length;
+  const notes: string[] = [];
+  if (files && kept) notes.push("Files and kept partial files stay on disk.");
+  else if (files) notes.push(files === 1 ? "The file stays on disk." : "The files stay on disk.");
+  else if (kept) {
+    notes.push(kept === 1 ? "The partial file stays on disk." : "The partial files stay on disk.");
+  }
+  if (failed) {
+    notes.push(
+      ds.length === 1
+        ? "Its partial file is deleted."
+        : failed === 1
+          ? "The failed download's partial file is deleted."
+          : "Failed downloads' partial files are deleted.",
+    );
+  }
+  return notes.length ? notes.join(" ") : null;
+}
+
+/** Remove's tooltip on a row: what happens to its file. */
 export function removeTitle(d: DownloadSnapshot): string {
-  return d.status === "cancelled" && d.partial_kept
-    ? "Remove from rdm. The partial file stays on disk."
-    : "Remove from rdm. The file stays on disk.";
+  const note = removeDiskNote([d]);
+  return note ? `Remove from rdm. ${note}` : "Remove from rdm.";
+}
+
+/** The Archived toolbar's Remove tooltip for the selected rows. */
+export function removeSelectedTitle(ds: readonly DownloadSnapshot[]): string {
+  const base =
+    ds.length > 1
+      ? "Remove the selected downloads from rdm for good."
+      : "Remove the selected download from rdm for good.";
+  const note = removeDiskNote(ds);
+  return note ? `${base} ${note}` : base;
 }
 
 /** Archive's tooltip. */

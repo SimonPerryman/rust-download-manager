@@ -11,6 +11,8 @@ import {
   globalLimitLabel,
   removedMessage,
   removeBody,
+  removeDiskNote,
+  removeSelectedTitle,
   removeTitle,
   removeTitleFor,
   retryAllMessage,
@@ -97,7 +99,37 @@ describe("removedMessage and removeTitle", () => {
     expect(removeTitle(kept)).toBe("Remove from rdm. The partial file stays on disk.");
     const failed = snap({ filename: "a.iso", status: "failed" });
     expect(removedMessage(failed)).toBe("Removed a.iso from the list.");
-    expect(removeTitle(failed)).toBe("Remove from rdm. The file stays on disk.");
+    expect(removeTitle(failed)).toBe("Remove from rdm. Its partial file is deleted.");
+    expect(removeTitle(snap({ status: "completed" }))).toBe(
+      "Remove from rdm. The file stays on disk.",
+    );
+    expect(removeTitle(snap({ status: "cancelled" }))).toBe("Remove from rdm.");
+  });
+});
+
+describe("removeDiskNote and removeSelectedTitle", () => {
+  it("say what stays and what goes for several rows", () => {
+    const done = snap({ id: 1, status: "completed" });
+    const kept = snap({ id: 2, status: "cancelled", partial_kept: true });
+    const failed = snap({ id: 3, status: "failed" });
+    const failed2 = snap({ id: 4, status: "failed" });
+    expect(removeDiskNote([done, kept])).toBe("Files and kept partial files stay on disk.");
+    expect(removeDiskNote([done, done])).toBe("The files stay on disk.");
+    expect(removeDiskNote([kept, failed])).toBe(
+      "The partial file stays on disk. The failed download's partial file is deleted.",
+    );
+    expect(removeDiskNote([failed, failed2])).toBe("Failed downloads' partial files are deleted.");
+    expect(removeDiskNote([snap({ status: "cancelled" })])).toBeNull();
+    expect(removeSelectedTitle([done])).toBe(
+      "Remove the selected download from rdm for good. The file stays on disk.",
+    );
+    expect(removeSelectedTitle([failed])).toBe(
+      "Remove the selected download from rdm for good. Its partial file is deleted.",
+    );
+    expect(removeSelectedTitle([])).toBe("Remove the selected download from rdm for good.");
+    expect(removeSelectedTitle([done, failed2])).toBe(
+      "Remove the selected downloads from rdm for good. The file stays on disk. The failed download's partial file is deleted.",
+    );
   });
 });
 

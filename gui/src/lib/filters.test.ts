@@ -145,7 +145,7 @@ describe("the archive and tags", () => {
     for (const { key } of STATUS_FILTERS) {
       expect(counts[key]).toBe(ids({ kind: "status", status: key }).length);
     }
-    for (const f of deriveFolders(live, live)) {
+    for (const f of deriveFolders(live)) {
       expect(f.count).toBe(ids({ kind: "folder", dir: f.dir }).length);
     }
     expect(archivedCount(ds)).toBe(ids({ kind: "archived" }).length);

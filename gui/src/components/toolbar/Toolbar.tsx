@@ -30,7 +30,13 @@ type Props = {
   onArchiveFinished: (() => void) | null;
   canArchiveFinished: boolean;
   /** The Archived view's actions on the selected row(s); null elsewhere. */
-  archived: { canAct: boolean; onUnarchive: () => void; onRemove: () => void } | null;
+  archived: {
+    canAct: boolean;
+    onUnarchive: () => void;
+    onRemove: () => void;
+    /** Remove's tooltip: what it does on disk to the selection. */
+    removeTitle: string;
+  } | null;
   onAdd: () => void;
   prefs: Prefs;
   resolved: "light" | "dark";
@@ -117,7 +123,7 @@ export function Toolbar(p: Props) {
               aria-label="Remove"
               disabled={!p.archived.canAct}
               onClick={p.archived.onRemove}
-              title="Remove the selected download from rdm for good. The file stays on disk."
+              title={p.archived.removeTitle}
             >
               <ListRemove />
               <span className="tb-label">Remove</span>

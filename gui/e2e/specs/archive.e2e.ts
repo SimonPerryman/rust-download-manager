@@ -3,7 +3,8 @@
 // brings them back; an archived row shows only under Archived, and Unarchive
 // returns it. Remove, offered only in Archived, drops the record and leaves
 // the file on disk, and asks first: Cancel keeps the row, "Don't ask again"
-// skips the next ask, and the Settings toggle turns asking back on.
+// skips the next ask, and the Settings toggle turns asking back on. The
+// dialog follows the live rows: one unarchived under it closes it, kept.
 
 import { existsSync } from "node:fs";
 import { $, $$, browser, expect } from "@wdio/globals";
@@ -208,5 +209,23 @@ describe("rdm GUI archive", () => {
     await waitForGone(REMOVE_DIALOG);
     await expect(rowById(again)).toBeExisting();
     await selectFilter("all");
+  });
+
+  it("closes the Remove dialog when its row is unarchived under it, keeping the row", async () => {
+    const id = await addDone();
+    ours.push(id);
+    await invoke("archive", { ids: [id] });
+    await selectFilter("archived");
+    await rowById(id).waitForExist({ timeoutMsg: `download ${id} isn't under Archived` });
+    await clickRow(id);
+    await removeFromToolbar();
+
+    // As the archive toast's Undo would, while the dialog is open.
+    await invoke("unarchive", { ids: [id] });
+    await waitForGone(REMOVE_DIALOG, "the Remove dialog stayed open with nothing to remove");
+    await waitForGone(rowSelector(id), `download ${id} stayed under Archived`);
+    expect((await engineRow(id))?.archived).toBe(false);
+    await selectFilter("all");
+    await rowById(id).waitForExist({ timeoutMsg: `download ${id} didn't return to All` });
   });
 });

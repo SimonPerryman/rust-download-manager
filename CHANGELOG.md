@@ -12,7 +12,8 @@ desktop app share one version.
 - Archive (desktop app): **Archive finished** and a row's Archive move
   finished downloads out of the working views into **Archived**, with Undo.
   From Archived, Unarchive moves them back and Remove drops them for good
-  (the file stays on disk), after asking first unless you've told it not to.
+  (the file stays on disk; a failed download's partial file is deleted),
+  after asking first unless you've told it not to.
 - Tags (desktop app): label downloads in the Add dialog, from Tags… in the
   menu or in the details pane, and filter by tag from the sidebar, with
   counts. In Archived, the tags listed are the archived downloads'.
