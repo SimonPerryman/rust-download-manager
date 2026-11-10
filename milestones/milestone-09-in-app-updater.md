@@ -100,22 +100,25 @@ Roadmap: [roadmap.md](../roadmap.md).
   a failed manual check says so.
 - **Asked once, not on by default:** the first time the app starts with the
   updater, a one-time prompt asks "Check for updates automatically?" (Yes /
-  No). No network check happens before it's answered. The answer is saved
+  No), as a small card at the bottom left. No network check happens before it's answered. The answer is saved
   and changeable in Settings ("Check for updates automatically"), next to
   Check for updates and the current version.
-- **The "Update available" notice:** the new version, a link to its release
-  notes, two ways to install (below), and **Later**, which hides it until
-  the next check (next start or next day). A failed download or a bad
-  signature leaves the app as it was and says so. Visual design: mock-ups
-  for the owner before the UI is built.
+- **The "Update available" notice:** the new version with a "What's new"
+  link to its release notes beside it, two ways to install (below), and
+  **Later**, which hides it until the next check (next start or next day).
+  It's a slim bar under the toolbar: Restart now is always the primary
+  button, Install when I quit the quieter one, and Later a text link. A
+  failed download or a bad signature leaves the app as it was and says so.
+  The owner approved the mock-ups on 2026-11-10.
 - **Two ways to install, and running downloads are never lost:**
   - **Restart now:** downloads the update (with progress), then restarts
-    into it. If anything is downloading, the notice says those downloads
-    pause and continue after the restart; they're paused the way quitting
-    does (partial file and state saved) and **exactly those resume on their
-    own** after the restart. Queued downloads stay queued. On Windows the
-    installer closes the app, so the pause runs before that (the plugin's
-    before-exit hook).
+    into it. Downloads pause the way a normal quit pauses them (partial
+    file and state saved) and nothing resumes on its own. If anything is
+    downloading, the notice says so first ("Downloads will pause; you can
+    resume them after the restart"). After the restart a one-line notice
+    says how many downloads the update paused, with **Resume all** (exactly
+    those) and a dismiss. On Windows the installer closes the app, so the
+    pause runs before that (the plugin's before-exit hook).
   - **Install when I quit:** downloads and verifies the update now, without
     interrupting anything, and installs it at the next normal quit; the
     next start is the new version. Downloads running at that quit come back
@@ -189,8 +192,9 @@ Roadmap: [roadmap.md](../roadmap.md).
   `gh release create`.
 - [ ] `release-checks.yml` `assets`: `latest.json` and the updater assets
   are attached.
-- [ ] Engine: pause running downloads for a restart and remember exactly
-  which ones, so the next start resumes those (and only those).
+- [ ] Engine: pause downloads for a restart and remember exactly which
+  ones it paused, so the next start can offer Resume all for those (and
+  only those); nothing resumes on its own.
 - [ ] Rust commands: check for an update (returns the version, notes link
   and whether this install can update in place), restart now (progress
   events, pause downloads first, then install and restart), and install
@@ -209,8 +213,13 @@ Roadmap: [roadmap.md](../roadmap.md).
 - [ ] The "Update available" notice with Restart now, Install when I quit,
   Later, progress and errors (Download on `.deb`); the checks on start and
   daily while open, honouring the setting.
+- [ ] After an update restart, the "N downloads were paused for the update"
+  notice with Resume all and a dismiss.
 - [ ] Settings: the current version, Check for updates, and "Check for
   updates automatically".
+- [ ] Settings tidy-up (its own commit): "Ask before removing a download
+  for good" moves from Display to Downloads, and "Downloads at once" is
+  renamed "Concurrent downloads".
 - [ ] Vitest for the notice and the check scheduling; an e2e spec against
   the fixture.
 - [ ] Docs and CHANGELOG (see Scope).
@@ -233,8 +242,9 @@ and apply here without being restated._
 - [ ] An rc build is offered a newer rc and the final release; a stable
   build is offered neither an rc nor anything from the pre-release list.
 - [ ] Restart now pauses running downloads before the installer step: their
-  records are Paused with their partial files kept, and on the next start
-  exactly those resume; queued and already-paused downloads don't start.
+  records are Paused with their partial files kept and marked as paused
+  for the update; on the next start nothing resumes on its own, and
+  Resume all resumes exactly the marked ones.
 - [ ] Install when I quit downloads and verifies the update without
   touching downloads, and the install step runs at the quit (up to the
   test seam's stop point).
@@ -250,6 +260,8 @@ and apply here without being restated._
   Later; Restart now names the downloads that will pause; Install shows
   progress; an error shows its message and leaves the app usable; a `.deb`
   install shows Download instead.
+- [ ] After an update restart, the paused-for-the-update notice shows the
+  count; Resume all resumes those and hides it; dismiss hides it.
 - [ ] The automatic check runs on start and daily only while the setting is
   on; Check for updates runs regardless and reports "You're up to date" or
   an error.
@@ -260,7 +272,7 @@ and apply here without being restated._
 - [ ] With the fixture offering a newer version, the notice appears;
   Restart now with a download running warns that it will pause, pauses it
   and reaches the test seam's stop point; the download shows Paused and
-  is marked to resume after the restart.
+  is marked as paused for the update.
 - [ ] With the fixture offering the same version, no notice appears, and
   Check for updates says you're up to date.
 - [ ] With automatic checks off, no check runs on start.
@@ -273,8 +285,8 @@ and apply here without being restated._
   for every updatable bundle, and `release-checks` passes.
 - [ ] **End to end (owner, on real tags):** an installed rc build is
   offered the next rc, Restart now updates it and a download that was
-  running resumes after the restart; Install when I quit updates it at the
-  next quit.
+  running comes back paused with the Resume all notice; Install when I
+  quit updates it at the next quit.
 
 ## Open questions
 All answered by the owner on 2026-11-10:
@@ -285,11 +297,14 @@ All answered by the owner on 2026-11-10:
    changed in Settings.
 3. **Later:** hides the notice until the next check. Skip this version goes
    to the backlog.
-4. **Running downloads:** the notice offers **Restart now** (running
-   downloads pause and exactly those continue on their own after the
-   restart) and **Install when I quit** (applied at the next normal quit,
-   no interruption). Nothing is lost; queued stays queued. If Install when
-   I quit isn't possible somewhere, the owner picks the fallback.
+4. **Running downloads:** the notice offers **Restart now** and **Install
+   when I quit** (applied at the next normal quit, no interruption).
+   Nothing is lost. If Install when I quit isn't possible somewhere, the
+   owner picks the fallback (it isn't needed: every in-place format can).
+   Revised by the owner at the mock-up review: Restart now pauses downloads
+   like a normal quit, nothing resumes on its own, and after the restart a
+   bar offers Resume all for exactly the downloads the update paused. This
+   replaces the first answer, where those downloads continued on their own.
 5. **Linux `.deb`:** the notice offers Download (the release page) instead
    of installing; in-app `.deb` updates go to the backlog. AppImage updates
    in-app.
