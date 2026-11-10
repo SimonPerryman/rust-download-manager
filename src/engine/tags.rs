@@ -30,6 +30,22 @@ pub(crate) fn normalize(tags: &[String]) -> Result<Vec<String>> {
     Ok(out)
 }
 
+/// `tags` brought within the rules, for tags read back from a store that may
+/// have been edited by hand: trimmed, empty and over-long ones dropped,
+/// repeats ignoring case dropped (the first spelling wins), and only the first
+/// [`MAX_TAGS`] kept.
+pub(crate) fn sanitized(tags: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for tag in tags {
+        let tag = tag.trim();
+        let fits = !tag.is_empty() && tag.chars().count() <= MAX_TAG_LEN;
+        if fits && !contains(&out, tag) && out.len() < MAX_TAGS {
+            out.push(tag.to_string());
+        }
+    }
+    out
+}
+
 /// `existing` with each of `added` appended unless already there ignoring
 /// case; [`Error::InvalidRequest`] if that would exceed [`MAX_TAGS`].
 pub(crate) fn merged(existing: &[String], added: &[String]) -> Result<Vec<String>> {
@@ -79,6 +95,16 @@ mod tests {
             normalize(&strings(&["  "])),
             Err(Error::InvalidRequest(_))
         ));
+    }
+
+    #[test]
+    fn sanitized_drops_what_normalize_would_reject_and_caps_the_count() {
+        let long = "x".repeat(MAX_TAG_LEN + 1);
+        let tags = sanitized(&strings(&[" a ", "", "  ", &long, "A", "b"]));
+        assert_eq!(tags, ["a", "b"]);
+
+        let many: Vec<String> = (0..MAX_TAGS + 4).map(|i| format!("t{i}")).collect();
+        assert_eq!(sanitized(&many), many[..MAX_TAGS]);
     }
 
     #[test]

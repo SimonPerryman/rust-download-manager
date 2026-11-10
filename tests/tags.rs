@@ -7,7 +7,7 @@ mod common;
 use std::path::Path;
 
 use rdm::engine::tags::{MAX_TAGS, MAX_TAG_LEN};
-use rdm::{AddOptions, Error, JsonStore, Manager, Store};
+use rdm::{AddOptions, DownloadRecord, Error, JsonStore, Manager, Store, StoreData};
 
 /// Build a manager over the JSON store `dir/state.json`.
 fn manager_in(dir: &Path) -> Manager {
@@ -153,4 +153,39 @@ async fn add_with_stores_tags() {
         .load()
         .unwrap();
     assert_eq!(stored.downloads[0].tags, ["work", "iso"]);
+}
+
+/// A hand-edited store's tags are brought within the rules on load, so an
+/// over-full or invalid list can't block adding a tag.
+#[tokio::test]
+async fn load_brings_stored_tags_within_the_rules() {
+    let dir = tempfile::tempdir().unwrap();
+    let long = "x".repeat(MAX_TAG_LEN + 1);
+    let mut stored: Vec<String> = strings(&[" work ", "", "WORK", &long]);
+    stored.extend((0..MAX_TAGS + 4).map(|i| format!("t{i}")));
+    let record: DownloadRecord = serde_json::from_value(serde_json::json!({
+        "id": 1,
+        "url": "http://example.invalid/a.bin",
+        "target": dir.path().join("a.bin"),
+        "status": "completed",
+        "tags": stored,
+    }))
+    .unwrap();
+    let data = StoreData {
+        next_id: 2,
+        downloads: vec![record],
+        ..StoreData::default()
+    };
+    JsonStore::new(dir.path().join("state.json"))
+        .save(&data)
+        .unwrap();
+
+    let mgr = manager_in(dir.path());
+    let mut want = strings(&["work"]);
+    want.extend((0..MAX_TAGS - 1).map(|i| format!("t{i}")));
+    assert_eq!(tags_of(&mgr, 1), want);
+
+    mgr.remove_tags(&[1], &strings(&["t0"]));
+    assert_eq!(mgr.add_tags(&[1], &strings(&["new"])).unwrap(), 1);
+    assert_eq!(tags_of(&mgr, 1).last().unwrap(), "new");
 }

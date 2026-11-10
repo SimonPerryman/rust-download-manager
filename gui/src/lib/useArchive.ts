@@ -8,7 +8,20 @@ import {
   UNDO_MS,
   type UndoBatch,
 } from "./archive";
+import { nothingRestored } from "./copy";
 import type { DownloadSnapshot } from "./types";
+
+/** Archive the archivable rows among `rows`; resolves with the ids the engine archived. */
+export async function archiveRows(rows: readonly DownloadSnapshot[]): Promise<number[]> {
+  const ids = rows.filter(isArchivable).map((d) => d.id);
+  return ids.length === 0 ? [] : api.archive(ids);
+}
+
+/** Unarchive `batch`; resolves with the toast saying how many actually came back. */
+export async function undoArchive(batch: UndoBatch): Promise<string> {
+  const restored = await api.unarchive(batch.ids);
+  return restored === 0 ? nothingRestored : restoredMessage(restored);
+}
 
 /**
  * Archive with an `UNDO_MS` undo toast: the rows are archived at once, and
@@ -70,11 +83,8 @@ export function useArchive(notify: (message: string) => void): {
 
   const archive = useCallback(
     (rows: readonly DownloadSnapshot[]) => {
-      const ids = rows.filter(isArchivable).map((d) => d.id);
-      if (ids.length === 0) return;
-      api
-        .archive(ids)
-        .then(() => offerUndo(ids, rows))
+      archiveRows(rows)
+        .then((archived) => offerUndo(archived, rows))
         .catch((e) => notifyRef.current(`Couldn't archive. ${e}`));
     },
     [offerUndo],
@@ -84,9 +94,8 @@ export function useArchive(notify: (message: string) => void): {
     const batch = pendingRef.current;
     if (!batch) return;
     show(null);
-    api
-      .unarchive(batch.ids)
-      .then(() => notifyRef.current(restoredMessage(batch.ids.length)))
+    undoArchive(batch)
+      .then((message) => notifyRef.current(message))
       .catch((e) => notifyRef.current(`Couldn't undo. ${e}`));
   }, [show]);
 

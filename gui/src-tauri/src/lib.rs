@@ -160,9 +160,10 @@ fn move_queued(state: State<'_, AppState>, id: u64, index: usize) {
     state.manager.move_queued(id, index);
 }
 
-/// Archive the listed finished downloads. Returns how many changed.
+/// Archive the listed finished downloads. Returns the ids archived, for Undo
+/// to unarchive.
 #[tauri::command]
-fn archive(state: State<'_, AppState>, ids: Vec<u64>) -> usize {
+fn archive(state: State<'_, AppState>, ids: Vec<u64>) -> Vec<u64> {
     state.manager.archive(&ids)
 }
 
@@ -229,7 +230,9 @@ fn download_log(state: State<'_, AppState>, id: u64) -> Vec<LogLine> {
     state.manager.download_log(id)
 }
 
-/// Remove a download from the list entirely.
+/// Remove a download from the list entirely. A completed download's file and
+/// a partial kept by Stop stay on disk; any other partial (e.g. a failed
+/// download's `.part`) is deleted.
 #[tauri::command]
 fn remove(state: State<'_, AppState>, id: u64) {
     state.manager.remove(id);
@@ -520,17 +523,51 @@ fn create_main_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
+/// What to tell the user when rdm can't start: for a download list saved by
+/// a newer rdm, its version and that it was left alone.
+fn startup_error_message(err: &(dyn std::error::Error + 'static)) -> String {
+    match err.downcast_ref::<rdm::Error>() {
+        Some(rdm::Error::UnsupportedStore(version)) => format!(
+            "Your download list was saved by a newer rdm (list version {version}), \
+             which this version can't open.\n\n\
+             Install the newer rdm to open it. The list has been left untouched."
+        ),
+        _ => format!("rdm couldn't start.\n\n{err}"),
+    }
+}
+
+/// Show why rdm can't start in a native error dialog (a release build has no
+/// console), then exit with status 1 once it's dismissed.
+fn report_startup_error(app: &tauri::AppHandle, err: &(dyn std::error::Error + 'static)) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+    let message = startup_error_message(err);
+    eprintln!("rdm: {message}");
+    let handle = app.clone();
+    app.dialog()
+        .message(message)
+        .title("rdm can't start")
+        .kind(MessageDialogKind::Error)
+        .show(move |_| handle.exit(1));
+}
+
 /// Build and run the Tauri application.
 ///
-/// # Panics
-/// Panics if the engine `Manager` cannot be initialised (e.g. the home
-/// directory is unavailable) — there is no usable app without it.
+/// If the engine `Manager` can't be initialised (e.g. the download list was
+/// saved by a newer rdm), it says why in a dialog and exits with status 1,
+/// leaving the list untouched.
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let manager = init_manager(app.handle())?;
+            let manager = match init_manager(app.handle()) {
+                Ok(manager) => manager,
+                Err(err) => {
+                    // No window: the dialog's callback ends the app.
+                    report_startup_error(app.handle(), &*err);
+                    return Ok(());
+                }
+            };
             app.manage(AppState { manager });
             create_main_window(app.handle())?;
             Ok(())
@@ -566,7 +603,9 @@ pub fn run() {
         .run(|app, event| {
             // Record running downloads' time before the process goes.
             if let tauri::RunEvent::Exit = event {
-                app.state::<AppState>().manager.shutdown();
+                if let Some(state) = app.try_state::<AppState>() {
+                    state.manager.shutdown();
+                }
             }
         });
 }
@@ -574,6 +613,22 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, Instant};
+
+    /// A list saved by a newer rdm names its version and says it's untouched;
+    /// any other startup error shows its own text.
+    #[test]
+    fn startup_errors_say_why() {
+        let newer: Box<dyn std::error::Error> = Box::new(rdm::Error::UnsupportedStore(3));
+        let message = super::startup_error_message(&*newer);
+        assert!(message.contains("newer rdm (list version 3)"), "{message}");
+        assert!(message.contains("left untouched"), "{message}");
+
+        let other: Box<dyn std::error::Error> = "no home directory".into();
+        assert_eq!(
+            super::startup_error_message(&*other),
+            "rdm couldn't start.\n\nno home directory"
+        );
+    }
 
     #[test]
     fn checksums_parse_prefixed_or_bare() {

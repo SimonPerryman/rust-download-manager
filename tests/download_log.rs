@@ -193,7 +193,7 @@ async fn lines_go_with_the_download() {
     assert!(!mgr.download_log(removed).is_empty());
     assert!(!mgr.download_log(archived).is_empty());
 
-    assert_eq!(mgr.archive(&[archived]), 1);
+    assert_eq!(mgr.archive(&[archived]), [archived]);
     mgr.remove(removed);
     assert!(mgr.download_log(removed).is_empty());
     assert!(!mgr.download_log(archived).is_empty());

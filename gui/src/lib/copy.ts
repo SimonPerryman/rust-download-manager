@@ -158,6 +158,9 @@ export function removeSelectedTitle(ds: readonly DownloadSnapshot[]): string {
 /** Archive's tooltip. */
 export const archiveTitle = "Archive. It moves to Archived, out of the way, and can come back.";
 
+/** The toast after Undo when none of the batch was still archived to bring back. */
+export const nothingRestored = "Nothing to restore. Those downloads are no longer archived.";
+
 /** The Remove dialog's heading. */
 export function removeTitleFor(n: number): string {
   return n > 1 ? `Remove ${n} downloads?` : "Remove this download?";
