@@ -212,7 +212,7 @@ mod tests {
                     reqwest: error for url (http://h/z?x=1): refused";
         let out = redact_urls_in(text);
         for secret in ["SECRET", "sig=abc", "pw", "#frag", "k=v", "x=1"] {
-            assert!(!out.contains(secret), "{secret} survived: {out}");
+            assert!(!out.contains(secret), "survived: {out}");
         }
         assert_eq!(
             out,

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use tauri::{Manager as _, State};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::{commands_guard, env_dir, logging, startup_lines, AppState, OPEN_LOG_ENV};
+use crate::{commands_guard, logging, startup_lines, test_seam, AppState, OPEN_LOG_ENV};
 
 /// Log lines in the diagnostics report.
 const TAIL_LINES: usize = 300;
@@ -18,7 +18,8 @@ const TAIL_LINES: usize = 300;
 const FIELD_LIMIT: usize = 8 * 1024;
 
 /// When set, `save_text_file` writes to this path instead of asking with a
-/// save dialog. Lets the webview E2E suite check what Save… writes.
+/// save dialog. Lets the webview E2E suite check what Save… writes. Test
+/// builds only (see [`test_seam`]).
 const SAVE_PATH_ENV: &str = "RDM_SAVE_PATH";
 
 /// Record an error the webview caught (a render error, an uncaught error or
@@ -75,7 +76,7 @@ pub(crate) fn logs_folder() -> Option<String> {
 #[tauri::command]
 pub(crate) fn open_logs_folder(app: tauri::AppHandle) -> Result<(), String> {
     let dir = logging::log_dir().ok_or("rdm has no log folder")?;
-    if let Some(log) = env_dir(OPEN_LOG_ENV) {
+    if let Some(log) = test_seam(OPEN_LOG_ENV) {
         return crate::append_open_log(&log, "open", dir).map_err(|e| e.to_string());
     }
     app.opener()
@@ -93,7 +94,7 @@ const NEW_BUG_REPORT_URL: &str = concat!(
 /// only open this one page.
 #[tauri::command]
 pub(crate) fn open_bug_report(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(log) = env_dir(OPEN_LOG_ENV) {
+    if let Some(log) = test_seam(OPEN_LOG_ENV) {
         return crate::append_open_log(&log, "open", Path::new(NEW_BUG_REPORT_URL))
             .map_err(|e| e.to_string());
     }
@@ -286,7 +287,7 @@ pub(crate) async fn save_text_file(
     text: String,
 ) -> Result<Option<String>, String> {
     commands_guard::contained("save_text_file", async move {
-        let path = match env_dir(SAVE_PATH_ENV) {
+        let path = match test_seam(SAVE_PATH_ENV) {
             Some(path) => Some(path),
             None => ask_save_path(&app, &suggested_name(&default_name)).await?,
         };
@@ -373,7 +374,7 @@ mod tests {
             Some("Render error: TypeError at https://h/?k=SECRET2"),
         );
         for secret in ["SECRET1", "SECRET2", "hunter2", "alice", "NOTALOG"] {
-            assert!(!text.contains(secret), "{secret} leaked:\n{text}");
+            assert!(!text.contains(secret), "leaked:\n{text}");
         }
         assert!(text.starts_with("rdm diagnostics\nrdm 0.2.0 · "), "{text}");
         assert!(text.contains("?<redacted>"), "{text}");

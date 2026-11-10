@@ -313,7 +313,7 @@ fn open_download(app: tauri::AppHandle, state: State<'_, AppState>, id: u64) -> 
         .manager
         .completed_file(id)
         .map_err(|e| e.to_string())?;
-    if let Some(log) = env_dir(OPEN_LOG_ENV) {
+    if let Some(log) = test_seam(OPEN_LOG_ENV) {
         return append_open_log(&log, "open", &path).map_err(|e| e.to_string());
     }
     app.opener()
@@ -332,7 +332,7 @@ fn reveal_download(
         .manager
         .completed_file(id)
         .map_err(|e| e.to_string())?;
-    if let Some(log) = env_dir(OPEN_LOG_ENV) {
+    if let Some(log) = test_seam(OPEN_LOG_ENV) {
         return append_open_log(&log, "reveal", &path).map_err(|e| e.to_string());
     }
     app.opener()
@@ -349,9 +349,20 @@ const HOME_ENV: &str = "RDM_HOME";
 const DOWNLOAD_DIR_ENV: &str = "RDM_DOWNLOAD_DIR";
 
 /// When set, `open_download` / `reveal_download` / `open_update_notes` append `open <path>` /
-/// `reveal <path>` / `url <url>` lines to this file instead of launching the OS handler. Lets
-/// the webview E2E suite check what would open without starting another program.
+/// `reveal <path>` / `url <url>` lines to this file instead of launching the OS handler (as do
+/// Open logs folder and the bug report link, with `open`). Lets the webview E2E suite check
+/// what would open without starting another program. Test builds only (see [`test_seam`]).
 const OPEN_LOG_ENV: &str = "RDM_OPEN_LOG";
+
+/// A path from test-only environment variable `key`. Honoured only in the
+/// `fault-injection` (e2e) build, so a shipped app ignores these variables.
+fn test_seam(key: &str) -> Option<PathBuf> {
+    if cfg!(feature = "fault-injection") {
+        env_dir(key)
+    } else {
+        None
+    }
+}
 
 /// One `RDM_OPEN_LOG` line (without its newline): `kind` is `open`, `reveal` or `url`.
 fn open_log_line(kind: &str, path: &std::path::Path) -> String {
@@ -596,7 +607,7 @@ fn open_update_notes(
     let url = updater
         .notes_url()
         .ok_or("No update found. Check for updates first.")?;
-    if let Some(log) = env_dir(OPEN_LOG_ENV) {
+    if let Some(log) = test_seam(OPEN_LOG_ENV) {
         return append_open_log(&log, "url", url.as_ref()).map_err(|e| e.to_string());
     }
     app.opener()
@@ -782,6 +793,16 @@ mod tests {
         let text = std::fs::read_to_string(&log).unwrap();
         let _ = std::fs::remove_file(&log);
         assert_eq!(text, "open /dl/a.iso\nreveal /dl/b.iso\n");
+    }
+
+    /// Test seams (`RDM_OPEN_LOG`, `RDM_SAVE_PATH`) are read only in the
+    /// fault-injection build; a shipped app ignores them. `PATH` is always set.
+    #[test]
+    fn test_seams_are_test_build_only() {
+        assert_eq!(
+            super::test_seam("PATH").is_some(),
+            cfg!(feature = "fault-injection")
+        );
     }
 
     /// The state/log dir is created owner-only, and an existing one tightened.

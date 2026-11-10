@@ -154,7 +154,7 @@ Roadmap: [roadmap.md](../roadmap.md).
     minute, so an error in a render loop can't flood the log.
 - **"Open logs folder" (GUI).** A Tauri command that opens the log
   directory through the opener plugin. It reuses `open_download`'s
-  `RDM_OPEN_LOG` test seam, so e2e can check it without launching a file
+  `RDM_OPEN_LOG` test seam (test builds only, decision 8), so e2e can check it without launching a file
   manager. It's in the settings menu and on the fallback screen.
 - **"Copy diagnostics" (GUI).** A `diagnostics()` Tauri command that
   returns plain text and the frontend puts on the clipboard. It has:
@@ -248,7 +248,7 @@ Roadmap: [roadmap.md](../roadmap.md).
 ### PR B — frontend errors, diagnostics UI, issue template
 - [x] Tauri commands `log_frontend_error`, `open_logs_folder` and
   `diagnostics`, mirrored in `gui/src/lib/api.ts`. Also `logs_folder` (the
-  button's tooltip), `save_text_file` (Save…, with an `RDM_SAVE_PATH` seam)
+  button's tooltip), `save_text_file` (Save…, with a test-build-only `RDM_SAVE_PATH` seam)
   and `open_bug_report` (the fallback's GitHub link: a fixed URL, so the
   webview can't open one of its choosing). The diagnostics report writes
   the home folder as `~` throughout, log lines included.
@@ -357,7 +357,8 @@ bytes._
     `SECRET`.
   - The button's "Copied" confirmation is read with `waitForText`.
 - [x] **Fallback screen:** a fault-injection-only command (or a
-  `browser.execute` throw inside a render through a test hook) shows the
+  `browser.execute` throw inside a render through a test hook compiled
+  into the e2e build only) shows the
   fallback screen. Its Copy diagnostics works, and the log file contains
   the `rdm::frontend` ERROR line.
 
@@ -415,3 +416,10 @@ bytes._
    `https://<redacted>:<redacted>@example.com/files/report.pdf?<redacted>`.
    This is in `redact_url` itself, so the file log, the Log tab, the CLI's
    errors and diagnostics all agree.
+8. **Test hooks ship only in test builds:** the shipped app contains none.
+   The fallback screen's trigger (`RenderErrorProbe`) is compiled in only
+   by `vite build --mode e2e` (the e2e build's `tauri.e2e.conf.json`), and
+   `scripts/check-test-hooks.mjs` checks after every `pnpm build` that the
+   bundle doesn't name it. `RDM_OPEN_LOG` (which predates M8) and
+   `RDM_SAVE_PATH` are read only with the `fault-injection` feature, which
+   the e2e build turns on and a release build can't (`compile_error!`).

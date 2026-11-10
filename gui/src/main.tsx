@@ -16,7 +16,8 @@ reportUncaught();
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <RenderErrorProbe />
+      {/* A test hook, compiled into the e2e build (`--mode e2e`) only. */}
+      {import.meta.env.MODE === "e2e" && <RenderErrorProbe />}
       <App />
     </ErrorBoundary>
   </React.StrictMode>,

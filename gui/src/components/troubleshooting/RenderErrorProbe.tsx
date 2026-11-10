@@ -5,8 +5,9 @@ export const RENDER_ERROR_EVENT = "rdm-test-render-error";
 
 /**
  * A test hook: on `RENDER_ERROR_EVENT` its next render throws, so the e2e
- * suite can bring up the fallback screen in a real window. Harmless outside
- * tests: all it can do is show that screen.
+ * suite can bring up the fallback screen in a real window. Rendered only in
+ * the e2e build (see main.tsx); `scripts/check-test-hooks.mjs` checks that a
+ * release bundle doesn't contain it.
  */
 export function RenderErrorProbe() {
   const [message, setMessage] = useState<string | null>(null);
