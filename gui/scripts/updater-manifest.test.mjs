@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { generateKey, sign, verify } from "./minisign.mjs";
+import { generateKey, parsePublicKey, sign, verify } from "./minisign.mjs";
 import { buildManifest, configuredPubkey, ENTRIES } from "./updater-manifest.mjs";
 
 // Made once with `tauri signer generate` (a throwaway key, never used for a
@@ -115,5 +115,10 @@ describe("configuredPubkey", () => {
 
   it("returns a real key", () => {
     expect(configuredPubkey(repo(TAURI_PUBKEY))).toBe(TAURI_PUBKEY);
+  });
+
+  it("ships a valid minisign public key", () => {
+    const root = join(import.meta.dirname, "..", "..");
+    expect(() => parsePublicKey(configuredPubkey(root))).not.toThrow();
   });
 });

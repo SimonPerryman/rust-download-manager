@@ -107,9 +107,7 @@ unless every signature verifies against `plugins.updater.pubkey` in
 needs two secrets: `TAURI_SIGNING_PRIVATE_KEY` and
 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, from `pnpm tauri signer generate`.
 Keep the private key and its password backed up outside GitHub: without
-them, installed copies can never update in-app again. Until the real public
-key replaces the placeholder in `tauri.conf.json` and both secrets exist,
-every release fails at this job.
+them, installed copies can never update in-app again.
 
 A pre-release tag such as `vX.Y.Z-rc.1` needs the same versions
 (`X.Y.Z-rc.1`) but may keep `## Unreleased` as its notes. It's published as a

@@ -71,12 +71,12 @@ export function buildManifest({ tag, files, sigs, pubkey, date = new Date() }) {
   return { manifest, errors };
 }
 
-/** The updater public key `tauri.conf.json` ships, or an error for a placeholder. */
+/** The updater public key `tauri.conf.json` ships, or an error if it's missing or a placeholder. */
 export function configuredPubkey(root) {
   const conf = JSON.parse(readFileSync(join(root, "gui", "src-tauri", "tauri.conf.json"), "utf8"));
   const pubkey = conf.plugins?.updater?.pubkey ?? "";
   if (!pubkey || /placeholder/i.test(pubkey))
-    throw new Error("tauri.conf.json has no update public key yet (plugins.updater.pubkey is a placeholder)");
+    throw new Error("tauri.conf.json has no update public key (plugins.updater.pubkey is missing or a placeholder)");
   return pubkey;
 }
 

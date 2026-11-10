@@ -97,7 +97,7 @@ Roadmap: [roadmap.md](../roadmap.md).
   key in `tauri.conf.json`, with a minisign check on Node's built-in crypto
   (`gui/scripts/updater-manifest.mjs`, no third-party code), and fails the
   release if any doesn't verify, an entry is missing, or the key is still
-  the placeholder. `release-checks.yml` also requires `latest.json` and the
+  missing. `release-checks.yml` also requires `latest.json` and the
   macOS archives.
 - **Signed versions are required** (`requireSignedVersion`): a tampered
   `latest.json` can't pair a newer version number with an older, genuinely
@@ -168,7 +168,7 @@ Roadmap: [roadmap.md](../roadmap.md).
 - **Linux `.rpm`** (not shipped) and the updater for other package managers
   (Homebrew cask, winget).
 
-## Owner setup (before the first release with the updater)
+## Owner setup (before the first release with the updater; done 2026-11-10)
 1. Find the update keypair made during M6 (generated with
    `pnpm tauri signer generate`, with a password, and backed up). If it's
    lost, generate a new one in `gui/` with
@@ -186,8 +186,7 @@ Roadmap: [roadmap.md](../roadmap.md).
 ## Tasks
 ### PR A — release pipeline and updater wiring (GUI crate, workflows)
 - [x] Add `tauri-plugin-updater` to the GUI crate; set
-  `plugins.updater.pubkey` (a placeholder until the owner's public key
-  lands), the endpoint, `requireSignedVersion` and the Windows passive
+  `plugins.updater.pubkey` (the owner's public key), the endpoint, `requireSignedVersion` and the Windows passive
   install mode in `tauri.conf.json`. No `updater:*` permission in
   `capabilities/default.json`; the CSP is unchanged.
 - [x] `release-gui.yml`: archive the macOS `.app` per architecture; no
@@ -213,8 +212,8 @@ Roadmap: [roadmap.md](../roadmap.md).
 - [x] The debug-only test seam (endpoint, public key, installer kind, stop
   before running the installer), compiled out of release builds.
 - [x] Rust tests against a local fixture (see Acceptance criteria).
-- [ ] The owner's public key replaces the placeholder. Until it does (and
-  the two secrets exist), every release fails at `sign-gui-updates`.
+- [x] The owner's public key is in `tauri.conf.json`, and the two signing
+  secrets exist.
 
 ### PR B — the notice and Settings (GUI)
 - [ ] Mock-ups of the first-run prompt, the notice and the Settings items,
