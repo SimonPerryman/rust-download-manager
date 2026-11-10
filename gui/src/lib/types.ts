@@ -47,6 +47,10 @@ export interface DownloadSnapshot {
    * null when unknown (an older build's record, or a run cut short by a crash).
    */
   active_ms: number | null;
+  /** Archived: hidden from the working views, kept as history. Only finished downloads. */
+  archived: boolean;
+  /** User labels, in the order added; unique ignoring case. */
+  tags: string[];
 }
 
 /** Mirrors the engine's `LogLevel`. */

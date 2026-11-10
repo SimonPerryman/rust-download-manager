@@ -115,7 +115,10 @@ limit there to change it.
 
 ## State and logs
 
-The download list and settings are stored in `~/.rdm/state.json`. The GUI also
+The download list and settings are stored in `~/.rdm/state.json`. A list saved
+by an older rdm opens as is; one saved by a newer rdm is refused (with a message
+naming its version) rather than opened and saved back without what this version
+doesn't understand. The GUI also
 writes a daily log in `~/.rdm` (`rdm.YYYY-MM-DD.log`, the last 7 kept), with
 its level set by `RUST_LOG` (default `info`); the Log tab always shows
 informational lines and up (and, with **Detailed**, rdm's debug lines too),

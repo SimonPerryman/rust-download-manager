@@ -887,8 +887,12 @@ async fn settings_and_limits_survive_restart() {
             limit,
             ..AddOptions::default()
         };
-        let limited = mgr.add_with(server.url("/file"), dir.path(), options(Some(256 * KIB)));
-        let unlimited = mgr.add_with(server.url("/file"), dir.path(), options(Some(0)));
+        let limited = mgr
+            .add_with(server.url("/file"), dir.path(), options(Some(256 * KIB)))
+            .unwrap();
+        let unlimited = mgr
+            .add_with(server.url("/file"), dir.path(), options(Some(0)))
+            .unwrap();
         assert_eq!(completed(&mgr, limited).await.limit, Some(256 * KIB));
         assert_eq!(
             completed(&mgr, unlimited).await.limit,
@@ -948,7 +952,9 @@ async fn set_limit_applies_to_a_running_download() {
         limit: Some(64 * KIB),
         ..AddOptions::default()
     };
-    let id = mgr.add_with(server.url("/seg"), dir.path(), options);
+    let id = mgr
+        .add_with(server.url("/seg"), dir.path(), options)
+        .unwrap();
     let total = common::SEG_LEN as u64;
     wait_for(&mgr, id, T, |s| s.downloaded > 0 && s.downloaded < total)
         .await

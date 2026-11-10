@@ -31,7 +31,10 @@ use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::Layer;
 
 use crate::engine::download_log::{capture_filter, DownloadLogs, LogLayer, LogLine, TASK_SPAN};
-use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Store, StoreData};
+use crate::engine::store::{
+    ChecksumState, DownloadRecord, Settings, Status, Store, StoreData, SCHEMA_VERSION,
+};
+use crate::engine::tags;
 use crate::engine::tally::Tally;
 use crate::engine::{
     download, filename, single_segment, state, Checksum, Control, DownloadRequest, DownloadState,
@@ -93,6 +96,10 @@ pub struct DownloadSnapshot {
     /// started from zero bytes, so a frontend can say how long it took; `None`
     /// when unknown (an older build's record, or a run cut short by a crash).
     pub active_ms: Option<u64>,
+    /// Archived: hidden from the working views, kept as history.
+    pub archived: bool,
+    /// User labels, in the order added.
+    pub tags: Vec<String>,
 }
 
 /// Optional extras for [`Manager::add_with`].
@@ -104,6 +111,8 @@ pub struct AddOptions {
     pub checksum: Option<Checksum>,
     /// Speed cap in bytes/s (`None` or `Some(0)` is unlimited).
     pub limit: Option<u64>,
+    /// Tags to start with, under the [`tags`](crate::engine::tags) rules.
+    pub tags: Vec<String>,
 }
 
 /// Live, non-persisted throughput for one download.
@@ -181,6 +190,8 @@ impl Entry {
             checksum_state: self.record.checksum_state,
             segments: self.segments.clone(),
             active_ms: self.active_ms(),
+            archived: self.record.archived,
+            tags: self.record.tags.clone(),
         }
     }
 
@@ -255,7 +266,7 @@ impl Inner {
     /// down an in-flight download.
     fn persist(&self, st: &ManagerState) {
         let data = StoreData {
-            version: 1,
+            version: SCHEMA_VERSION,
             next_id: st.next_id,
             downloads: st
                 .order
@@ -439,6 +450,27 @@ impl Inner {
         self.publish(st);
     }
 
+    /// Set or clear the archive flag on each listed finished download whose
+    /// flag differs, then persist and publish if any changed. Returns the ids
+    /// that changed, in the order given.
+    fn set_archived(&self, st: &mut ManagerState, ids: &[u64], archived: bool) -> Vec<u64> {
+        let mut changed = Vec::new();
+        for &id in ids {
+            let Some(e) = st.entries.get_mut(&id) else {
+                continue;
+            };
+            if e.record.archived != archived && e.record.status.is_terminal() {
+                e.record.archived = archived;
+                changed.push(id);
+            }
+        }
+        if !changed.is_empty() {
+            self.persist(st);
+            self.publish(st);
+        }
+        changed
+    }
+
     /// A [`Manager::verify_checksum`] hash has ended: `Ok(matched)`, or an I/O
     /// error if the file became unreadable mid-hash.
     fn finish_verify(&self, id: u64, generation: u64, result: std::io::Result<bool>) {
@@ -585,18 +617,24 @@ impl Manager {
             checksum,
             ..AddOptions::default()
         };
-        self.add_with(url, dir, options)
+        self.insert(url.into(), dir.into(), options)
     }
 
     /// [`add`](Self::add) with every option, including a per-download speed
-    /// limit. Returns the new download's id.
+    /// limit and tags. Returns the new download's id, or
+    /// [`Error::InvalidRequest`] for a tag the [`tags`] rules reject.
     pub fn add_with(
         &self,
         url: impl Into<String>,
         dir: impl Into<PathBuf>,
-        options: AddOptions,
-    ) -> u64 {
-        let url = url.into();
+        mut options: AddOptions,
+    ) -> crate::engine::Result<u64> {
+        options.tags = tags::merged(&[], &tags::normalize(&options.tags)?)?;
+        Ok(self.insert(url.into(), dir.into(), options))
+    }
+
+    /// Add a download whose options are already valid.
+    fn insert(&self, url: String, dir: PathBuf, options: AddOptions) -> u64 {
         let st = &mut *self.inner.state.lock().unwrap();
 
         let id = st.next_id;
@@ -606,7 +644,7 @@ impl Manager {
             Some(out) => (unique_target(st, out), false),
             None => {
                 let name = filename::resolve(None, &url, None);
-                (filename::join_in(&dir.into(), &name), true)
+                (filename::join_in(&dir, &name), true)
             }
         };
         let limiter = Arc::new(RateLimiter::new(options.limit));
@@ -627,6 +665,8 @@ impl Manager {
             partial_kept: false,
             checksum_state: ChecksumState::None,
             active_ms: Some(0),
+            archived: false,
+            tags: options.tags,
         };
         let entry = Entry::new(record, limiter);
 
@@ -662,7 +702,8 @@ impl Manager {
     /// or restarts a cancelled one from scratch. A restart whose partial was
     /// deleted moves to a free name (e.g. `name (1).ext`) if another download
     /// has since claimed its target. It rejoins the queue, starting now if a
-    /// slot is free. No-op if it's already running, queued or completed.
+    /// slot is free, and leaves the archive if it was archived (only finished
+    /// downloads are). No-op if it's already running, queued or completed.
     pub fn resume(&self, id: u64) {
         let st = &mut *self.inner.state.lock().unwrap();
         // A row that owns nothing on disk may have had its target claimed by a
@@ -682,6 +723,7 @@ impl Manager {
             e.record.target = target;
         }
         e.record.status = Status::Queued;
+        e.record.archived = false;
         e.record.error = None;
         e.record.finished_at = None;
         e.record.partial_kept = false;
@@ -785,6 +827,97 @@ impl Manager {
         doomed.len()
     }
 
+    /// Archive the listed downloads: hide them from the working views but
+    /// keep their records. Only finished (completed, failed or cancelled)
+    /// downloads are archived; any other id is left unchanged. Returns how
+    /// many changed.
+    pub fn archive(&self, ids: &[u64]) -> usize {
+        self.set_archived(ids, true)
+    }
+
+    /// Return the listed archived downloads to the working views. Returns how
+    /// many changed.
+    pub fn unarchive(&self, ids: &[u64]) -> usize {
+        self.set_archived(ids, false)
+    }
+
+    /// Archive every finished, not yet archived download whose status is in
+    /// `statuses` and, with `only`, whose id is listed. Returns the ids it
+    /// archived, in display order, so they can be unarchived to undo it.
+    pub fn archive_finished(&self, statuses: &[Status], only: Option<&[u64]>) -> Vec<u64> {
+        let st = &mut *self.inner.state.lock().unwrap();
+        let ids: Vec<u64> = st
+            .order
+            .iter()
+            .filter_map(|id| st.entries.get(id))
+            .filter(|e| statuses.contains(&e.record.status))
+            .filter(|e| only.is_none_or(|ids| ids.contains(&e.record.id)))
+            .map(|e| e.record.id)
+            .collect();
+        self.inner.set_archived(st, &ids, true)
+    }
+
+    fn set_archived(&self, ids: &[u64], archived: bool) -> usize {
+        let st = &mut *self.inner.state.lock().unwrap();
+        self.inner.set_archived(st, ids, archived).len()
+    }
+
+    /// Add `tags` to each listed download, skipping ones it already has
+    /// (ignoring case) and keeping the order added. A tag is trimmed and 1 to
+    /// [`MAX_TAG_LEN`](tags::MAX_TAG_LEN) characters, and a download holds at
+    /// most [`MAX_TAGS`](tags::MAX_TAGS); breaking either is
+    /// [`Error::InvalidRequest`] and changes nothing. Returns how many
+    /// downloads changed.
+    pub fn add_tags(&self, ids: &[u64], tags: &[String]) -> crate::engine::Result<usize> {
+        let added = tags::normalize(tags)?;
+        let st = &mut *self.inner.state.lock().unwrap();
+        let mut updates = Vec::new();
+        for id in ids {
+            if let Some(e) = st.entries.get(id) {
+                let merged = tags::merged(&e.record.tags, &added)?;
+                if merged != e.record.tags {
+                    updates.push((*id, merged));
+                }
+            }
+        }
+        Ok(self.apply_tags(st, updates))
+    }
+
+    /// Remove `tags` (trimmed, matched ignoring case) from each listed
+    /// download. Returns how many downloads changed.
+    pub fn remove_tags(&self, ids: &[u64], tags: &[String]) -> usize {
+        let removed: Vec<String> = tags.iter().map(|t| t.trim().to_string()).collect();
+        let st = &mut *self.inner.state.lock().unwrap();
+        let updates = ids
+            .iter()
+            .filter_map(|id| st.entries.get(id).map(|e| (*id, &e.record.tags)))
+            .filter_map(|(id, current)| {
+                let kept: Vec<String> = current
+                    .iter()
+                    .filter(|t| !tags::contains(&removed, t))
+                    .cloned()
+                    .collect();
+                (kept.len() != current.len()).then_some((id, kept))
+            })
+            .collect();
+        self.apply_tags(st, updates)
+    }
+
+    /// Store each `(id, tags)` pair, then persist and publish if any.
+    fn apply_tags(&self, st: &mut ManagerState, updates: Vec<(u64, Vec<String>)>) -> usize {
+        let changed = updates.len();
+        for (id, tags) in updates {
+            if let Some(e) = st.entries.get_mut(&id) {
+                e.record.tags = tags;
+            }
+        }
+        if changed > 0 {
+            self.inner.persist(st);
+            self.inner.publish(st);
+        }
+        changed
+    }
+
     /// Hash a completed download's file against `checksum`, off the async
     /// runtime: the snapshot's `checksum_state` goes `pending`, then `verified`
     /// or `mismatch`. Errors unless `id` is completed and its file is on disk.
@@ -822,9 +955,10 @@ impl Manager {
         finished_file(&e.record)
     }
 
-    /// Remove a download from the list entirely. Any running task is stopped
-    /// and partial data discarded unless [`stop`](Self::stop) kept it; a
-    /// completed download's finished file is left on disk untouched.
+    /// Remove a download from the list entirely, archived or not. The
+    /// downloaded file is never deleted, nor is a partial that
+    /// [`stop`](Self::stop) kept; any other partial (a failed, paused or
+    /// running download's `.part` + sidecar) is, and a running task is stopped.
     pub fn remove(&self, id: u64) {
         let st = &mut *self.inner.state.lock().unwrap();
         let Some(e) = st.entries.remove(&id) else {
@@ -1216,6 +1350,8 @@ mod tests {
             partial_kept: false,
             checksum_state: ChecksumState::None,
             active_ms: None,
+            archived: false,
+            tags: Vec::new(),
         }
     }
 
