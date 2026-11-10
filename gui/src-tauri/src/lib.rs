@@ -6,6 +6,8 @@
 //! `downloads-changed` event. All download logic lives in the engine — this
 //! crate contains none.
 
+mod updater;
+
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -246,6 +248,18 @@ fn pause_all(state: State<'_, AppState>) {
             state.manager.pause(d.id);
         }
     }
+}
+
+/// Resume the downloads an update restart paused (its notice's Resume all).
+#[tauri::command]
+fn resume_paused_for_update(state: State<'_, AppState>) {
+    state.manager.resume_paused_for_update();
+}
+
+/// Dismiss the paused-for-the-update notice, leaving those downloads paused.
+#[tauri::command]
+fn forget_paused_for_update(state: State<'_, AppState>) {
+    state.manager.forget_paused_for_update();
 }
 
 /// Resume every paused download (Resume all). Stopped ones stay stopped.
@@ -550,6 +564,35 @@ fn report_startup_error(app: &tauri::AppHandle, err: &(dyn std::error::Error + '
         .show(move |_| handle.exit(1));
 }
 
+/// Look for a newer rdm; `None` when this is the newest. The update found is
+/// kept for [`install_update`].
+#[tauri::command]
+async fn check_for_update(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    updater: State<'_, updater::UpdaterState>,
+) -> Result<Option<updater::UpdateInfo>, String> {
+    updater::check_command(&app, &updater, state.manager.clone()).await
+}
+
+/// Download the update [`check_for_update`] found (progress as
+/// `update-progress` events), then restart into it now or install it at quit.
+#[tauri::command]
+async fn install_update(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    updater: State<'_, updater::UpdaterState>,
+    when: updater::InstallWhen,
+) -> Result<(), String> {
+    updater::install_command(&app, &updater, &state.manager, when).await
+}
+
+/// The version waiting to install at quit, if any.
+#[tauri::command]
+fn staged_update(updater: State<'_, updater::UpdaterState>) -> Option<String> {
+    updater.staged_version()
+}
+
 /// Build and run the Tauri application.
 ///
 /// If the engine `Manager` can't be initialised (e.g. the download list was
@@ -559,6 +602,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::UpdaterState::new(updater::Seam::current()))
         .setup(|app| {
             let manager = match init_manager(app.handle()) {
                 Ok(manager) => manager,
@@ -592,19 +637,28 @@ pub fn run() {
             remove,
             pause_all,
             resume_all,
+            resume_paused_for_update,
+            forget_paused_for_update,
             retry_failed,
             default_download_dir,
             pick_folder,
             open_download,
             reveal_download,
+            check_for_update,
+            install_update,
+            staged_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building rdm GUI")
         .run(|app, event| {
-            // Record running downloads' time before the process goes.
+            // Record running downloads' time before the process goes, then
+            // install an update waiting for the quit.
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<AppState>() {
                     state.manager.shutdown();
+                }
+                if let Some(updater) = app.try_state::<updater::UpdaterState>() {
+                    updater::install_at_exit(&updater);
                 }
             }
         });

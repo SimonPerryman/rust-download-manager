@@ -31,7 +31,21 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
+# The in-app updater. Its HTTP client shares the engine's reqwest/rustls (ring).
+tauri-plugin-updater = "2"
+# A pre-release build reads GitHub's releases list for the newest manifest;
+# same reqwest and TLS setup as the engine.
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+# Comparing versions for the updater's pre-release rule.
+semver = "1"
 
 [dev-dependencies]
+# Signing the updater tests' fixture releases with a throwaway key.
+base64 = "0.22"
+minisign = "0.10"
+tempfile = "3"
+# A mock app handle for the updater tests.
+tauri = { version = "2", features = ["test"] }
 # Timers for the tests that drive the engine on their own runtime.
 tokio = { version = "1", features = ["rt", "time"] }

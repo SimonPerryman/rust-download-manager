@@ -44,5 +44,16 @@
       "icons/icon.ico"
     ]
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "PLACEHOLDER: the update public key goes here before the first release with the updater",
+      "endpoints": [
+        "https://github.com/SimonPerryman/rust-download-manager/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }
