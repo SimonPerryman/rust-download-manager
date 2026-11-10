@@ -773,7 +773,14 @@ async fn resume(
     st: DownloadState,
     on_progress: &mut impl FnMut(Progress),
 ) -> Result<(u16, PathBuf, u64)> {
-    let offset = tokio::fs::metadata(part).await?.len();
+    // The offset comes from the handle the bytes will be appended through, not
+    // a by-path lookup: Windows can answer that from a stale directory entry,
+    // and a short offset re-requests bytes the `.part` already holds.
+    let mut file = tokio::fs::OpenOptions::new()
+        .append(true)
+        .open(part)
+        .await?;
+    let offset = file.metadata().await?.len();
 
     let mut builder = client
         .get(&st.url)
@@ -790,10 +797,6 @@ async fn resume(
             // Resource unchanged: append from the current offset.
             announce_resume(req, offset);
             let total = st.total;
-            let mut file = tokio::fs::OpenOptions::new()
-                .append(true)
-                .open(part)
-                .await?;
             file.seek(std::io::SeekFrom::End(0)).await?;
             let bytes = stream_to_part(
                 resp,
@@ -814,6 +817,7 @@ async fn resume(
             // ignores/lies about ranges. Only a true 206 is safe to append, so
             // truncate and restart with fresh validators.
             restarting(req, offset, "the server sent the whole file again");
+            drop(file);
             let total = resp.content_length();
             let etag = header_str(resp.headers(), header::ETAG);
             let last_modified = header_str(resp.headers(), header::LAST_MODIFIED);
@@ -837,6 +841,7 @@ async fn resume(
             Ok((status.as_u16(), part.to_path_buf(), bytes))
         }
         StatusCode::RANGE_NOT_SATISFIABLE => {
+            drop(file);
             // Offset past the end. If we already have the whole thing, we're
             // done; otherwise the `.part` is inconsistent — restart.
             if let Some(total) = st.total {
