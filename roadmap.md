@@ -34,6 +34,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M5 | GUI rethink — Console layout | done | [[milestone-05-gui-rethink]] |
 | M6 | Releases & install | done | [[milestone-06-releases-install]] |
 | M7 | Archive & tags | done | [[milestone-07-archive-tags]] |
+| M8 | Diagnostics — finding the bug when rdm crashes | todo | [[milestone-08-diagnostics]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 
@@ -42,6 +43,8 @@ their order is flexible. M2 (GUI) is sequenced first post-MVP by choice; M3 is
 the parallel-download speed feature; M4 is the day-to-day queue/throttle layer.
 M6 (prebuilt releases) follows M5 so the first release ships the new GUI. M7
 needs M5's details pane, context menu and multi-select, and comes after M6.
+M8 (diagnostics) follows the first releases, now that bugs show up on
+machines the developer can't reach.
 
 ## Backlog (not yet scheduled — parked on purpose)
 
@@ -88,6 +91,10 @@ needs M5's details pane, context menu and multi-select, and comes after M6.
   do); magic-byte sniffing against the extension (flag a "video" that's an
   executable, or `.mp4.exe`); warn when an archive holds executables or
   scripts; a user-configured post-download command (e.g. a scanner).
+- **Crash reporting/telemetry (opt-in) (cut from M8)**: send crash reports
+  automatically (e.g. Sentry), plus native minidumps for crashes that aren't
+  Rust panics. Needs a server, a privacy policy and explicit opt-in; until
+  then users paste Copy diagnostics into a bug report.
 - **Per-app VPN routing** (optional): route only rdm's traffic through a VPN
   without changing the whole machine. (1) First, SOCKS5/HTTP proxy support
   (`--proxy` plus a GUI setting; reqwest supports SOCKS): many VPN services
