@@ -1,5 +1,5 @@
 // The table's keyboard map, as data: which key does what while the table has
-// focus. App runs the command; this only names it.
+// focus. useTableInput runs the command; this only names it.
 
 export type KeyCommand =
   | { kind: "move"; to: "up" | "down" | "first" | "last"; extend: boolean }

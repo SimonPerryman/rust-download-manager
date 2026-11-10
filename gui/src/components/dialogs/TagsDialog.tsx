@@ -4,7 +4,7 @@ import { TagEditor } from "../tags/TagEditor";
 import { trapTab } from "./trapTab";
 
 type Props = {
-  /** The live rows being tagged; App closes the dialog once none is left. */
+  /** The live rows being tagged; useTagsDialog closes the dialog once none is left. */
   ds: DownloadSnapshot[];
   onClose: () => void;
 };
