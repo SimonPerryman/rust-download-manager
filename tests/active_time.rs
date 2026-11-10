@@ -89,11 +89,14 @@ async fn paused_time_is_not_counted() {
         mgr.log_layer(),
     ));
     let id = mgr.add(server.url("/crawl"), dir.path(), None, None);
-    wait_for(&mgr, id, T, |s| ms(s) >= 300)
+    // Bytes, not just time: a download paused at 0 bytes resumes as a start
+    // from zero, which resets the clock by design (a slow runner got there).
+    wait_for(&mgr, id, T, |s| ms(s) >= 300 && s.downloaded > 0)
         .await
-        .expect("never ran 300 ms");
+        .expect("never ran 300 ms with bytes on disk");
     mgr.pause(id);
     let paused = wait_status(&mgr, id, Status::Paused).await;
+    assert!(paused.downloaded > 0, "paused at 0 bytes");
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(
         snap(&mgr, id).active_ms,

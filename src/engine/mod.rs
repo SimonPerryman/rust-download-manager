@@ -337,7 +337,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// download (cancel/pause).
 ///
 /// Each event worth telling the user is logged as one short line (`Started ·
-/// …`, `Paused`, `Done · …`). Running the same request again, e.g. after a
+/// …`, `Paused`, `Completed · …`). Running the same request again, e.g. after a
 /// pause, continues its finish summary: a request and its clones share it.
 // Error level so the identity survives any filter that still shows errors.
 #[tracing::instrument(name = "download", level = "error", skip_all, fields(url = %redact_url(&req.url)))]
@@ -794,8 +794,8 @@ async fn resume(
     on_progress: &mut impl FnMut(Progress),
 ) -> Result<(u16, PathBuf, u64)> {
     // The offset comes from the handle the bytes will be appended through, not
-    // a by-path lookup, which can disagree with the handle (suspected cause of
-    // a Windows-only flake); a short offset re-requests bytes already held.
+    // a separate by-path lookup, so the requested range starts exactly where
+    // the append lands; a short offset would re-request bytes already held.
     let mut file = tokio::fs::OpenOptions::new()
         .append(true)
         .open(part)

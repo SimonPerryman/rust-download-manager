@@ -59,7 +59,7 @@ async fn a_multi_lane_download_tells_its_story() {
     );
     assert_eq!(concise[1], format!("Saved to {}", out.display()));
     let done = &concise[2];
-    assert!(done.starts_with("Done · 4.00 MB in "), "{done}");
+    assert!(done.starts_with("Completed · 4.00 MB in "), "{done}");
     assert!(
         done.contains(" · avg ") && done.contains(" · peak "),
         "{done}"
@@ -127,7 +127,7 @@ async fn ramping_says_when_it_adds_a_lane() {
     );
     assert!(has(&concise, "Added Lane 2 — now 2 lanes"), "{concise:#?}");
     assert!(
-        concise.last().unwrap().starts_with("Done · 4.00 MB"),
+        concise.last().unwrap().starts_with("Completed · 4.00 MB"),
         "{concise:#?}"
     );
 }
@@ -206,7 +206,7 @@ async fn ramping_says_when_it_backs_off() {
     assert!(
         at("Added Lane ") < at("Closing Lane ")
             && at("Closing Lane ") < at("Saved to ")
-            && at("Saved to ") < at("Done · "),
+            && at("Saved to ") < at("Completed · "),
         "{concise:#?}"
     );
 }
@@ -317,7 +317,7 @@ async fn pause_and_resume_say_where_they_stopped() {
     );
     assert_eq!(concise[1], "Paused");
     assert!(concise[2].starts_with("Resumed at "), "{concise:#?}");
-    assert!(has(&concise, "Done · "), "{concise:#?}");
+    assert!(has(&concise, "Completed · "), "{concise:#?}");
     assert_eq!(concise.len(), 5, "{concise:#?}");
     let detail = lines.detail();
     assert!(has(&detail, "Requested bytes "), "{detail:#?}");
@@ -450,7 +450,7 @@ async fn a_checksum_mismatch_names_both_digests() {
     );
     let concise = lines.concise();
     assert!(!has(&concise, "Saved to"), "{concise:#?}");
-    assert!(!has(&concise, "Done"), "{concise:#?}");
+    assert!(!has(&concise, "Completed"), "{concise:#?}");
 }
 
 /// A host that caps connections gets one line saying how many lanes are left.
@@ -504,7 +504,7 @@ async fn a_range_fallback_says_it_starts_over() {
         "Server sent the whole file instead of a part — starting over on 1 lane"
     );
     assert!(
-        concise.last().unwrap().starts_with("Done · 4.00 MB"),
+        concise.last().unwrap().starts_with("Completed · 4.00 MB"),
         "{concise:#?}"
     );
     assert_eq!(concise.len(), 4, "{concise:#?}");
