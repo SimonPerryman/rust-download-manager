@@ -28,7 +28,14 @@ import { keyCommand } from "./lib/keymap";
 import { menuItems, selectionActions, type MenuCommand, type MenuEntry } from "./lib/menu";
 import { loadConfirmRemove, saveConfirmRemove } from "./lib/prefs";
 import { dropIndex, queueOrder, stepIndex } from "./lib/queue";
-import { continues, isPausable, isStoppable, pauseAllMode, totalSpeed } from "./lib/rowView";
+import {
+  continues,
+  isPausable,
+  isRemovable,
+  isStoppable,
+  pauseAllMode,
+  totalSpeed,
+} from "./lib/rowView";
 import { selectedInOrder, type Modifiers } from "./lib/selection";
 import { arrangeRows, DEFAULT_SORT, isVolatile, nextSort, rankOf, type SortKey } from "./lib/sort";
 import { hasTag, tagCounts } from "./lib/tags";
@@ -205,7 +212,12 @@ export default function App() {
     setTimeout(() => focusIsFree() && tableRef.current?.focus({ preventScroll: true }));
   }, []);
   const confirmRemoveRows = (dontAsk: boolean) => {
-    const rows = removeRows ?? [];
+    // Only what's still archived and finished: a row resumed or unarchived
+    // while the dialog was open stays.
+    const rows = (removeRows ?? []).flatMap((r) => {
+      const d = byId(r.id);
+      return d && d.archived && isRemovable(d) ? [d] : [];
+    });
     setRemoveRows(null);
     if (dontAsk) updateConfirmRemove(false);
     removeNow(rows);

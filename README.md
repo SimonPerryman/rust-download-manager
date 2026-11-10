@@ -6,7 +6,7 @@ command-line tool and a desktop app.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/main-dark.png">
-  <img alt="The rdm desktop app: a sidebar of status and folder filters, and a table of downloads that are done, downloading, waiting, paused and failed" src="docs/screenshots/main-light.png">
+  <img alt="The rdm desktop app: a sidebar of status, folder and tag filters, and a table of downloads that are done, downloading, waiting, paused and failed" src="docs/screenshots/main-light.png">
 </picture>
 
 ## Highlights

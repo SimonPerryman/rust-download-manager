@@ -13,6 +13,7 @@ import {
   downloadDir,
   invoke,
   rowById,
+  rowSelector,
   settingsButton,
   waitForGone,
   waitForStatus,
@@ -25,9 +26,9 @@ const isoDir = path.join(downloadDir, "ISOs");
 /** A fixture URL serving `bytes` bytes (ranges supported) under the file name `name`. */
 const file = (bytes: number, name: string) => `${baseUrl}/seg/${Math.round(bytes)}/${name}`;
 
-/** Adds a download through the backend and waits for its row. */
-async function add(url: string, dir = downloadDir): Promise<number> {
-  const id = await invoke<number>("add_download", { url, dir });
+/** Adds a download (with `tags`) through the backend and waits for its row. */
+async function add(url: string, dir = downloadDir, tags: string[] = []): Promise<number> {
+  const id = await invoke<number>("add_download", { url, dir, tags });
   await rowById(id).waitForExist({ timeoutMsg: `${url} never showed a row` });
   return id;
 }
@@ -77,12 +78,18 @@ describe("README screenshots", () => {
     // Finished downloads.
     const done = [
       await add(file(29.6 * MB, "node-v22.11.0-x64.msi")),
-      await add(file(73.6 * MB, "go1.23.3.linux-amd64.tar.gz")),
+      await add(file(73.6 * MB, "go1.23.3.linux-amd64.tar.gz"), downloadDir, ["dev"]),
       await add(file(44.1 * MB, "vlc-3.0.21-win64.exe")),
-      await add(file(57.6 * MB, "Godot_v4.3-stable_win64.exe.zip")),
+      await add(file(57.6 * MB, "Godot_v4.3-stable_win64.exe.zip"), downloadDir, ["dev"]),
       await add(file(88.2 * MB, "wallpapers-4k-2026.zip")),
     ];
     for (const id of done) await waitForStatus(id, "completed", 120_000);
+
+    // An archived one, counted under Archived.
+    const old = await add(file(12.4 * MB, "photos-2025.zip"), downloadDir, ["photos"]);
+    await waitForStatus(old, "completed", 120_000);
+    await invoke("archive", { ids: [old] });
+    await waitForGone(rowSelector(old));
 
     // A failed one: the server answers 404.
     const failed = await add(`${baseUrl}/missing/photos-backup-2026-10.zip`);
