@@ -593,13 +593,7 @@ async fn install_update(
     when: updater::InstallWhen,
     version: String,
 ) -> Result<(), String> {
-    let result = updater::install_command(&app, &updater, &state.manager, when, &version).await;
-    if when == updater::InstallWhen::Now {
-        // The restart's pause closes the manager without a snapshot event:
-        // show the paused rows while the app goes.
-        let _ = app.emit("downloads-changed", state.manager.snapshot());
-    }
-    result
+    updater::install_command(&app, &updater, &state.manager, when, &version).await
 }
 
 /// Open the release page of the update the last check found. It takes no

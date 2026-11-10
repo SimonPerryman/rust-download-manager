@@ -286,5 +286,7 @@ impl Manager {
             }
         }
         self.inner.persist(st);
+        // A frontend still showing the list (an update's restart) sees the pause.
+        self.inner.publish(st);
     }
 }
