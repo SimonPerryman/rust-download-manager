@@ -56,8 +56,10 @@ pnpm test                    # frontend unit tests
 pnpm lint                    # frontend lint
 ```
 
-The default tests run offline against a local HTTP server. CI builds and tests
-on Linux and Windows; macOS isn't tested yet.
+The default tests run offline against a local HTTP server. CI builds, lints and
+tests on Linux and Windows; macOS isn't tested yet. Format checks (rustfmt,
+oxfmt) and the frontend lint don't depend on the OS, so CI runs them on Linux
+only.
 
 The GUI also has an end-to-end suite that drives the real app with
 WebdriverIO; see the [`gui/e2e` package](gui/e2e/package.json) (`pnpm e2e`),
