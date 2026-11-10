@@ -9,6 +9,7 @@ use tokio::sync::watch;
 
 use super::files::owns_partial;
 use super::{Entry, Inner, Manager, ManagerState};
+use crate::engine::lock::lock;
 use crate::engine::store::{ChecksumState, Status, Store, StoreData, SCHEMA_VERSION};
 use crate::engine::{single_segment, state, tags, DownloadState, RateLimiter};
 
@@ -105,7 +106,7 @@ impl Manager {
         });
         // Prime the channel with the restored list.
         {
-            let st = inner.state.lock().unwrap();
+            let st = lock(&inner.state);
             let _ = inner.tx.send(inner.snapshots(&st));
         }
         Ok(Self { inner })
@@ -158,7 +159,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(mgr.inner.global.rate(), Some(1024 * 1024));
-        let st = mgr.inner.state.lock().unwrap();
+        let st = lock(&mgr.inner.state);
         for (id, want) in [(1, Some(256 * 1024)), (2, None)] {
             let e = &st.entries[&id];
             assert_eq!(e.limiter.rate(), want, "download {id}'s limiter");

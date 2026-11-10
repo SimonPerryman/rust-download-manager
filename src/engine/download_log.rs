@@ -20,6 +20,8 @@ use tracing_subscriber::filter::{LevelFilter, Targets};
 use tracing_subscriber::layer::{Context, Layer};
 use tracing_subscriber::registry::LookupSpan;
 
+use crate::engine::lock::lock;
+
 /// How many INFO-and-up lines each download keeps; the oldest go first.
 pub const LOG_LINES: usize = 200;
 
@@ -107,26 +109,24 @@ impl Buffer {
 impl DownloadLogs {
     /// Start keeping lines for `id` (keeps any it already has).
     pub(crate) fn open(&self, id: u64) {
-        self.buffers.lock().unwrap().entry(id).or_default();
+        lock(&self.buffers).entry(id).or_default();
     }
 
     /// Drop `id`'s lines and stop keeping new ones.
     pub(crate) fn forget(&self, id: u64) {
-        self.buffers.lock().unwrap().remove(&id);
+        lock(&self.buffers).remove(&id);
     }
 
     /// `id`'s lines, oldest first (none if it isn't open).
     pub(crate) fn lines(&self, id: u64) -> Vec<LogLine> {
-        self.buffers
-            .lock()
-            .unwrap()
+        lock(&self.buffers)
             .get(&id)
             .map(Buffer::lines)
             .unwrap_or_default()
     }
 
     fn push(&self, id: u64, line: LogLine) {
-        if let Some(buffer) = self.buffers.lock().unwrap().get_mut(&id) {
+        if let Some(buffer) = lock(&self.buffers).get_mut(&id) {
             buffer.push(line);
         }
     }

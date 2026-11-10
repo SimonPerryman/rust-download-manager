@@ -17,6 +17,11 @@ dist = false
 name = "rdm_gui_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Tests only (the e2e build turns it on): commands that panic, and the
+# engine's `/__panic` download. Refuses to compile in a release build.
+fault-injection = ["rdm/fault-injection"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -26,6 +31,8 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
+# Catching a panic in an async command (commands_guard.rs).
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 tracing = "0.1"

@@ -17,12 +17,15 @@
 mod attempt;
 pub mod control;
 mod download_log;
+#[cfg(feature = "fault-injection")]
+mod fault;
 pub mod filename;
 mod finish;
 mod http;
 mod human;
 pub mod integrity;
 pub mod limit;
+mod lock;
 pub mod manager;
 pub mod progress;
 mod ramp;
@@ -321,6 +324,10 @@ pub enum Error {
     /// verify one that isn't completed).
     #[error("invalid request: {0}")]
     InvalidRequest(String),
+    /// A bug in rdm: the download's task panicked (the panic message is
+    /// carried). The download fails instead of taking the app down with it.
+    #[error("internal error, please report it: {0}")]
+    Internal(String),
 }
 
 impl From<reqwest::Error> for Error {
@@ -351,6 +358,8 @@ pub async fn download(
     control: &Control,
     mut on_progress: impl FnMut(Progress),
 ) -> Result<Summary> {
+    #[cfg(feature = "fault-injection")]
+    fault::panic_on_request(&req.url);
     install_crypto_provider();
     let client = reqwest::Client::builder()
         .user_agent(USER_AGENT)
@@ -516,9 +525,36 @@ pub(crate) fn error_detail(err: &dyn std::error::Error) -> String {
     msg
 }
 
+/// The text a panic was raised with (`panic!` with a literal or a format
+/// string); a panic with any other payload has none to give.
+pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "panic with no message".to_owned())
+}
+
+/// The error for a blocking-pool task that didn't return: a panic in it is a
+/// bug ([`Error::Internal`]); a cancelled one, an I/O failure.
+pub(crate) fn join_error(err: tokio::task::JoinError) -> Error {
+    if err.is_panic() {
+        Error::Internal(panic_message(&*err.into_panic()))
+    } else {
+        Error::Io(std::io::Error::other(err))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_panicking_blocking_task_is_an_internal_error() {
+        let joined = tokio::task::spawn_blocking(|| panic!("boom")).await;
+        let err = join_error(joined.unwrap_err());
+        assert!(matches!(&err, Error::Internal(m) if m == "boom"), "{err:?}");
+    }
 
     #[test]
     fn crypto_provider_install_is_idempotent_and_lets_a_client_build() {

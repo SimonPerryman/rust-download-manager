@@ -1,6 +1,7 @@
 //! The archive: hiding finished downloads from the working views, and back.
 
 use super::{Inner, Manager, ManagerState};
+use crate::engine::lock::lock;
 use crate::engine::store::Status;
 
 impl Inner {
@@ -33,14 +34,14 @@ impl Manager {
     /// it archived, in the order given, so exactly those can be unarchived to
     /// undo it.
     pub fn archive(&self, ids: &[u64]) -> Vec<u64> {
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         self.inner.set_archived(st, ids, true)
     }
 
     /// Return the listed archived downloads to the working views. Returns how
     /// many changed.
     pub fn unarchive(&self, ids: &[u64]) -> usize {
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         self.inner.set_archived(st, ids, false).len()
     }
 
@@ -48,7 +49,7 @@ impl Manager {
     /// `statuses` and, with `only`, whose id is listed. Returns the ids it
     /// archived, in display order, so they can be unarchived to undo it.
     pub fn archive_finished(&self, statuses: &[Status], only: Option<&[u64]>) -> Vec<u64> {
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         let ids: Vec<u64> = st
             .order
             .iter()

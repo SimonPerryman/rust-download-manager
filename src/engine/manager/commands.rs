@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use super::files::{discard_files, owned_elsewhere, owns_partial, unique_target};
 use super::{now_secs, AddOptions, Entry, Manager};
+use crate::engine::lock::lock;
 use crate::engine::store::{ChecksumState, DownloadRecord, Status};
 use crate::engine::{filename, tags, Checksum, RateLimiter};
 
@@ -49,7 +50,7 @@ impl Manager {
 
     /// Add a download whose options are already valid.
     fn insert(&self, url: String, dir: PathBuf, options: AddOptions) -> u64 {
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
 
         let id = st.next_id;
         st.next_id += 1;
@@ -98,7 +99,7 @@ impl Manager {
     /// once the task observes it. A queued download leaves the queue at once.
     /// No-op otherwise.
     pub fn pause(&self, id: u64) {
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         let Some(e) = st.entries.get_mut(&id) else {
             return;
         };
@@ -120,7 +121,7 @@ impl Manager {
     /// slot is free, and leaves the archive if it was archived (only finished
     /// downloads are). No-op if it's already running, queued or completed.
     pub fn resume(&self, id: u64) {
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         // A row that owns nothing on disk may have had its target claimed by a
         // newer download since; restarting onto it would share one `.part`.
         let retarget = st
@@ -195,7 +196,7 @@ impl Manager {
     /// (also for a download stopped earlier with its partial kept). No-op once
     /// completed or failed.
     pub fn stop(&self, id: u64, keep_partial: bool) {
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         let shared = owned_elsewhere(st, id);
         let Some(e) = st.entries.get_mut(&id) else {
             return;
@@ -236,7 +237,7 @@ impl Manager {
     /// [`stop`](Self::stop) kept; any other partial (a failed, paused or
     /// running download's `.part` + sidecar) is, and a running task is stopped.
     pub fn remove(&self, id: u64) {
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         let Some(e) = st.entries.remove(&id) else {
             return;
         };
@@ -271,7 +272,7 @@ impl Manager {
 
     fn close(&self, for_restart: bool) {
         self.inner.closed.store(true, Ordering::SeqCst);
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         for e in st.entries.values_mut() {
             if let Some(task) = e.task.take() {
                 task.abort();

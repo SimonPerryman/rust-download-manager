@@ -1,7 +1,7 @@
 ---
 id: M8
 title: Diagnostics — finding the bug when rdm crashes
-status: todo
+status: in-progress
 depends-on: [M7]
 tags: [engine, cli, gui, testing]
 ---
@@ -59,7 +59,7 @@ can't reach. Today a crash usually leaves nothing to go on.
    "Copy diagnostics".
 6. **No bug-report issue template.** `.github/` has no `ISSUE_TEMPLATE`.
 7. **A panic in a download task goes unnoticed.** `spawn_task`
-   (`src/engine/manager.rs`) runs `download(...)` then `inner.finish(id,
+   (`src/engine/manager/task.rs`) runs `download(...)` then `inner.finish(id,
    result)` in one spawned future. If anything in it panics, including a
    segment worker (they're polled in the same task through
    `FuturesUnordered`), the task unwinds and `finish` never runs. The
@@ -71,6 +71,11 @@ can't reach. Today a crash usually leaves nothing to go on.
    panics, and every Tauri command breaks.
 8. **No way to copy all logs.** The Log tab copies one download's visible
    lines.
+9. **A panicking command kills or hangs the app.** Checked with a
+   fault-injection build (WebView2): a synchronous command's panic unwinds
+   into the webview's IPC callback, which can't unwind, so the process
+   aborts ("panic in a function that cannot unwind"). An async command's
+   panic kills its task and the webview's `invoke` never settles.
 
 The engine/frontend split holds (see [AGENTS.md](../AGENTS.md)): panic
 containment for download tasks is engine work. Panic hooks, the file log and
@@ -82,12 +87,12 @@ Roadmap: [roadmap.md](../roadmap.md).
 ## Scope
 **In:**
 - **Panic hook (GUI and CLI).** It's chained before the default hook, so dev
-  stderr output stays. It logs at ERROR through `tracing` with the message,
-  `file:line:col`, the thread name, the app version and a backtrace
-  (`std::backtrace::Backtrace::force_capture`). In the GUI it then flushes
-  the file log (see below) before returning. The CLI's hook also prints a
-  one-line "this is a bug, please report it" hint with the version and the
-  issues URL.
+  stderr output stays, and it logs every panic on every thread. It logs at
+  ERROR through `tracing` with the message, `file:line:col`, the thread name
+  and the app version; the GUI's record also has a backtrace
+  (`std::backtrace::Backtrace::force_capture`), the CLI logs it at DEBUG.
+  The CLI's hook also prints a one-line "this is a bug, please report it"
+  hint with the version and the issues URL.
 - **Logs reach disk.** The decision, so not every line pays for a sync
   write:
   - Keep the non-blocking writer for normal lines. Its worker writes each
@@ -97,27 +102,42 @@ Roadmap: [roadmap.md](../roadmap.md).
   - Build it with `NonBlockingBuilder::lossy(false)`, so a burst blocks
     briefly instead of dropping lines.
   - Keep the `WorkerGuard` in a process-wide slot (`OnceLock<Mutex<Option<WorkerGuard>>>`)
-    instead of leaking it. Take it and drop it (which flushes and joins the
-    worker) on Tauri's `RunEvent::Exit` and in the panic hook.
-  - The panic hook first drops the guard, so queued lines land in order,
-    then appends the panic record to today's log file **synchronously**
-    with its own `OpenOptions::append` handle and calls `sync_all`. The
-    record lands even if the subscriber is wedged and the process aborts
-    right after.
+    instead of leaking it. On Tauri's `RunEvent::Exit`, `flush_logs()`
+    waits for the queue to drain, drops the guard and syncs the file.
+  - The panic hook waits (at most 1 s) for the lines queued before the
+    panic to be written, so they land in order, then appends the panic
+    record to today's log file **synchronously** with its own
+    `OpenOptions::append` handle and calls `sync_all`. It does **not** drop
+    the guard: download-task and command panics are contained, so the app
+    keeps running and must keep logging. The record lands even if the
+    subscriber is wedged and the process aborts right after.
   - The startup lines go through the same synchronous append path as the
     panic record, so a crash right after launch still leaves the version on
-    disk. ERROR lines aren't synced per line (Open question 1).
+    disk.
+  - **Rate-limited sync** (decision 1): after the worker writes a WARN or
+    ERROR line it syncs the file, at most once every 5 s; a sync held back
+    by the limit happens with the next line after the interval, and the
+    exit flush covers a quiet tail. No per-line fsync.
 - **Download-task panics are contained (engine).** `spawn_task` wraps the
   download in `FutureExt::catch_unwind` (`AssertUnwindSafe`). A caught
   panic becomes a new `Error::Internal(String)` carrying the panic message.
-  `finish` marks the download **Failed** with "Internal error — please
-  report it", logs it at ERROR under the task span (so it shows in the Log
+  `finish` marks the download **Failed** with "internal error, please
+  report it: <panic message>", logs it at ERROR under the task span (so it shows in the Log
   tab too), frees the slot and starts the next queued download. Manager
   locking tolerates poison: `lock()` goes through one helper that recovers
   with `PoisonError::into_inner` and logs a warning once, instead of
   `unwrap()`.
+- **Contained command panics (GUI, decision 5).** One wrapper around the
+  generated invoke handler catches a synchronous command's panic and rejects
+  that `invoke` with "rdm hit an internal error running <command>, a bug.
+  Details are in the log."; async commands run their body through a shared
+  `contained()` helper that does the same. The frontend shows the rejection
+  like any failed action.
 - **Startup line (GUI).** One INFO line at startup:
-  `rdm <version> (<git sha if available>) · <OS name/version/arch> · WebView <tauri::webview_version()> · log level <filter>`.
+  `rdm <version> (<git sha if available>) · <OS name/version/arch> · WebView <tauri::webview_version()> · log level <filter> · memory <RSS>`.
+  The OS version and the process's resident memory come from a small
+  `rdm::platform` module (no new crates) and also go into Copy
+  diagnostics.
   A second line lists the settings that matter: connections, queue cap,
   speed limit, data dir overridden yes/no, and the number of downloads by
   status. No URLs, paths or tags. The CLI logs the same version and OS line
@@ -140,7 +160,7 @@ Roadmap: [roadmap.md](../roadmap.md).
   - the version, OS and WebView lines;
   - the settings that matter;
   - the log directory;
-  - the last 300 lines of the newest log file (falling back to the previous
+  - the last 300 lines of the newest log file (decision 3) (falling back to the previous
     day's file when today's is short).
 
   Every URL in the text goes through a new engine helper
@@ -175,8 +195,9 @@ Roadmap: [roadmap.md](../roadmap.md).
   one line linking the troubleshooting section, if it fits the landing page.
 
 **Out (deferred):**
-- Automatic crash upload or telemetry (Sentry or similar). It needs a
-  server, a privacy policy and opt-in consent (→ backlog: "Crash
+- Automatic crash upload or telemetry (Sentry or similar). The owner
+  doesn't want user tracking or telemetry: everything stays local and
+  redacted (→ backlog: "Crash
   reporting/telemetry (opt-in)").
 - Native minidumps for crashes that aren't Rust panics (access violations
   in WebView2 or native code) (→ backlog with the above).
@@ -187,31 +208,40 @@ Roadmap: [roadmap.md](../roadmap.md).
 
 ## Tasks
 ### PR A — crash containment and durable logging (engine, CLI, GUI crate)
-- [ ] Engine: `Error::Internal(String)`; `spawn_task` catches a panic with
+- [x] Engine: `Error::Internal(String)`; `spawn_task` catches a panic with
   `catch_unwind` and finishes the download as Failed with an ERROR line.
   Doc comments on the new public items.
-- [ ] Engine: a poison-tolerant lock helper used for every Manager `Mutex`.
-- [ ] Engine: a fault-injection seam for tests. It's a cargo feature
+- [x] Engine: a poison-tolerant lock helper used for every Manager `Mutex`
+  (and every other engine lock: the log buffers, rate limiters and tallies
+  outlive a task too).
+- [x] Engine: a fault-injection seam for tests. It's a cargo feature
   `fault-injection`, off by default and never enabled by the release
-  builds (dist or tauri-action). It panics inside the download task when a
+  builds (dist or tauri-action): it refuses to compile without debug
+  assertions. It panics inside the download task when a
   request URL's path is `/__panic`, so `tests/` can drive it against the
   fixture server. CI runs the integration test with the feature on.
-- [ ] GUI crate: move logging setup out of `lib.rs` into a `logging`
+- [x] GUI crate: move logging setup out of `lib.rs` into a `logging`
   module that doesn't need a Tauri app:
   - `install_logging` returns nothing and keeps the guard in the
     process-wide slot;
   - `lossy(false)`;
-  - `flush_logs()` drops the guard;
-  - `install_panic_hook(dir)` chains the default hook and writes the
-    synchronous panic record.
-- [ ] GUI crate: call `flush_logs()` on `RunEvent::Exit` (switch `run()` to
-  `.build()?.run(|_, event| …)`).
-- [ ] GUI crate: startup version, OS, WebView and settings lines.
-- [ ] GUI crate: a test-only panic trigger, the `fault-injection` feature
-  with env `RDM_TEST_PANIC=startup`, for the child-process test below.
-- [ ] CLI: panic hook (ERROR event plus the "please report" hint with the
+  - `flush_logs()` drains the queue and drops the guard;
+  - `install_panic_hook()` chains the default hook and writes the
+    synchronous panic record (the log dir comes from `install_logging`, so
+    the hook is installed first thing in `run()`);
+  - the rate-limited sync from decision 1.
+- [x] GUI crate: call `flush_logs()` on `RunEvent::Exit`.
+- [x] GUI crate: startup version, OS, WebView, memory and settings lines.
+- [x] GUI crate: the child-process tests re-run their own test binary with
+  an env var (`RDM_LOG_TEST=panic|burst`) and panic in the test itself, so
+  the app needs no panic trigger of its own.
+- [x] GUI crate: contain command panics (decision 5), with the
+  `fault-injection` feature's `test_panic` / `test_panic_async` commands
+  for `gui/e2e/specs/command-panic.e2e.ts`. The e2e build turns the
+  feature on.
+- [x] CLI: panic hook (ERROR event plus the "please report" hint with the
   version) and the `-v` version/OS line.
-- [ ] Docs: `docs/how-it-works.md` (panic containment, log durability) and
+- [x] Docs: `docs/how-it-works.md` (panic containment, log durability) and
   `docs/cli.md` (troubleshooting, bug reports).
 
 ### PR B — frontend errors, diagnostics UI, issue template
@@ -224,9 +254,16 @@ Roadmap: [roadmap.md](../roadmap.md).
   (`gui/src/lib/errorReport.ts`).
 - [ ] GUI: Open logs folder and Copy diagnostics in the settings menu and
   on the fallback screen, with a "Copied" confirmation like the Log tab's.
-- [ ] Log tab: see Open question 2 (recommended: **Copy all**).
+- [ ] Log tab (decision 2): the existing **Copy** copies every buffered
+  line for the download, whatever Detailed says, and a save action (label
+  per the approved mock-up) saves the same lines as plain text through a
+  save dialog (default name `<download name>.log`), with a test seam so
+  e2e opens no real dialog. The Detailed toggle (a view control) is
+  grouped apart from the actions, per the approved mock-up.
 - [ ] Move `stubClipboard` / `restoreClipboard` from `log.e2e.ts` into
   `gui/e2e/helpers.ts` for reuse.
+- [ ] Troubleshooting group (decision 4): visible to everyone (no
+  developer mode), quiet and secondary: last in the settings menu, muted.
 - [ ] `.github/ISSUE_TEMPLATE/bug_report.yml` and `config.yml`.
 - [ ] Docs: `docs/gui.md` "Logs and troubleshooting" (and the URL wording
   fix), the `SECURITY.md` supported-versions line, and the README link if
@@ -241,24 +278,29 @@ characters through `browser.keys`, Shift via a dispatched `KeyboardEvent`,
 bytes._
 
 **Engine (`cargo test --features fault-injection` for the panic cases):**
-- [ ] A download whose task panics (`/__panic` fixture) ends **Failed** with
+- [x] A download whose task panics (`/__panic` fixture) ends **Failed** with
   an error naming an internal error. The panic message is in that
   download's log lines at ERROR. A second download that was queued behind
   it (queue cap 1) then starts and completes, asserted on Manager status.
   (`tests/panic.rs`)
-- [ ] After that panic, `list`, `add`, `pause` and `remove` still work: no
-  poisoned-lock panic. (`tests/panic.rs`)
+- [x] After that panic, `list`, `add`, `pause` and `remove` still work: no
+  poisoned-lock panic. (`tests/panic.rs`; a poisoned state lock itself in
+  `manager::tests::commands_survive_a_poisoned_state_lock`)
 - [ ] `redact_urls_in` redacts every URL in a multi-line text containing
   `https://user:pw@host/p?token=SECRET#frag`, a bare `http://h/x?sig=abc`
   and a URL inside quotes and parentheses. No `SECRET`, `sig=abc`, `pw` or
   `#frag` survives, and text without URLs is unchanged.
   (`src/engine/redact.rs` unit tests)
-- [ ] A default build (`cargo build`, no features) has no `/__panic`
+- [x] A panic on the blocking pool (hashing a file named `__panic…`)
+  fails that step as an internal error: a Manager checksum check ends
+  (state None) instead of staying pending (`tests/panic.rs`), and the CLI exits 101 with
+  "internal error, please report it" (`tests/cli_panic.rs`).
+- [x] A default build (`cargo build`, no features) has no `/__panic`
   behaviour: the same fixture request fails as a normal 404.
 
 **GUI crate (`cargo test -p rdm-gui`):**
-- [ ] **Panic reaches disk.** A test spawns its own test binary as a child
-  process with `RDM_TEST_PANIC=startup` and a temp log dir. The child
+- [x] **Panic reaches disk.** A test spawns its own test binary as a child
+  process with `RDM_LOG_TEST=panic` and a temp log dir. The child
   installs logging and the panic hook, logs the startup line, then panics.
   After the child exits with a non-zero status, the parent reads the log
   file and asserts it contains:
@@ -266,16 +308,23 @@ bytes._
   - the panic message;
   - its `file:line`;
   - and that the panic record comes after the startup line.
-- [ ] **Burst isn't lossy.** A child process logs 200,000 lines and then
+- [x] **Burst isn't lossy.** A child process logs 200,000 lines and then
   exits through `flush_logs()`. The file holds all 200,000.
+- [x] **Sync is rate-limited.** The first WARN/ERROR line syncs at once;
+  more within 5 s wait; the next line after the interval syncs them; INFO
+  lines alone never do. (`logging::tests::syncs_are_rate_limited`)
+- [x] **Command panics are contained.** In the e2e build, invoking
+  `test_panic` (sync) and `test_panic_async` rejects with the internal
+  error text, and `list` still answers afterwards.
+  (`gui/e2e/specs/command-panic.e2e.ts`)
 - [ ] **Diagnostics redact.** `diagnostics()` over a temp log dir whose log
   contains a signed URL and a `user:pass@` URL returns text with neither
   secret. It also contains the version line and the last line of the log.
 - [ ] `log_frontend_error` writes one ERROR line with target
   `rdm::frontend`, the message and the stack.
 
-**CLI (`cargo test`):**
-- [ ] With the `fault-injection` feature, `rdm <fixture>/__panic` exits
+**CLI (`cargo test --features fault-injection --test cli_panic`):**
+- [x] With the `fault-injection` feature, `rdm <fixture>/__panic` exits
   non-zero. Stderr contains the panic message, the version and the issues
   URL hint. (`tests/cli_panic.rs`, `assert_cmd`-style)
 
@@ -287,8 +336,8 @@ bytes._
 - [ ] Dispatching an `ErrorEvent` and a `PromiseRejectionEvent` on `window`
   each invoke `log_frontend_error`. 50 errors in a burst invoke it at most
   20 times.
-- [ ] Log tab **Copy all** (if adopted) copies every buffered line,
-  including debug ones, with Detailed off.
+- [ ] Log tab **Copy** copies every buffered line, including debug ones,
+  with Detailed off; the save action saves the same text.
 
 **E2E (`gui/e2e/specs/diagnostics.e2e.ts`, against the fixture server):**
 - [ ] **Open logs folder:** clicking it in the settings menu appends
@@ -310,36 +359,27 @@ bytes._
   version, OS and steps fields (checked by a small script in `pnpm lint`,
   or by `yq` in CI).
 
-## Open questions
-1. **Sync ERROR lines too?** Should every ERROR line go to disk with an
-   `fsync`, or is the worker thread plus the OS page cache enough?
-   **Recommendation: page cache is enough.** A process crash doesn't lose
-   what the worker already wrote. Only a power cut or OS crash loses the
-   page cache, and per-line fsync on a burst of failing downloads costs
-   real I/O. The panic record and the exit flush are the synchronous
-   points.
-2. **Copying all of a download's lines.** Options:
-   - (a) the Log tab gains **Copy all**: every buffered line for that
-     download (up to 200 info-and-up plus 300 debug), whatever the
-     Detailed toggle says;
-   - (b) an **Export log…** that saves that download's lines to a file;
-   - (c) nothing beyond Copy diagnostics.
-
-   **Recommendation: (a), in scope for PR B.** It's small: the lines are
-   already in the frontend, so it's `copyText(lines)` instead of
-   `copyText(shown)`. Copy diagnostics covers the app-wide log, and Open
-   logs folder covers the full files, so (b) adds little.
-3. **How much log tail goes into Copy diagnostics?** **Recommendation: 300
-   lines.** Enough to cover a failed download's start to its error, small
-   enough to paste into an issue. The issue template asks for the full file
-   only if the developer requests it.
-4. **Where do Open logs folder and Copy diagnostics live?**
-   **Recommendation: the settings menu,** under a "Troubleshooting" group,
-   plus the fallback screen. A Help menu doesn't exist and isn't worth
-   adding for two items.
-5. **Should the GUI catch panics on Tauri command threads?** A panic in a
-   synchronous command handler unwinds into Tauri, which today rejects the
-   `invoke` promise or aborts depending on the handler. **Recommendation:**
-   rely on the panic hook to log it, and on the poison-tolerant lock so the
-   app keeps working. Don't wrap every command; revisit if a real case
-   appears.
+## Decisions (owner's answers to the open questions)
+1. **ERROR lines and disk sync:** flushed to disk "occasionally": the
+   worker syncs after a WARN/ERROR line at most once every 5 s, never per
+   line. The panic record and the exit flush stay synchronous.
+2. **Copying a download's lines:** the Log tab has **one** copy action, the
+   existing **Copy**, which now copies every buffered line for the download
+   (up to 200 info-and-up plus 300 debug), whatever the Detailed toggle
+   says; there's no separate "Copy all". A save action writes the same lines
+   to a plain-text file through a save dialog, default name
+   `<download name>.log`. The owner rejected the label "Export log…"; the
+   label and the toolbar layout (Detailed grouped apart from the actions)
+   follow the approved mock-up. PR B, with e2e coverage.
+3. **Copy diagnostics log tail:** 300 lines.
+4. **Placement:** a "Troubleshooting" group in the settings menu, plus the
+   fallback screen. It is always visible, not behind a developer mode, so
+   someone filing a bug needn't find a hidden switch first; it sits last
+   in the menu and is styled quiet and secondary.
+5. **Crashes outside downloads:** any crash is logged: the panic hook logs
+   every panic on every thread, and the locks are poison-tolerant. A
+   command that panics is contained (gap 9 shows Tauri doesn't): the
+   `invoke` rejects with an internal error the frontend shows, and the app
+   keeps working. The startup line and Copy diagnostics include the
+   process's resident memory. No user tracking or telemetry: everything
+   stays local and redacted.

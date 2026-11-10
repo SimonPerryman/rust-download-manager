@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use super::task::spawn_task;
 use super::{Inner, Manager, ManagerState};
+use crate::engine::lock::lock;
 use crate::engine::store::Status;
 use crate::engine::Control;
 
@@ -62,7 +63,7 @@ impl Manager {
     /// among the waiting ones (clamped to the last): the order they start in.
     /// Persists. No-op for any other download.
     pub fn move_queued(&self, id: u64, index: usize) {
-        let st = &mut *self.inner.state.lock().unwrap();
+        let st = &mut *lock(&self.inner.state);
         let entries = &st.entries;
         let waiting = |id: u64| {
             entries

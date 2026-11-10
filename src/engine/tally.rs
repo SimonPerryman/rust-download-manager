@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use super::human;
+use crate::engine::lock::lock;
 
 /// The span the peak speed is measured over. Shorter readings swing wildly:
 /// chunks often arrive back to back from a buffer, or in a burst after a stall.
@@ -49,7 +50,7 @@ impl Tally {
     }
 
     fn begin_run_at(&self, active_before: Duration, now: Instant) {
-        let mut t = self.0.lock().unwrap();
+        let mut t = lock(&self.0);
         if t.first_started.is_none() {
             t.first_started = Some(now);
             t.earlier = active_before;
@@ -66,7 +67,7 @@ impl Tally {
     }
 
     fn end_run_at(&self, now: Instant) {
-        let mut t = self.0.lock().unwrap();
+        let mut t = lock(&self.0);
         if let Some(started) = t.run_started.take() {
             t.earlier += now.saturating_duration_since(started);
             t.ran_before = true;
@@ -76,14 +77,14 @@ impl Tally {
     /// True the first time it's asked in a run, so a run announces how it
     /// started once, not again on each retry.
     pub(crate) fn announce(&self) -> bool {
-        !std::mem::replace(&mut self.0.lock().unwrap().announced, true)
+        !std::mem::replace(&mut lock(&self.0).announced, true)
     }
 
     /// A run picked up `on_disk` bytes left by an earlier one. Bytes no run in
     /// this tally fetched (and no earlier active time covers) stay out of the
     /// average speed.
     pub(crate) fn resumed_with(&self, on_disk: u64) {
-        let mut t = self.0.lock().unwrap();
+        let mut t = lock(&self.0);
         if t.earlier.is_zero() && !t.ran_before {
             t.baseline = on_disk;
         }
@@ -96,7 +97,7 @@ impl Tally {
     }
 
     fn observe_progress_at(&self, downloaded: u64, now: Instant) {
-        let mut t = self.0.lock().unwrap();
+        let mut t = lock(&self.0);
         match t.window {
             // A restart threw bytes away: measure afresh.
             Some((_, from)) if downloaded < from => t.window = Some((now, downloaded)),
@@ -113,12 +114,12 @@ impl Tally {
     }
 
     pub(crate) fn retried(&self) {
-        self.0.lock().unwrap().retries += 1;
+        lock(&self.0).retries += 1;
     }
 
     /// `bytes` already fetched are being thrown away and fetched again.
     pub(crate) fn wasted(&self, bytes: u64) {
-        let mut t = self.0.lock().unwrap();
+        let mut t = lock(&self.0);
         t.redownloaded = t.redownloaded.saturating_add(bytes);
         // Everything is fetched again now, so all of it counts.
         t.baseline = 0;
@@ -131,7 +132,7 @@ impl Tally {
     }
 
     fn done_line_at(&self, bytes: u64, now: Instant) -> String {
-        let t = self.0.lock().unwrap();
+        let t = lock(&self.0);
         let since =
             |s: Option<Instant>| s.map_or(Duration::ZERO, |s| now.saturating_duration_since(s));
         let active = t.earlier + since(t.run_started);

@@ -12,6 +12,7 @@ share it, so everything here applies to both.
 - [Safe file names](#safe-file-names)
 - [The queue and speed limits](#the-queue-and-speed-limits)
 - [Engine and frontends](#engine-and-frontends)
+- [When something goes wrong](#when-something-goes-wrong)
 
 ## Parallel segmented downloads
 
@@ -84,3 +85,27 @@ new one is saved as `name (1).ext`.
 All download logic lives in the `rdm` engine library. The CLI and the GUI
 (Tauri + React) are thin frontends over it: they start, pause, resume and
 display downloads, but don't fetch anything themselves.
+
+## When something goes wrong
+
+- **A bug in a download:** if a download's task panics (a bug in rdm), only
+  that download fails. It shows "internal error, please report it" with the
+  panic's message, its Log tab has the same line, its queue slot frees up and
+  the next download starts. The rest of the app keeps working, even if the
+  panic happened mid-update.
+- **A bug in a desktop-app command:** a button whose command panics shows an
+  error, as any failed action does, and the app keeps running.
+- **The log file (desktop app):** lines are written to the file as they're
+  logged, from a background thread, so a crash loses at most the few lines
+  still queued. A burst waits rather than dropping lines. After a warning or
+  an error the file is flushed to disk, at most once every 5 seconds (one
+  held back by that limit happens with the first line logged after those 5
+  seconds, or when the app closes),
+  so a power cut is less likely to take recent errors with it. Every panic, on any thread, is
+  appended to the file at once with its backtrace and flushed to disk before
+  anything else happens; the same goes for the startup lines (version, OS,
+  WebView, memory use and settings). Closing the app writes out every queued
+  line.
+- **Privacy:** rdm sends nothing anywhere: no telemetry, no crash reports.
+  Logs stay on your disk, and the URLs they mention are redacted (no
+  `user:password@`, query string or fragment).

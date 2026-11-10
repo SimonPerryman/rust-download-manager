@@ -1,27 +1,30 @@
 //! Running one download on its own task: the engine request, the target
 //! claim, and recording how it ended.
 
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::FutureExt;
 use tokio::task::JoinHandle;
 use tracing::Instrument;
 
 use super::files::{owned_elsewhere, unique_target};
 use super::{now_secs, Inner, Live};
 use crate::engine::download_log::TASK_SPAN;
+use crate::engine::lock::lock;
 use crate::engine::store::{ChecksumState, DownloadRecord, Status};
 use crate::engine::tally::Tally;
-use crate::engine::{download, Checksum, Control, DownloadRequest, Error};
+use crate::engine::{download, panic_message, Checksum, Control, DownloadRequest, Error};
 
 impl Inner {
     /// Engine claim hook for a provisional target: dedup the derived `proposed`
     /// path, adopt it as the record's target, and hand it back to the engine.
     /// Called from the download task (never with the state lock held).
     fn claim_target(&self, id: u64, proposed: &Path, control: &Control) -> PathBuf {
-        let st = &mut *self.state.lock().unwrap();
+        let st = &mut *lock(&self.state);
         if let Some(e) = st.entries.get(&id) {
             if !e.record.target_provisional {
                 return e.record.target.clone();
@@ -49,7 +52,7 @@ impl Inner {
         if self.closed.load(Ordering::SeqCst) {
             return;
         }
-        let st = &mut *self.state.lock().unwrap();
+        let st = &mut *lock(&self.state);
         let shared = owned_elsewhere(st, id);
         let Some(e) = st.entries.get_mut(&id) else {
             return;
@@ -91,6 +94,9 @@ impl Inner {
                 e.record.finished_at = now_secs();
             }
             Err(other) => {
+                if let Error::Internal(message) = &other {
+                    tracing::error!("Internal error (a bug in rdm, please report it): {message}");
+                }
                 // Known-bad bytes: a retry must re-download, not re-finalize them.
                 if matches!(other, Error::ChecksumMismatch(_)) {
                     e.record.checksum_state = ChecksumState::Mismatch;
@@ -135,7 +141,14 @@ pub(super) fn spawn_task(
     handle.spawn(
         async move {
             let progress = inner.clone();
-            let result = download(&req, &control, move |p| progress.on_progress(id, p)).await;
+            let run = download(&req, &control, move |p| progress.on_progress(id, p));
+            // A panic anywhere in the download (segment workers included: they
+            // are polled on this task) fails just this download, so its slot
+            // frees and the rest of the app carries on.
+            let result = AssertUnwindSafe(run)
+                .catch_unwind()
+                .await
+                .unwrap_or_else(|panic| Err(Error::Internal(panic_message(&*panic))));
             inner.finish(id, result);
         }
         .instrument(span),
