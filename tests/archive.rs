@@ -53,9 +53,9 @@ fn archived_ids(mgr: &Manager) -> Vec<u64> {
         .collect()
 }
 
-/// AC: `archive` sets the flag on completed, failed and cancelled downloads;
-/// a queued, downloading or paused one is left unchanged and not counted.
-/// `unarchive` reverses it.
+/// AC: `archive` sets the flag on completed, failed and cancelled downloads
+/// and returns exactly those ids; a queued, downloading or paused one is left
+/// unchanged and not returned. `unarchive` reverses it.
 #[tokio::test]
 async fn archive_takes_only_finished_downloads() {
     let server = common::spawn().await;
@@ -81,12 +81,15 @@ async fn archive_takes_only_finished_downloads() {
     assert_eq!(row(&mgr, queued).status, Status::Queued);
 
     let all = [completed, failed, cancelled, paused, downloading, queued];
-    assert_eq!(mgr.archive(&all), 3);
+    assert_eq!(mgr.archive(&all), [completed, failed, cancelled]);
     assert_eq!(archived_ids(&mgr), [completed, failed, cancelled]);
     for id in [paused, downloading, queued] {
         assert!(!row(&mgr, id).archived, "download {id} was archived");
     }
-    assert_eq!(mgr.archive(&all), 0, "archiving twice changes nothing");
+    assert!(
+        mgr.archive(&all).is_empty(),
+        "archiving twice changes nothing"
+    );
 
     assert_eq!(mgr.unarchive(&all), 3);
     assert!(archived_ids(&mgr).is_empty());
@@ -145,7 +148,7 @@ async fn remove_keeps_an_archived_download_file() {
         .await
         .final_path
         .unwrap();
-    assert_eq!(mgr.archive(&[id]), 1);
+    assert_eq!(mgr.archive(&[id]), [id]);
 
     mgr.remove(id);
     assert!(mgr.snapshot().is_empty());

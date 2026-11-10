@@ -574,6 +574,9 @@ impl Manager {
             if !rec.status.is_terminal() {
                 rec.archived = false;
             }
+            // Tags follow the add_tags rules, so a hand-edited record can't
+            // carry ones that would block tagging it.
+            rec.tags = tags::sanitized(&rec.tags);
             // The on-disk state is authoritative for how far we got (a
             // multi-segment `.part` is pre-allocated, so not its length), but
             // only for a record that owns it: a stopped one whose partial was
@@ -832,16 +835,19 @@ impl Manager {
 
     /// Archive the listed downloads: hide them from the working views but
     /// keep their records. Only finished (completed, failed or cancelled)
-    /// downloads are archived; any other id is left unchanged. Returns how
-    /// many changed.
-    pub fn archive(&self, ids: &[u64]) -> usize {
-        self.set_archived(ids, true)
+    /// downloads are archived; any other id is left unchanged. Returns the ids
+    /// it archived, in the order given, so exactly those can be unarchived to
+    /// undo it.
+    pub fn archive(&self, ids: &[u64]) -> Vec<u64> {
+        let st = &mut *self.inner.state.lock().unwrap();
+        self.inner.set_archived(st, ids, true)
     }
 
     /// Return the listed archived downloads to the working views. Returns how
     /// many changed.
     pub fn unarchive(&self, ids: &[u64]) -> usize {
-        self.set_archived(ids, false)
+        let st = &mut *self.inner.state.lock().unwrap();
+        self.inner.set_archived(st, ids, false).len()
     }
 
     /// Archive every finished, not yet archived download whose status is in
@@ -858,11 +864,6 @@ impl Manager {
             .map(|e| e.record.id)
             .collect();
         self.inner.set_archived(st, &ids, true)
-    }
-
-    fn set_archived(&self, ids: &[u64], archived: bool) -> usize {
-        let st = &mut *self.inner.state.lock().unwrap();
-        self.inner.set_archived(st, ids, archived).len()
     }
 
     /// Add `tags` to each listed download, skipping ones it already has

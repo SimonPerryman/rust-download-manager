@@ -57,8 +57,11 @@ export const resume = (id: number) => invoke<void>("resume", { id });
 export const stop = (id: number, keepPartial: boolean) => invoke<void>("stop", { id, keepPartial });
 /** Move a waiting download to `index` among the waiting ones. */
 export const moveQueued = (id: number, index: number) => invoke<void>("move_queued", { id, index });
-/** Archive finished downloads by id; others are left as they are. Resolves with the count changed. */
-export const archive = (ids: number[]) => invoke<number>("archive", { ids });
+/**
+ * Archive finished downloads by id; others are left as they are. Resolves with the
+ * ids archived, for Undo to unarchive.
+ */
+export const archive = (ids: number[]) => invoke<number[]>("archive", { ids });
 /** Return archived downloads to the working views. Resolves with the count changed. */
 export const unarchive = (ids: number[]) => invoke<number>("unarchive", { ids });
 /**

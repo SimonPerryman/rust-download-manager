@@ -27,9 +27,11 @@ desktop app share one version.
 
 - The desktop app's download list (`state.json`) moves to a new format that
   can hold archived and tagged downloads. A list from 0.1.0 opens unchanged.
-  A list saved by a newer rdm is now refused with a message naming its
-  version, rather than opened and saved back without what this version
-  doesn't understand.
+  A list saved by a newer rdm is now refused in a dialog naming its version,
+  and rdm closes, rather than opening it and saving it back without what this
+  version doesn't understand.
+- Going back to 0.1.0 after this version opens the list, but 0.1.0's first
+  save drops archive flags and tags.
 - The details pane draws one bar per open connection (lane) instead of one
   line per piece, headed with how many lanes are open. Bars appear as lanes
   open and merge back as they close, each showing only its own lane's work,
