@@ -11,20 +11,22 @@ import type { DownloadSnapshot, LogLine, Settings, Status } from "./types";
 export const list = () => invoke<DownloadSnapshot[]>("list");
 
 /**
- * Add a download; `dir`/`checksum`/`limit` optional (`limit` is a rate like
- * `"500K"`). Returns the new id, or rejects with a parse/validation error.
+ * Add a download; `dir`/`checksum`/`limit`/`tags` optional (`limit` is a rate
+ * like `"500K"`). Returns the new id, or rejects with a parse/validation error.
  */
 export const addDownload = (
   url: string,
   dir?: string | null,
   checksum?: string | null,
   limit?: string | null,
+  tags?: string[] | null,
 ) =>
   invoke<number>("add_download", {
     url,
     dir: dir ?? null,
     checksum: checksum ?? null,
     limit: limit ?? null,
+    tags: tags ?? null,
   });
 
 /** The engine's manager-wide settings. */
@@ -58,6 +60,21 @@ export const moveQueued = (id: number, index: number) => invoke<void>("move_queu
 /** Remove finished downloads in `statuses` (only `ids`, if given). Resolves with the count. */
 export const clear = (statuses: Status[], ids?: number[] | null) =>
   invoke<number>("clear", { statuses, ids: ids ?? null });
+/** Archive finished downloads by id; others are left as they are. Resolves with the count changed. */
+export const archive = (ids: number[]) => invoke<number>("archive", { ids });
+/** Return archived downloads to the working views. Resolves with the count changed. */
+export const unarchive = (ids: number[]) => invoke<number>("unarchive", { ids });
+/**
+ * Archive finished downloads in `statuses` (only `ids`, if given). Resolves with the
+ * ids archived, for Undo to unarchive.
+ */
+export const archiveFinished = (statuses: Status[], ids?: number[] | null) =>
+  invoke<number[]>("archive_finished", { statuses, ids: ids ?? null });
+/** Add tags to downloads; rejects with the reason a tag is invalid. Resolves with the count changed. */
+export const addTags = (ids: number[], tags: string[]) => invoke<number>("add_tags", { ids, tags });
+/** Remove tags (ignoring case) from downloads. Resolves with the count changed. */
+export const removeTags = (ids: number[], tags: string[]) =>
+  invoke<number>("remove_tags", { ids, tags });
 /**
  * Check a completed download against `checksum` (`sha256:<hex>` or bare hex);
  * the result arrives as the snapshot's `checksum_state`. Rejects if it can't run.

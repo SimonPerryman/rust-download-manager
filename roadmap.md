@@ -76,6 +76,10 @@ needs M5's details pane, context menu and multi-select, and comes after M6.
 - **Archive and tag automation (cut from M7)**: auto-archive finished
   downloads after N days; auto-tag rules by host or file type; tag rename,
   merge and colours.
+- **Missing and moved files**: spot a finished download whose file was
+  deleted or moved, relink it ("Update file reference"), or move files
+  through rdm so the record follows them; keep a record whose file is gone
+  as a note of what was downloaded.
 - **Post-download safety checks** (optional): a checksum only proves we got
   the bytes the server sent, not that they're safe or what they claim to be.
   Candidates: Windows Mark-of-the-Web (`Zone.Identifier` with ZoneId=3 and

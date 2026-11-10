@@ -7,6 +7,14 @@ desktop app share one version.
 
 ## Unreleased
 
+### Changed
+
+- The desktop app's download list (`state.json`) moves to a new format that
+  can hold archived and tagged downloads. A list from 0.1.0 opens unchanged.
+  A list saved by a newer rdm is now refused with a message naming its
+  version, rather than opened and saved back without what this version
+  doesn't understand.
+
 ## 0.1.0 - 2026-11-09
 
 The first release: everything below is new.

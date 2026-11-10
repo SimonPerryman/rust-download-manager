@@ -105,7 +105,9 @@ async fn a_failed_check_logs_one_error() {
         checksum: Some(wrong),
         ..AddOptions::default()
     };
-    let id = mgr.add_with(server.url("/file"), dir.path(), options);
+    let id = mgr
+        .add_with(server.url("/file"), dir.path(), options)
+        .unwrap();
     wait_status(&mgr, id, Status::Failed).await;
 
     let lines = mgr.download_log(id);

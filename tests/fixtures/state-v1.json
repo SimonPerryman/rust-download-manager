@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "next_id": 5,
+  "downloads": [
+    {
+      "id": 1,
+      "url": "https://example.com/releases/tool-1.2.0.tar.gz",
+      "target": "/downloads/tool-1.2.0.tar.gz",
+      "final_path": "/downloads/tool-1.2.0.tar.gz",
+      "checksum": null,
+      "status": "completed",
+      "downloaded": 1048576,
+      "total": 1048576,
+      "error": null,
+      "added_at": 1762600000,
+      "finished_at": 1762600012,
+      "limit": null,
+      "checksum_state": "none",
+      "active_ms": 11873
+    },
+    {
+      "id": 2,
+      "url": "https://example.com/missing.bin",
+      "target": "/downloads/missing.bin",
+      "target_provisional": true,
+      "final_path": null,
+      "checksum": null,
+      "status": "failed",
+      "downloaded": 0,
+      "total": null,
+      "error": "server returned HTTP 404",
+      "added_at": 1762600100,
+      "finished_at": 1762600101,
+      "limit": null,
+      "checksum_state": "none",
+      "active_ms": 640
+    },
+    {
+      "id": 3,
+      "url": "https://example.com/images/disk.iso",
+      "target": "/downloads/disk.iso",
+      "final_path": "/downloads/disk.iso",
+      "checksum": "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "status": "completed",
+      "downloaded": 4096,
+      "total": 4096,
+      "error": null,
+      "added_at": 1762600200,
+      "finished_at": 1762600203,
+      "limit": 524288,
+      "checksum_state": "verified",
+      "active_ms": 2950
+    },
+    {
+      "id": 4,
+      "url": "https://example.com/video.mp4",
+      "target": "/downloads/video.mp4",
+      "final_path": null,
+      "checksum": null,
+      "status": "cancelled",
+      "downloaded": 524288,
+      "total": 2097152,
+      "error": null,
+      "added_at": 1762600300,
+      "finished_at": 1762600330,
+      "limit": null,
+      "partial_kept": true,
+      "checksum_state": "none",
+      "active_ms": 30010
+    }
+  ],
+  "settings": {
+    "max_concurrent": 3,
+    "global_limit": null,
+    "max_connections": 8
+  }
+}

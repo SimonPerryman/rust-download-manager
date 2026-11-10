@@ -28,6 +28,7 @@ pub mod retry;
 mod segment;
 pub mod state;
 pub mod store;
+pub mod tags;
 mod tally;
 
 pub use control::{Control, Flow};
@@ -295,6 +296,11 @@ pub enum Error {
         "partial download was saved by a newer rdm (sidecar version {0}); upgrade rdm to resume it"
     )]
     UnsupportedState(u32),
+    /// The download list (`state.json`) has a schema version newer than this
+    /// build understands; it's left untouched rather than loaded and saved
+    /// back without the fields this build doesn't know.
+    #[error("download list was saved by a newer rdm (state version {0}); upgrade rdm to open it")]
+    UnsupportedStore(u32),
     /// The caller asked for something the target download can't do now (e.g.
     /// verify one that isn't completed).
     #[error("invalid request: {0}")]
@@ -1133,6 +1139,7 @@ fn is_transient(err: &Error) -> bool {
         | Error::Integrity(_)
         | Error::ChecksumMismatch(_)
         | Error::UnsupportedState(_)
+        | Error::UnsupportedStore(_)
         | Error::InvalidRequest(_) => false,
     }
 }

@@ -12,10 +12,12 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::engine::{segment, Result, DEFAULT_CONNECTIONS};
+use crate::engine::{segment, Error, Result, DEFAULT_CONNECTIONS};
 
-/// Current store schema version. Bump when the on-disk shape changes.
-const SCHEMA_VERSION: u32 = 1;
+/// Current store schema version. Bump when the on-disk shape changes; a
+/// document newer than this fails to load (see [`Error::UnsupportedStore`]).
+/// v2 added [`DownloadRecord::archived`] and [`DownloadRecord::tags`].
+pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 /// Lifecycle status of a managed download.
 ///
@@ -136,6 +138,13 @@ pub struct DownloadRecord {
     /// build, or one whose run was cut short by a crash.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_ms: Option<u64>,
+    /// Hidden from the working views but kept as history. Only a finished
+    /// download is ever archived.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub archived: bool,
+    /// User labels, in the order added; unique ignoring case.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
 }
 
 /// Manager-wide download settings, persisted with the download list.
@@ -245,8 +254,20 @@ impl Store for JsonStore {
     fn load(&self) -> Result<StoreData> {
         match std::fs::read(&self.path) {
             Ok(bytes) => {
-                let data = serde_json::from_slice(&bytes)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                let invalid = |e| std::io::Error::new(std::io::ErrorKind::InvalidData, e);
+                // Check the version before the typed decode, so a newer
+                // document's unknown values can't hide that it's newer.
+                let doc: serde_json::Value = serde_json::from_slice(&bytes).map_err(invalid)?;
+                let version = doc.get("version").and_then(serde_json::Value::as_u64);
+                if let Some(v) = version.filter(|&v| v > u64::from(SCHEMA_VERSION)) {
+                    return Err(Error::UnsupportedStore(
+                        u32::try_from(v).unwrap_or(u32::MAX),
+                    ));
+                }
+                // Older documents upgrade in place: every field added since
+                // defaults, so the next save writes the current version.
+                let mut data: StoreData = serde_json::from_value(doc).map_err(invalid)?;
+                data.version = SCHEMA_VERSION;
                 Ok(data)
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(StoreData::default()),
@@ -298,6 +319,8 @@ mod tests {
             partial_kept: status == Status::Cancelled,
             checksum_state: ChecksumState::None,
             active_ms: None,
+            archived: false,
+            tags: Vec::new(),
         }
     }
 
@@ -314,10 +337,15 @@ mod tests {
                     checksum: Some("sha256:ab".into()),
                     checksum_state: ChecksumState::Verified,
                     active_ms: Some(134_000),
+                    archived: true,
+                    tags: vec!["work".into(), "iso".into()],
                     ..sample_record(1, Status::Completed)
                 },
                 sample_record(2, Status::Paused),
-                sample_record(3, Status::Cancelled),
+                DownloadRecord {
+                    tags: vec!["course-2".into()],
+                    ..sample_record(3, Status::Cancelled)
+                },
             ],
             settings: Settings {
                 max_concurrent: 5,
@@ -391,11 +419,64 @@ mod tests {
         .unwrap();
 
         let loaded = JsonStore::new(&path).load().unwrap();
-        assert_eq!(loaded.version, 1);
         assert_eq!(loaded.settings.max_concurrent, 3);
         assert_eq!(loaded.settings.max_connections, 4);
         assert_eq!(loaded.settings.global_limit, None);
         assert_eq!(loaded.downloads[0].limit, None);
+    }
+
+    /// A `state.json` as v0.1.0 wrote it (schema v1) loads with nothing
+    /// archived or tagged, and saves back as the current version.
+    #[test]
+    fn v1_store_upgrades_to_the_current_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        std::fs::write(&path, include_str!("../../tests/fixtures/state-v1.json")).unwrap();
+        let store = JsonStore::new(&path);
+
+        let loaded = store.load().unwrap();
+        assert_eq!(loaded.downloads.len(), 4);
+        for rec in &loaded.downloads {
+            assert!(!rec.archived, "download {} archived", rec.id);
+            assert!(rec.tags.is_empty(), "download {} tagged", rec.id);
+        }
+        assert_eq!(loaded.downloads[0].status, Status::Completed);
+        assert_eq!(loaded.downloads[2].checksum_state, ChecksumState::Verified);
+        assert!(loaded.downloads[3].partial_kept);
+        assert_eq!(loaded.next_id, 5);
+        assert_eq!(loaded.settings.max_connections, 8);
+
+        store.save(&loaded).unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["version"], 2);
+        assert_eq!(store.load().unwrap(), loaded);
+    }
+
+    /// A document from a newer rdm is refused, naming its version, rather
+    /// than loaded and later saved back without the fields it doesn't know.
+    #[test]
+    fn newer_store_version_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let newer = r#"{"version":3,"next_id":2,"downloads":[{"id":1,"url":"u","target":"t","status":"shelved"}]}"#;
+        std::fs::write(&path, newer).unwrap();
+
+        let err = JsonStore::new(&path).load().unwrap_err();
+        assert!(matches!(err, Error::UnsupportedStore(3)), "{err:?}");
+        assert!(err.to_string().contains("version 3"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            newer,
+            "left untouched"
+        );
+    }
+
+    #[test]
+    fn archived_and_tags_are_only_written_when_set() {
+        let json = serde_json::to_value(sample_record(1, Status::Completed)).unwrap();
+        assert!(json.get("archived").is_none());
+        assert!(json.get("tags").is_none());
     }
 
     #[test]

@@ -28,8 +28,8 @@ fn list(state: State<'_, AppState>) -> Vec<DownloadSnapshot> {
 /// Add a download. `dir` is the user's chosen destination (folder picker or
 /// typed in the Add dialog), checked by [`download_dir`]; blank defaults to
 /// [`default_dir`]. `checksum`, if given, must parse as `"sha256:<hex>"`;
-/// `limit` is a rate like `"500K"` (blank = unlimited). Returns the new
-/// download's id.
+/// `limit` is a rate like `"500K"` (blank = unlimited); `tags` follow the
+/// engine's tag rules. Returns the new download's id.
 #[tauri::command]
 fn add_download(
     app: tauri::AppHandle,
@@ -38,6 +38,7 @@ fn add_download(
     dir: Option<String>,
     checksum: Option<String>,
     limit: Option<String>,
+    tags: Option<Vec<String>>,
 ) -> Result<u64, String> {
     let dir = match dir {
         Some(d) if !d.trim().is_empty() => download_dir(&d)?,
@@ -52,9 +53,13 @@ fn add_download(
     let options = AddOptions {
         checksum,
         limit: parse_limit(limit)?,
+        tags: tags.unwrap_or_default(),
         ..AddOptions::default()
     };
-    Ok(state.manager.add_with(url, dir, options))
+    state
+        .manager
+        .add_with(url, dir, options)
+        .map_err(|e| e.to_string())
 }
 
 /// Check a user-chosen destination: it must be an absolute path and, if it
@@ -162,6 +167,46 @@ fn clear(state: State<'_, AppState>, statuses: Vec<Status>, ids: Option<Vec<u64>
     state.manager.clear(&statuses, ids.as_deref())
 }
 
+/// Archive the listed finished downloads. Returns how many changed.
+#[tauri::command]
+fn archive(state: State<'_, AppState>, ids: Vec<u64>) -> usize {
+    state.manager.archive(&ids)
+}
+
+/// Return the listed archived downloads to the working views. Returns how
+/// many changed.
+#[tauri::command]
+fn unarchive(state: State<'_, AppState>, ids: Vec<u64>) -> usize {
+    state.manager.unarchive(&ids)
+}
+
+/// Archive the finished downloads in `statuses` (only those in `ids`, if
+/// given). Returns the ids archived, for Undo to unarchive.
+#[tauri::command]
+fn archive_finished(
+    state: State<'_, AppState>,
+    statuses: Vec<Status>,
+    ids: Option<Vec<u64>>,
+) -> Vec<u64> {
+    state.manager.archive_finished(&statuses, ids.as_deref())
+}
+
+/// Add `tags` to the listed downloads. Returns how many changed, or the
+/// reason a tag was rejected.
+#[tauri::command]
+fn add_tags(state: State<'_, AppState>, ids: Vec<u64>, tags: Vec<String>) -> Result<usize, String> {
+    state
+        .manager
+        .add_tags(&ids, &tags)
+        .map_err(|e| e.to_string())
+}
+
+/// Remove `tags` from the listed downloads. Returns how many changed.
+#[tauri::command]
+fn remove_tags(state: State<'_, AppState>, ids: Vec<u64>, tags: Vec<String>) -> usize {
+    state.manager.remove_tags(&ids, &tags)
+}
+
 /// Check a completed download's file against `checksum`, given as
 /// `"sha256:<hex>"` or a bare 64-digit hex SHA-256. The result arrives in the
 /// snapshot's `checksum_state`.
@@ -217,11 +262,11 @@ fn resume_all(state: State<'_, AppState>) {
     }
 }
 
-/// Retry every failed download (Retry all failed).
+/// Retry every failed download (Retry all failed) that isn't archived.
 #[tauri::command]
 fn retry_failed(state: State<'_, AppState>) {
     for d in state.manager.snapshot() {
-        if d.status == Status::Failed {
+        if d.status == Status::Failed && !d.archived {
             state.manager.resume(d.id);
         }
     }
@@ -508,6 +553,11 @@ pub fn run() {
             stop,
             move_queued,
             clear,
+            archive,
+            unarchive,
+            archive_finished,
+            add_tags,
+            remove_tags,
             verify_checksum,
             download_log,
             remove,
