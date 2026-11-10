@@ -6,6 +6,7 @@
 //! never points at a pre-release, and also refuse a pre-release version
 //! outright; a pre-release build follows the newest release, rcs included.
 
+pub mod prefs;
 #[cfg(debug_assertions)]
 mod seam;
 
@@ -128,6 +129,15 @@ impl UpdaterState {
     /// The version staged to install at quit, if any.
     pub fn staged_version(&self) -> Option<String> {
         lock(&self.staged).as_ref().map(|(u, _)| u.version.clone())
+    }
+
+    /// The release page of the update the last check found (or the one
+    /// staged), so the webview never names the URL it opens.
+    pub fn notes_url(&self) -> Option<String> {
+        let found = lock(&self.found).as_ref().map(|(u, _)| u.version.clone());
+        found
+            .or_else(|| self.staged_version())
+            .map(|v| release_page(&v))
     }
 }
 
@@ -331,8 +341,10 @@ pub async fn check_command<R: Runtime>(
     Ok(found.map(|(info, _)| info))
 }
 
-/// The install command's work: download the update the last check found,
-/// then restart into it now, or keep it to install at quit.
+/// The install command's work: download `version`, the update the notice
+/// shows, then restart into it now, or keep it to install at quit. When that
+/// version is staged for the quit, its bytes are reused; a version that's
+/// neither found nor staged is refused.
 ///
 /// Restart now pauses downloads (as a quit does) and marks them as paused for
 /// the update: on Windows just before the installer takes over, elsewhere
@@ -345,21 +357,43 @@ pub async fn install_command<R: Runtime>(
     state: &UpdaterState,
     manager: &Manager,
     when: InstallWhen,
+    version: &str,
 ) -> Result<(), String> {
-    let (update, can_install) = lock(&state.found)
+    let found = lock(&state.found)
         .clone()
-        .ok_or("No update to install. Check for updates first.")?;
+        .filter(|(u, _)| u.version == version);
+    let staged = lock(&state.staged)
+        .clone()
+        .filter(|(u, _)| u.version == version);
+    // Install the version the notice shows. The update staged for the quit is
+    // already downloaded and verified: reuse it when it's that version.
+    let (update, can_install, staged_bytes) = match (found, staged) {
+        (found, Some((staged, bytes))) => (
+            staged,
+            found.is_none_or(|(_, can_install)| can_install),
+            Some(bytes),
+        ),
+        (Some((found, can_install)), None) => (found, can_install, None),
+        (None, None) => {
+            return Err(format!(
+                "rdm {version} isn't the update rdm found. Check for updates again."
+            ))
+        }
+    };
     if !can_install {
         return Err(
             "This copy of rdm can't update itself; download the new version from its release page."
                 .into(),
         );
     }
-    let bytes = download(&update, |p| {
-        let _ = app.emit(PROGRESS_EVENT, p);
-    })
-    .await
-    .inspect_err(|e| tracing::warn!("update download failed: {e}"))?;
+    let bytes = match staged_bytes {
+        Some(bytes) => bytes,
+        None => download(&update, |p| {
+            let _ = app.emit(PROGRESS_EVENT, p);
+        })
+        .await
+        .inspect_err(|e| tracing::warn!("update download failed: {e}"))?,
+    };
     match when {
         InstallWhen::OnQuit => {
             tracing::info!(version = %update.version, "update will install at quit");
