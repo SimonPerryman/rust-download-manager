@@ -117,7 +117,7 @@ mod tests {
         Segment { start, end, done }
     }
 
-    fn v2_state(dir: &Path, nonce: u64) -> DownloadState {
+    fn v2_state(dir: &Path, owner_tag: u64) -> DownloadState {
         DownloadState::segmented(
             "u",
             dir.join("x.bin"),
@@ -125,7 +125,7 @@ mod tests {
             Some("\"e\"".into()),
             None,
             vec![seg(0, 10, 4)],
-            nonce,
+            owner_tag,
         )
     }
 

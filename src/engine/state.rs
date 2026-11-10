@@ -57,8 +57,9 @@ pub struct DownloadState {
     pub segments: Option<Vec<Segment>>,
     /// v2 only: random id minted when a multi-segment download starts, so a
     /// stale checkpoint can't overwrite a newer download at the same path.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub nonce: Option<u64>,
+    /// An ownership tag, not a cryptographic value; stored as `"nonce"` on disk.
+    #[serde(default, rename = "nonce", skip_serializing_if = "Option::is_none")]
+    pub owner_tag: Option<u64>,
 }
 
 impl DownloadState {
@@ -78,7 +79,7 @@ impl DownloadState {
             etag,
             last_modified,
             segments: None,
-            nonce: None,
+            owner_tag: None,
         }
     }
 
@@ -91,7 +92,7 @@ impl DownloadState {
         etag: Option<String>,
         last_modified: Option<String>,
         segments: Vec<Segment>,
-        nonce: u64,
+        owner_tag: u64,
     ) -> Self {
         Self {
             version: SEGMENTED_VERSION,
@@ -101,7 +102,7 @@ impl DownloadState {
             etag: etag.filter(|e| is_strong_etag(e)),
             last_modified,
             segments: Some(segments),
-            nonce: Some(nonce),
+            owner_tag: Some(owner_tag),
         }
     }
 
@@ -163,7 +164,7 @@ impl DownloadState {
     }
 
     /// Like [`save`](Self::save), but only replaces a sidecar that is still on
-    /// disk with this state's `nonce`; returns whether it was written.
+    /// disk with this state's `owner_tag`; returns whether it was written.
     pub(crate) fn save_checkpoint(&self, path: &Path) -> Result<bool> {
         self.write_atomically(path, true)
     }
@@ -200,9 +201,10 @@ impl DownloadState {
         Ok(written?)
     }
 
-    /// Whether the sidecar on disk at `path` is this download's (same nonce).
+    /// Whether the sidecar on disk at `path` is this download's (same owner tag).
     fn owns(&self, path: &Path) -> bool {
-        self.nonce.is_some() && Self::load(path).is_ok_and(|on_disk| on_disk.nonce == self.nonce)
+        self.owner_tag.is_some()
+            && Self::load(path).is_ok_and(|on_disk| on_disk.owner_tag == self.owner_tag)
     }
 }
 
@@ -254,8 +256,8 @@ fn is_digits(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// A fresh random id for a v2 sidecar's `nonce`.
-pub(crate) fn new_nonce() -> u64 {
+/// A fresh random id for a v2 sidecar's `owner_tag`.
+pub(crate) fn new_owner_tag() -> u64 {
     use std::hash::{BuildHasher, Hasher};
     let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
     let now = std::time::SystemTime::now()
@@ -329,7 +331,7 @@ mod tests {
         Segment { start, end, done }
     }
 
-    fn v2(segments: Vec<Segment>, nonce: u64) -> DownloadState {
+    fn v2(segments: Vec<Segment>, owner_tag: u64) -> DownloadState {
         DownloadState::segmented(
             "u",
             "t",
@@ -337,7 +339,7 @@ mod tests {
             Some("\"e\"".into()),
             Some("lm".into()),
             segments,
-            nonce,
+            owner_tag,
         )
     }
 
@@ -351,7 +353,29 @@ mod tests {
         );
         let loaded: DownloadState = serde_json::from_str(&json).unwrap();
         assert_eq!(loaded.segments, None);
-        assert_eq!(loaded.nonce, None);
+        assert_eq!(loaded.owner_tag, None);
+    }
+
+    #[test]
+    fn owner_tag_is_stored_under_the_nonce_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let sidecar = dir.path().join("x.rdm");
+        // A sidecar as earlier rdm versions wrote it still loads and resumes.
+        std::fs::write(
+            &sidecar,
+            r#"{"version":2,"url":"u","target":"t","total":100,"etag":null,
+                "last_modified":null,"segments":[{"start":0,"end":100,"done":7}],
+                "nonce":12345}"#,
+        )
+        .unwrap();
+        let loaded = DownloadState::load(&sidecar).unwrap();
+        assert_eq!(loaded.owner_tag, Some(12345));
+
+        loaded.save(&sidecar).unwrap();
+        let on_disk: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&sidecar).unwrap()).unwrap();
+        assert_eq!(on_disk["nonce"], 12345);
+        assert!(on_disk.get("owner_tag").is_none());
     }
 
     #[test]
@@ -441,7 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_save_is_discarded_when_nonce_differs_or_sidecar_missing() {
+    fn checkpoint_save_is_discarded_when_owner_tag_differs_or_sidecar_missing() {
         let dir = tempfile::tempdir().unwrap();
         let sidecar = dir.path().join("x.rdm");
         let mine = v2(vec![seg(0, 100, 50)], 1);
@@ -450,7 +474,10 @@ mod tests {
 
         let theirs = v2(vec![seg(0, 100, 0)], 2);
         theirs.save(&sidecar).unwrap();
-        assert!(!mine.save_checkpoint(&sidecar).unwrap(), "foreign nonce");
+        assert!(
+            !mine.save_checkpoint(&sidecar).unwrap(),
+            "foreign owner tag"
+        );
         assert_eq!(DownloadState::load(&sidecar).unwrap(), theirs);
 
         let newer = v2(vec![seg(0, 100, 80)], 2);
@@ -481,7 +508,7 @@ mod tests {
             t.join().unwrap();
         }
         let loaded = DownloadState::load(&sidecar).unwrap();
-        assert_eq!(loaded.nonce, Some(5));
+        assert_eq!(loaded.owner_tag, Some(5));
         assert_eq!(tmp_files(dir.path()), 0);
     }
 
