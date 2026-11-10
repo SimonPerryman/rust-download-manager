@@ -30,7 +30,7 @@ could ship; this milestone builds it on today's code.
   `release-checks.yml` (`post-announce-jobs`) checks the published assets.
   No `.rpm` is built (it rejects pre-release versions).
 - **No updater at all.** `gui/src-tauri` has no `tauri-plugin-updater`,
-  `tauri.conf.json` has `"plugins": {}` and no `createUpdaterArtifacts`, and
+  `tauri.conf.json` has `"plugins": {}`, and
   no `latest.json` is produced. tauri-action's own `latest.json` upload
   doesn't apply, because it doesn't create the release here.
 - **Signing key.** The repo's Actions secrets hold only
@@ -71,29 +71,37 @@ Roadmap: [roadmap.md](../roadmap.md).
 - **Rust-side only.** The check and the install run in rdm's own Tauri
   commands, as the folder picker does. The webview gets no `updater:*`
   permission and the CSP is unchanged.
-- **Signed releases.** `bundle.createUpdaterArtifacts: true`. Each release
-  build signs its updater bundles with `TAURI_SIGNING_PRIVATE_KEY` and
-  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, passed from Actions secrets to the
-  GUI build job only:
-  - Windows: the NSIS `-setup.exe` and the `.msi`, each with a `.sig`;
-  - macOS: an `.app.tar.gz` per architecture (renamed so arm64 and x64
-    don't collide) with its `.sig`;
-  - Linux: the AppImage with its `.sig`.
-- **A signed `latest.json` on every release**, assembled by a release job
-  (tauri-action can't, see Context): the tag's version, release notes from
-  `CHANGELOG.md`, `pub_date`, and one entry per installer kind, keyed
+- **Signed releases, signed apart from the build.** The GUI build job
+  builds the updatable bundles unsigned; a separate `sign-gui-updates` job
+  in `release.yml` signs them with `tauri signer sign --app-version` (the
+  version goes into the signature) using `TAURI_SIGNING_PRIVATE_KEY` and
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. That job runs no build and no
+  dependency install scripts, so the key never reaches code a compromised
+  dependency could run. (Instead of `bundle.createUpdaterArtifacts`, which
+  signs inside the build.) The bundles:
+  - Windows: the NSIS `-setup.exe` and the `.msi`;
+  - macOS: the `.app` as an `.app.tar.gz` per architecture, named like the
+    `.dmg` so arm64 and x64 don't collide;
+  - Linux: the AppImage.
+- **A signed `latest.json` on every release**, written by the same job
+  (tauri-action can't, see Context): the tag's version, a link to the
+  release notes, `pub_date`, and one entry per installer kind, keyed
   `{os}-{arch}-{installer}` (`windows-x86_64-nsis`, `windows-x86_64-msi`,
-  `darwin-aarch64-app`, `darwin-x86_64-app`, `linux-x86_64-appimage`, …),
-  each with its asset URL on the tagged release and its signature, plus a
-  plain `darwin-{arch}` key (macOS has one kind). The app then updates with
-  the same kind of installer it was installed with: an `.msi` install is
-  never replaced by the NSIS setup, and no plain `windows-*` or `linux-*`
-  key exists that a `.deb` or `.msi` install could fall back to.
-- **A release-time signature check:** before the release is created, a job
-  verifies every signature in `latest.json` against the public key in
-  `tauri.conf.json`, with a pinned minisign verifier, and fails the release
-  if any doesn't verify or an expected entry is missing.
-  `release-checks.yml` also requires `latest.json` and the updater assets.
+  `darwin-aarch64-app`, `darwin-x86_64-app`, `linux-x86_64-appimage`), each
+  with its asset URL on the tagged release and its signature. The app asks
+  for its own installer kind's key, so an `.msi` install is never replaced
+  by the NSIS setup, and a `.deb` reads the AppImage entry only to learn the
+  version.
+- **A release-time signature check:** before the release is created, the
+  job verifies every signature (and its signed version) against the public
+  key in `tauri.conf.json`, with a minisign check on Node's built-in crypto
+  (`gui/scripts/updater-manifest.mjs`, no third-party code), and fails the
+  release if any doesn't verify, an entry is missing, or the key is still
+  the placeholder. `release-checks.yml` also requires `latest.json` and the
+  macOS archives.
+- **Signed versions are required** (`requireSignedVersion`): a tampered
+  `latest.json` can't pair a newer version number with an older, genuinely
+  signed bundle.
 - **When rdm checks:** on start, then once a day while it stays open,
   while automatic checks are on; plus a **Check for updates** button in
   Settings that always works. A failed automatic check is logged, not shown;
@@ -177,34 +185,36 @@ Roadmap: [roadmap.md](../roadmap.md).
 
 ## Tasks
 ### PR A — release pipeline and updater wiring (GUI crate, workflows)
-- [ ] Add `tauri-plugin-updater` (and `tauri-plugin-process` if the restart
-  needs it) to the GUI crate; set `plugins.updater.pubkey`, the endpoint and
-  `bundle.createUpdaterArtifacts` in `tauri.conf.json`. No `updater:*`
-  permission in `capabilities/default.json`; the CSP is unchanged.
-- [ ] `release-gui.yml`: pass the signing secrets to the build step only;
-  collect the updater bundles and `.sig` files (macOS archives renamed per
-  architecture) into the `artifacts-gui-*` artifacts.
-- [ ] A job that assembles `latest.json` from the collected signatures and
-  the tag (asset URLs on `releases/download/<tag>/`, notes from
-  `CHANGELOG.md`), verifies every signature against the public key in
-  `tauri.conf.json` with a pinned minisign verifier, and hands `latest.json`
-  to the host job as a workflow artifact, so it's attached by the same
-  `gh release create`.
-- [ ] `release-checks.yml` `assets`: `latest.json` and the updater assets
+- [x] Add `tauri-plugin-updater` to the GUI crate; set
+  `plugins.updater.pubkey` (a placeholder until the owner's public key
+  lands), the endpoint, `requireSignedVersion` and the Windows passive
+  install mode in `tauri.conf.json`. No `updater:*` permission in
+  `capabilities/default.json`; the CSP is unchanged.
+- [x] `release-gui.yml`: archive the macOS `.app` per architecture; no
+  signing secrets.
+- [x] `release.yml` `sign-gui-updates`: sign the updatable bundles, write
+  `latest.json` (asset URLs on `releases/download/<tag>/`) and verify every
+  signature against the public key in `tauri.conf.json`, then hand
+  `latest.json` to the host job, so the same `gh release create` attaches
+  it.
+- [x] `release-checks.yml` `assets`: `latest.json` and the macOS archives
   are attached.
-- [ ] Engine: pause downloads for a restart and remember exactly which
+- [x] Engine: pause downloads for a restart and remember exactly which
   ones it paused, so the next start can offer Resume all for those (and
   only those); nothing resumes on its own.
-- [ ] Rust commands: check for an update (returns the version, notes link
+- [x] Rust commands: check for an update (returns the version, notes link
   and whether this install can update in place), restart now (progress
   events, pause downloads first, then install and restart), and install
   when I quit (download and verify now, install on the next normal quit).
   The stable build's version check refuses pre-releases; an rc build looks
   up the newest release, rcs included. The Windows before-exit hook pauses
-  downloads.
-- [ ] The debug-only test seam (endpoint, public key, stop before running
-  the installer), compiled out of release builds.
-- [ ] Rust tests against a local fixture (see Acceptance criteria).
+  downloads. Commands to list and resume the downloads the update paused,
+  and to forget them.
+- [x] The debug-only test seam (endpoint, public key, installer kind, stop
+  before running the installer), compiled out of release builds.
+- [x] Rust tests against a local fixture (see Acceptance criteria).
+- [ ] The owner's public key replaces the placeholder. Until it does (and
+  the two secrets exist), every release fails at `sign-gui-updates`.
 
 ### PR B — the notice and Settings (GUI)
 - [ ] Mock-ups of the first-run prompt, the notice and the Settings items,
@@ -231,26 +241,31 @@ and apply here without being restated._
 
 **GUI crate (`cargo test -p rdm-gui`, against a local fixture serving a
 `latest.json` signed with a throwaway test key):**
-- [ ] A newer version is offered, with its version and notes.
-- [ ] The same version and an older version are not offered.
-- [ ] A pre-release version is not offered to a stable build.
-- [ ] An update whose signature doesn't match the public key is rejected
-  at install, and nothing is replaced.
-- [ ] An entry is chosen by installer kind: an `.msi` install gets the
-  `.msi` entry, an NSIS install the NSIS one; a missing entry means no
-  in-place update.
-- [ ] An rc build is offered a newer rc and the final release; a stable
+- [x] A newer version is offered, with its version and notes.
+- [x] The same version and an older version are not offered.
+- [x] A pre-release version is not offered to a stable build.
+- [x] An update whose signature doesn't match the public key, or whose
+  signature names another version, is rejected before install, and nothing
+  is replaced.
+- [x] An entry is chosen by installer kind: an `.msi` install gets the
+  `.msi` entry, an NSIS install the NSIS one; a release without this
+  install's entry offers nothing (logged); a `.deb` install is told the
+  version but refused an in-place install.
+- [x] An rc build is offered a newer rc and the final release; a stable
   build is offered neither an rc nor anything from the pre-release list.
-- [ ] Restart now pauses running downloads before the installer step: their
-  records are Paused with their partial files kept and marked as paused
-  for the update; on the next start nothing resumes on its own, and
-  Resume all resumes exactly the marked ones.
-- [ ] Install when I quit downloads and verifies the update without
+- [x] Restart now pauses running downloads (on Windows just before the
+  installer takes over; on macOS and Linux right after the new version is
+  in place, so a failed install leaves them running): their records are
+  Paused with their partial files kept and marked as paused for the
+  update; on the next start nothing resumes on its own, and Resume all
+  resumes exactly the marked ones (`tests/restart.rs` for the engine). An
+  update staged for the quit is dropped.
+- [x] Install when I quit downloads and verifies the update without
   touching downloads, and the install step runs at the quit (up to the
   test seam's stop point).
-- [ ] A release build ignores the test seam (a test or guard proves it's
+- [x] A release build ignores the test seam (a test or guard proves it's
   compiled out).
-- [ ] `capabilities/default.json` grants no `updater:*` permission and the
+- [x] `capabilities/default.json` grants no `updater:*` permission and the
   CSP's `connect-src` is unchanged (a test or guard).
 
 **Frontend (Vitest):**
@@ -278,9 +293,9 @@ and apply here without being restated._
 - [ ] With automatic checks off, no check runs on start.
 
 **Release pipeline:**
-- [ ] The signature check fails on a `latest.json` signed with a different
-  key (run locally with a throwaway keypair, or as a CI job on fixture
-  files).
+- [x] The signature check fails on bundles signed with a different key or
+  for another version, and accepts a signature made by `tauri signer sign`
+  (`gui/scripts/updater-manifest.test.mjs`, in `pnpm test`).
 - [ ] Pushing the first rc tag attaches `latest.json` with a verified entry
   for every updatable bundle, and `release-checks` passes.
 - [ ] **End to end (owner, on real tags):** an installed rc build is
