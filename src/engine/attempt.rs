@@ -231,7 +231,7 @@ async fn attempt_once(
                 etag,
                 last_modified,
                 segments,
-                state::new_nonce(),
+                state::new_owner_tag(),
             );
             st.save(&sidecar)?;
             let file = tokio::fs::File::create(&part).await?;
