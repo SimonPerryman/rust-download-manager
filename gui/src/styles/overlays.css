@@ -1,0 +1,98 @@
+/* Overlays: dialogs, the row menu, toasts and finish notifications. In the utilities layer,
+   ahead of Tailwind's utilities (see index.css). */
+@layer utilities {
+  /* ---------- overlays ---------- */
+  .choice {
+    @apply grid cursor-pointer items-start gap-x-3 gap-y-1 rounded-md p-3;
+    grid-template-columns: 16px minmax(0, 1fr);
+  }
+  .choice:hover {
+    background: var(--hover);
+  }
+  .choice input {
+    margin-top: 2px;
+    accent-color: var(--btn);
+  }
+  .choice-hint {
+    color: var(--g600);
+  }
+  .choice:has(input:checked) {
+    background: var(--primary-soft);
+  }
+  .choice:has(input:checked) .choice-hint {
+    color: var(--primary-ink);
+  }
+  .row-menu {
+    @apply fixed z-50 rounded-lg bg-raised p-1;
+    min-width: 216px;
+    box-shadow:
+      var(--sh-pop),
+      0 0 0 1px var(--line);
+  }
+  .row-menu button {
+    @apply flex h-8 w-full items-center gap-2 rounded-sm px-2 text-left text-sm;
+    color: var(--ink);
+  }
+  .row-menu button svg {
+    color: var(--g400);
+  }
+  .row-menu button:hover,
+  .row-menu button:focus {
+    outline: none;
+    background: var(--primary-soft);
+    color: var(--primary-ink);
+  }
+  .row-menu button:hover svg,
+  .row-menu button:focus svg {
+    color: var(--primary-ink);
+  }
+  .row-menu kbd {
+    @apply text-xs;
+    font-family: inherit;
+    color: var(--g400);
+  }
+  .row-menu hr {
+    @apply my-1 h-px border-0;
+    background: var(--line);
+  }
+  .row-menu-note {
+    @apply -mt-1 pb-2 pl-8 pr-2 pt-1 text-xs;
+    color: var(--g400);
+  }
+  .toolbar.selecting {
+    background: var(--primary-soft);
+  }
+  .toolbar.selecting .btn-ghost {
+    color: var(--primary-ink);
+  }
+  .toast {
+    @apply pointer-events-auto flex min-h-10 items-center gap-4 rounded-lg py-2 pl-4 pr-2 text-sm shadow-pop;
+    max-width: min(560px, calc(100vw - 32px));
+    background: var(--toast-bg);
+    color: var(--toast-ink);
+    animation: rise 0.2s ease-out;
+  }
+  .toast .btn {
+    @apply h-7;
+    color: var(--toast-action);
+  }
+  .toast .btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .toast .icon-btn {
+    color: inherit;
+    opacity: 0.6;
+  }
+  .notif {
+    @apply grid gap-3 rounded-lg bg-raised p-3;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    box-shadow:
+      var(--sh-pop),
+      0 0 0 1px var(--line);
+    animation: slideIn 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .name-filter {
+    width: 192px;
+  }
+}

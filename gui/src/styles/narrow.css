@@ -1,0 +1,82 @@
+/* Narrow windows. In the utilities layer, ahead of Tailwind's utilities (see index.css). */
+@layer utilities {
+  /* ---------- narrow windows: keep 640px usable ---------- */
+  @media (max-width: 1099px) {
+    .c-conn {
+      display: none;
+    }
+  }
+  @media (max-width: 959px) {
+    .c-added {
+      display: none;
+    }
+    .ov {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+    }
+    .pane-state {
+      display: none;
+    }
+    .tb-label {
+      display: none;
+    }
+  }
+  @media (max-width: 819px) {
+    .app {
+      grid-template-columns: 160px minmax(0, 1fr);
+    }
+    .c-prog {
+      width: 112px;
+    }
+    .name-filter {
+      width: 128px;
+    }
+  }
+  /* Under 760px the sidebar becomes an icon rail: each filter's label is its tooltip
+     and its count a corner badge. Row and toolbar buttons keep their icons only. */
+  @media (max-width: 759px) {
+    .app {
+      grid-template-columns: 56px minmax(0, 1fr);
+    }
+    .brand-name,
+    .f-label,
+    .side-head {
+      display: none;
+    }
+    .folder-list {
+      margin-top: 12px;
+      padding-top: 12px;
+      box-shadow: inset 0 1px 0 var(--line-strong);
+    }
+    .f-count {
+      position: absolute;
+      top: 0;
+      right: 0;
+      min-width: 16px;
+      padding: 0 4px;
+      line-height: 16px;
+      background: var(--sidebar);
+    }
+    .c-size {
+      width: 72px;
+    }
+    .c-speed {
+      width: 88px;
+    }
+    .c-left {
+      width: 76px;
+    }
+    .c-act {
+      width: 112px;
+    }
+    .act-label,
+    .sel-label {
+      display: none;
+    }
+  }
+  @media (max-width: 679px) {
+    .sb-counts {
+      display: none;
+    }
+  }
+}

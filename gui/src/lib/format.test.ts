@@ -21,7 +21,7 @@ describe("formatBytes", () => {
     expect(formatBytes(2048 * 1024 * 1024 * MiB)).toBe("2048.0 TB");
   });
 
-  // The Size column (.c-size in index.css) is sized for "1023.9 MB"; a longer string would clip.
+  // The Size column (.c-size in styles/table.css) is sized for "1023.9 MB"; a longer string would clip.
   it("never runs past nine characters below a petabyte", () => {
     const edges = [1023, 1023.9 * 1024, 1023.9 * MiB, 1023.9 * 1024 * MiB, 1023.9 * 1024 ** 4];
     for (const bytes of edges) expect(formatBytes(bytes).length).toBeLessThanOrEqual(9);

@@ -138,7 +138,7 @@ type Root = {
 
 /**
  * Stamps prefs onto the document root: `data-theme` records the choice,
- * `data-density` sets the row height (index.css), and the `.dark` class that
+ * `data-density` sets the row height (styles/theme.css), and the `.dark` class that
  * Tailwind's `dark:` variants and the dark palette key off reflects the
  * resolved theme.
  */

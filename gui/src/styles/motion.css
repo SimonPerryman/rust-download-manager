@@ -1,0 +1,76 @@
+/* Animations, and their opt-out for reduced motion. */
+
+@keyframes freshTint {
+  0%,
+  80% {
+    background-color: var(--success-soft);
+  }
+  100% {
+    background-color: var(--success-linger);
+  }
+}
+@keyframes laneIn {
+  from {
+    height: 0;
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@keyframes laneOut {
+  to {
+    height: 0;
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@keyframes foldIn {
+  from {
+    background-color: var(--lane-to);
+  }
+}
+@keyframes bump {
+  0% {
+    transform: scale(1);
+  }
+  18% {
+    transform: scale(1.45);
+    background: var(--success-soft);
+    color: var(--success-ink);
+  }
+  60% {
+    background: var(--success-soft);
+    color: var(--success-ink);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes slideIn {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes rise {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

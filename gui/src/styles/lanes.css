@@ -1,0 +1,154 @@
+/* Lanes: the table cell's hairlines and the details pane's lane rows. In the utilities
+   layer, ahead of Tailwind's utilities (see index.css). */
+@layer utilities {
+  /* ---------- cell lanes: one hairline per piece of the file, drawn across the whole file ---------- */
+  .lanes {
+    position: relative;
+    height: calc(var(--n) * var(--lh) + (var(--n) - 1) * var(--gap));
+    transition: height 0.9s ease-in-out;
+  }
+  .lanes-cell {
+    --lh: 2px;
+    --gap: 2px;
+    --bar: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+  .lanes-cell.dense {
+    --gap: 1px;
+  }
+  .lane {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(var(--i) * (var(--lh) + var(--gap)));
+    height: var(--lh);
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--lane-track);
+    transition:
+      top 0.9s ease-in-out,
+      height 0.9s ease-in-out;
+  }
+  .lane-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: color-mix(in srgb, var(--lane-to) var(--mix), var(--lane-from));
+  }
+  .lanes.muted .lane-fill {
+    background: var(--lane-muted);
+  }
+  /* The finish: every line slides into one bar, which then turns success. */
+  .lanes.converged {
+    height: var(--bar);
+  }
+  .lanes.converged .lane {
+    top: 0;
+    height: var(--bar);
+    background: transparent;
+  }
+  .lanes.converged .lane-fill {
+    background: var(--lane-done);
+    transition: background-color 0.6s ease-out 0.9s;
+  }
+  /* ---------- pane lane rows: one row per live connection, each only its own work ---------- */
+  /* Four rows tall at most, so the pane (and the scale under it) keeps its
+     size; past four lanes the rows scroll in place. */
+  .lane-rows {
+    --lane-row: 16px;
+    max-height: calc(4 * var(--lane-row));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* The rows and the scale reserve the same scrollbar gutter, so the scale's
+     marks line up with the bars whether or not the rows scroll. */
+  .lane-rows,
+  .lane-scale {
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+  }
+  .lane-row {
+    display: flex;
+    align-items: center;
+    height: var(--lane-row);
+    border-radius: 3px;
+    overflow: hidden;
+    animation: laneIn 0.6s ease-out;
+  }
+  /* A closing lane merges back up into the rows above. */
+  .lane-row.leaving {
+    animation: laneOut 0.6s ease-in forwards;
+  }
+  .lane-row.single {
+    animation: none;
+  }
+  /* The row under the pointer lights up: rows have no labels, so this is
+     what says there's a tooltip to find. */
+  .lane-row.live:hover {
+    background: var(--hover);
+  }
+  .lane-row.live:hover .lane-track {
+    background: var(--lane-track-hover);
+  }
+  .lane-track {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    height: 6px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--lane-track);
+  }
+  .lane-own,
+  .lane-now,
+  .lane-gap {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+  }
+  /* Pieces the lane finished: softer than the one it's on now. */
+  .lane-own {
+    background: var(--lane-from);
+  }
+  /* Work just moved here from a lane that closed. */
+  .lane-own.fresh {
+    animation: foldIn 1.2s ease-out;
+  }
+  .lane-now {
+    background: var(--lane-to);
+  }
+  /* Where the lane is writing. */
+  .lane-now::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--ink);
+    opacity: 0.5;
+  }
+  /* Started, handed back, and waiting for a lane. */
+  .lane-gap {
+    border: 1px dashed var(--accent);
+    border-radius: 2px;
+  }
+  .lane-rows.muted .lane-own {
+    background: var(--lane-muted);
+  }
+  .lane-rows.done .lane-own {
+    background: var(--lane-done);
+  }
+  .lane-scale {
+    @apply mt-1 flex justify-between text-xs tabular-nums;
+    overflow: hidden;
+    color: var(--g400);
+  }
+  .lane-tip {
+    @apply pointer-events-none fixed z-50 whitespace-nowrap rounded-lg px-3 py-2 text-sm tabular-nums shadow-pop;
+    background: var(--toast-bg);
+    color: var(--toast-ink);
+    line-height: 1.4;
+  }
+}

@@ -1,0 +1,25 @@
+/* The sidebar's filters and counts. In the utilities layer, ahead of Tailwind's utilities
+   (see index.css). */
+@layer utilities {
+  /* ---------- sidebar ---------- */
+  .f-item[aria-current="true"] {
+    background: var(--raised);
+    color: var(--ink);
+    box-shadow: var(--sh-raised);
+  }
+  .f-item[aria-current="true"] .f-icon {
+    color: var(--accent);
+  }
+  .f-count {
+    @apply inline-block min-w-5 rounded-lg px-1 text-right text-xs tabular-nums;
+    color: var(--g600);
+  }
+  .f-count.alert {
+    background: var(--danger-soft);
+    color: var(--danger-ink);
+    font-weight: 600;
+  }
+  .f-count.bump {
+    animation: bump 1.4s ease-out;
+  }
+}
