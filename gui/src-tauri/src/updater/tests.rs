@@ -412,7 +412,7 @@ impl Fixture {
         }
     }
 
-    /// Start a download that keeps running.
+    /// Start a download that keeps running, with its partial file on disk.
     fn start_download(&self) -> u64 {
         let id = self.manager.add(
             self.files.url("/slow"),
@@ -421,7 +421,20 @@ impl Fixture {
             None,
         );
         self.wait_status(id, Status::Downloading);
+        // Downloading is reported before the partial file is created; a
+        // pause in between has no partial file to keep.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !self.part_exists(id) {
+            assert!(Instant::now() < deadline, "no partial file");
+            std::thread::sleep(Duration::from_millis(10));
+        }
         id
+    }
+
+    fn part_exists(&self, id: u64) -> bool {
+        let snapshot = self.manager.snapshot();
+        let target = &snapshot.iter().find(|s| s.id == id).unwrap().target;
+        std::path::Path::new(&format!("{}.part", target.display())).exists()
     }
 
     fn wait_status(&self, id: u64, want: Status) {
