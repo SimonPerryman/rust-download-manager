@@ -1,4 +1,4 @@
-// Mirrors the engine's `DownloadSnapshot` (see src/engine/manager.rs). Field
+// Mirrors the engine's `DownloadSnapshot` (see src/engine/manager/mod.rs). Field
 // names and the `status` set are the frozen contract the backend serializes.
 // There is intentionally no "retrying" status: the engine retries internally.
 
