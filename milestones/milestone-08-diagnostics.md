@@ -183,7 +183,7 @@ Roadmap: [roadmap.md](../roadmap.md).
 - A CLI log file. The CLI runs in a terminal, so stderr plus `-v` and
   `RUST_LOG` is enough. Revisit if the CLI gains a daemon or queue mode.
 - An in-app log viewer for the app-wide log.
-- Code signing and the in-app updater (already in the backlog).
+- Code signing (backlog) and the in-app updater (M9).
 
 ## Tasks
 ### PR A — crash containment and durable logging (engine, CLI, GUI crate)

@@ -35,6 +35,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M6 | Releases & install | done | [[milestone-06-releases-install]] |
 | M7 | Archive & tags | done | [[milestone-07-archive-tags]] |
 | M8 | Diagnostics — finding the bug when rdm crashes | todo | [[milestone-08-diagnostics]] |
+| M9 | In-app updater | todo | [[milestone-09-in-app-updater]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 
@@ -44,7 +45,9 @@ the parallel-download speed feature; M4 is the day-to-day queue/throttle layer.
 M6 (prebuilt releases) follows M5 so the first release ships the new GUI. M7
 needs M5's details pane, context menu and multi-select, and comes after M6.
 M8 (diagnostics) follows the first releases, now that bugs show up on
-machines the developer can't reach.
+machines the developer can't reach. M9 (in-app updater) builds on M6's
+release pipeline and doesn't depend on M8, so the two can land in either
+order.
 
 ## Backlog (not yet scheduled — parked on purpose)
 
@@ -71,11 +74,9 @@ machines the developer can't reach.
 - **Code signing (cut from M6)**: sign the Windows binaries and installers
   (e.g. Azure Trusted Signing) and sign and notarise the macOS app (Apple
   Developer Program), so SmartScreen and Gatekeeper stop warning.
-- **In-app updater (cut from M6)**: the Tauri updater plugin with a signed
-  `latest.json` on each release, a Rust-side check on start and an "Update
-  available" notice with Install & restart. The update keypair already
-  exists. The drafted scope and tests are in the git history of
-  [[milestone-06-releases-install]].
+- **Updater extras (cut from M9)**: "Skip this version" in the update
+  notice; in-app updates for `.deb` installs (the plugin can, but it needs
+  an admin password prompt that not every desktop has).
 - **Archive and tag automation (cut from M7)**: auto-archive finished
   downloads after N days; auto-tag rules by host or file type; tag rename,
   merge and colours.
