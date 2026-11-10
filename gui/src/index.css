@@ -668,12 +668,28 @@
     transition: background-color 0.6s ease-out 0.9s;
   }
   /* ---------- pane lane rows: one row per live connection, each only its own work ---------- */
+  /* Four rows tall at most, so the pane (and the scale under it) keeps its
+     size; past four lanes the rows scroll in place. */
+  .lane-rows {
+    --lane-row: 16px;
+    max-height: calc(4 * var(--lane-row));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  /* The rows and the scale reserve the same scrollbar gutter, and the scale
+     starts where the tracks do (past the label column), so its marks line up
+     with the bars whether or not the rows scroll. */
+  .lane-rows,
+  .lane-scale {
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+  }
   .lane-row {
     display: grid;
     grid-template-columns: 48px minmax(0, 1fr);
     align-items: center;
     gap: 8px;
-    height: 16px;
+    height: var(--lane-row);
     overflow: hidden;
     animation: laneIn 0.6s ease-out;
   }
@@ -737,6 +753,8 @@
   }
   .lane-scale {
     @apply mt-1 flex justify-between text-xs tabular-nums;
+    overflow: hidden;
+    padding-left: 56px;
     color: var(--g400);
   }
   .lane-tip {

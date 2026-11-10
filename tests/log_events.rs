@@ -75,13 +75,26 @@ async fn a_multi_lane_download_tells_its_story() {
     for lane in 1..=4 {
         assert!(has(&detail, &format!("Lane {lane} opened")), "{detail:#?}");
     }
-    // Lane 1 rides the first response; the others each take a piece.
+    // Lane 1 rides the first response, yet says which piece it is on like
+    // the others do.
+    assert!(
+        has(&detail, "Lane 1 started piece 1 of 4 (0 B – 1.00 MB)"),
+        "{detail:#?}"
+    );
     for lane in 2..=4 {
         assert!(
             has(&detail, &format!("Lane {lane} started piece ")),
             "{detail:#?}"
         );
     }
+    assert_eq!(
+        detail
+            .iter()
+            .filter(|l| l.starts_with("Lane 1 started "))
+            .count(),
+        1,
+        "{detail:#?}"
+    );
     assert!(
         detail
             .iter()

@@ -916,7 +916,19 @@ async fn work(
             return Ok(());
         }
         let (idx, resp) = match first.take() {
-            Some((idx, resp)) => (idx, Some(resp)),
+            Some((idx, resp)) => {
+                // The probe's response already holds this piece, so no claim
+                // logs it; say so the same way.
+                let (seg, count) = {
+                    let table = shared.table.lock().unwrap();
+                    (table.segments[idx], table.segments.len())
+                };
+                tracing::debug!(
+                    "{}",
+                    claim_line(number, None, idx, count, seg, Claim::Fresh)
+                );
+                (idx, Some(resp))
+            }
             None => {
                 let leave = slot.try_retire();
                 if leave != Leave::Stay {

@@ -75,11 +75,12 @@ the partial file.
     closes. Each row shows only its own lane's work: the piece it is on now,
     strong, and the pieces it finished earlier, soft, so no part of the file
     is drawn twice. A closed lane's work moves to the top row (Lane 1's); if
-    it left a piece unfinished, the rest shows dashed until another lane takes it.
-    Hover a row for its piece and how far it has got. Paused or stopped, the
-    rows become one row of the work so far; once the download completes, they
-    give way to one finish bar and a line such as "Fetched in 4 pieces · up
-    to 3 lanes".
+    it left a piece unfinished, the rest shows dashed until another lane
+    takes it. Past four lanes the rows scroll in place, so the pane keeps
+    its size. Hover a row for its piece and how far it has got. Paused or
+    stopped, the rows become one row of the work so far; once the download
+    completes, they give way to one finish bar and a line such as "Fetched
+    in 4 pieces · up to 3 lanes".
   - **Speed** graphs the last 60 seconds, with the speed limit as a dashed
     line.
   - **Log** tells the download's story in short lines, updating while the

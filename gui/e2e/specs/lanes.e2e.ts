@@ -76,6 +76,59 @@ async function waitForLaneRows(pane: string, n: number): Promise<void> {
   expect(await count(`${rowsSelector(pane, "lanes")} [data-testid="lane-now"]`)).toBe(n);
 }
 
+/**
+ * Up to 16 lanes can be open, so the rows block stays four rows tall and
+ * scrolls in place: with 12 more rows (copies of a live one, removed after)
+ * neither the block nor the scale under it moves, and the scale still lines
+ * up with the tracks.
+ */
+async function expectBoundedRows(pane: string): Promise<void> {
+  const rows = rowsSelector(pane, "lanes");
+  const scale = `${pane} .lane-scale`;
+  // Measured once the rows have finished sliding in.
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (sel) => document.querySelector(sel)?.getAnimations({ subtree: true }).length === 0,
+        rows,
+      ),
+    { timeoutMsg: "the lane rows kept animating" },
+  );
+  const block = await rectOf(rows);
+  const scaleAt = await rectOf(scale);
+  await browser.execute((sel) => {
+    const box = document.querySelector(sel)!;
+    const row = box.querySelector('[data-testid="lane-row"]')!;
+    for (let i = 0; i < 12; i++) {
+      const copy = row.cloneNode(true) as HTMLElement;
+      copy.dataset.testid = "lane-row-copy";
+      // Full height at once: a live row slides in from nothing.
+      copy.style.animation = "none";
+      box.append(copy);
+    }
+  }, rows);
+  try {
+    const grown = await rectOf(rows);
+    expect(grown.height).toBeCloseTo(block.height, 0);
+    expect((await rectOf(scale)).y).toBeCloseTo(scaleAt.y, 0);
+    const scrolls = await browser.execute((sel) => {
+      const box = document.querySelector(sel) as HTMLElement;
+      return box.scrollHeight > box.clientHeight;
+    }, rows);
+    expect(scrolls).toBe(true);
+    // Scrolling or not, the scale's ends sit at the tracks' ends.
+    const track = await rectOf(`${rows} .lane-track`);
+    const first = await rectOf(`${scale} span:first-child`);
+    const last = await rectOf(`${scale} span:last-child`);
+    expect(Math.abs(first.x - track.x)).toBeLessThan(1.5);
+    expect(Math.abs(last.x + last.width - (track.x + track.width))).toBeLessThan(1.5);
+  } finally {
+    await browser.execute((sel) => {
+      document.querySelectorAll(`${sel} [data-testid="lane-row-copy"]`).forEach((r) => r.remove());
+    }, rows);
+  }
+}
+
 /** Opens the details pane for `id` by clicking its row (outside the buttons). */
 async function openDetails(id: number): Promise<void> {
   await dismissOverlays();
@@ -135,6 +188,7 @@ describe("rdm GUI lanes and details pane", () => {
     ).toBeGreaterThan(0);
     await waitForText(headSelector(pane), "4 lanes · 4 of 4 pieces left");
     expect(await count(`${rowSelector(id)} ${CELL_LANE}`)).toBe(4);
+    await expectBoundedRows(pane);
 
     // Paused, no lane is live: one row holds the work so far.
     await clickRowAction(id, "Pause");
