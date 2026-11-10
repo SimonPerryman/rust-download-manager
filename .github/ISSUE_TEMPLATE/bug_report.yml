@@ -63,8 +63,8 @@ body:
         wrong", use the Copy diagnostics button there). Command line: run
         the command again with `-v` (or with `RUST_LOG=debug` set) and paste
         the output. The desktop app's diagnostics hide links (all but the
-        scheme), your downloads' file names and folders, and your home
-        folder; the command line's output only removes a link's login and
+        scheme), the file names and folders of the downloads in your list,
+        and your home folder; the command line's output only removes a link's login and
         query string. Check the text for anything private before posting.
         If a developer asks for more, the full log is in the logs folder.
       render: text

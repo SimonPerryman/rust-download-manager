@@ -250,11 +250,13 @@ stay visible. Only `state.json` keeps download URLs in full.
   - a link keeps only its scheme and login marker, with its site and path
     replaced: `https://<redacted>:<redacted>@<site-1>/<path>?<redacted>`
     (the same site gets the same number throughout the report);
-  - your downloads' file names show as `<file-1>.iso`, keeping the
-    extension;
-  - download folders show as `<folder-1>`, and your home folder as `~`.
+  - the file names of the downloads in your list show as `<file-1>.iso`,
+    keeping the extension;
+  - their folders and the default download folder show as `<folder-1>`,
+    and your home folder as `~`.
 
-  Other text in the log lines stays as it is, so still read the report
+  Other text in the log lines stays as it is, including the names of
+  downloads you've since removed from the list, so still read the report
   before you post it. If a developer needs more, the full log is in the logs
   folder.
 

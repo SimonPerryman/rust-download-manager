@@ -118,5 +118,5 @@ display downloads, but don't fetch anything themselves.
   stay. The desktop app's Copy diagnostics only puts a report on your
   clipboard, for you to read and paste into a bug report yourself, and
   hides more: links keep only their scheme (sites and paths become
-  `<site-1>` and `<path>`), and your downloads' file names and folders
-  become `<file-1>.iso` and `<folder-1>`.
+  `<site-1>` and `<path>`), and the file names and folders of the
+  downloads in your list become `<file-1>.iso` and `<folder-1>`.

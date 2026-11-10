@@ -134,13 +134,37 @@ where
 
     let output = tracing_subscriber::fmt::layer()
         .with_writer(stderr)
-        .and_then(file.map(|writer| {
-            tracing_subscriber::fmt::layer()
-                .with_ansi(false)
-                .with_writer(writer)
-        }))
+        .and_then(file.map(file_layer))
         .with_filter(filter);
     tracing_subscriber::registry().with(logs).with(output)
+}
+
+/// The file output: plain text, with a field formatter of its own.
+fn file_layer<S, W>(writer: W) -> impl tracing_subscriber::Layer<S>
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    W: for<'w> MakeWriter<'w> + Send + Sync + 'static,
+{
+    tracing_subscriber::fmt::layer()
+        .with_ansi(false)
+        .fmt_fields(PlainFields::default())
+        .with_writer(writer)
+}
+
+/// The file layer's field formatter. Layers that share a field formatter
+/// type share each span's formatted fields too, so the file would reuse the
+/// stderr layer's colour codes; a type of its own keeps the file plain.
+#[derive(Default)]
+struct PlainFields(tracing_subscriber::fmt::format::DefaultFields);
+
+impl<'w> tracing_subscriber::fmt::FormatFields<'w> for PlainFields {
+    fn format_fields<R: tracing_subscriber::field::RecordFields>(
+        &self,
+        writer: tracing_subscriber::fmt::format::Writer<'w>,
+        fields: R,
+    ) -> std::fmt::Result {
+        self.0.format_fields(writer, fields)
+    }
 }
 
 /// Write out every queued line, stop the file writer and sync the file. For
@@ -479,6 +503,50 @@ mod tests {
         assert!(status.success(), "the child failed: {status}");
         let lines = logged(dir.path()).matches("burst line").count();
         assert_eq!(lines, BURST_LINES);
+    }
+
+    /// The file gets no colour codes, even in a span's fields, which the
+    /// stderr layer formats in colour first.
+    #[test]
+    fn the_file_log_is_plain_text() {
+        use std::sync::{Arc, Mutex};
+        #[derive(Clone, Default)]
+        struct Buf(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Buf {
+            fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(data);
+                Ok(data.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        use tracing_subscriber::prelude::*;
+        let file = Buf::default();
+        let stderr = Buf::default();
+        // As on a terminal: the stderr layer in colour, formatting first.
+        let subscriber = tracing_subscriber::registry().with(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(true)
+                .with_writer({
+                    let stderr = stderr.clone();
+                    move || stderr.clone()
+                })
+                .and_then(super::file_layer({
+                    let file = file.clone();
+                    move || file.clone()
+                })),
+        );
+        tracing::subscriber::with_default(subscriber, || {
+            let span = tracing::info_span!("task", file = "a.iso");
+            let _enter = span.enter();
+            tracing::info!("Started");
+        });
+        let stderr = String::from_utf8(stderr.0.lock().unwrap().clone()).unwrap();
+        let file = String::from_utf8(file.0.lock().unwrap().clone()).unwrap();
+        assert!(stderr.contains('\x1b'), "stderr is in colour: {stderr}");
+        assert!(file.contains("task{file=\"a.iso\"}"), "{file}");
+        assert!(!file.contains('\x1b'), "{file:?}");
     }
 
     #[test]

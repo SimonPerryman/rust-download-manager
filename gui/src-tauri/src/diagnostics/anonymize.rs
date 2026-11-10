@@ -26,8 +26,9 @@ pub(super) struct Known {
 /// appear. Numbers are stable within one report. `ignore_case` matches
 /// folders in any letter case (Windows paths).
 pub(super) fn anonymize(text: &str, known: &Known, ignore_case: bool) -> String {
+    let text = strip_colours(text);
     let mut sites: Vec<String> = Vec::new();
-    let text = rdm::map_urls_in(text, |url| hide_link(url, &mut sites));
+    let text = rdm::map_urls_in(&text, |url| hide_link(url, &mut sites));
 
     let mut text = text;
     for (with, folder) in numbered_folders(&known.folders, known.home.as_deref(), ignore_case) {
@@ -49,6 +50,22 @@ pub(super) fn anonymize(text: &str, known: &Known, ignore_case: bool) -> String 
         .map(|(i, host)| (host.clone(), format!("<site-{}>", i + 1)))
         .collect();
     replace_words(&text, &hosts, true, is_host_char, continues_host)
+}
+
+/// `text` without terminal colour codes (`ESC [ … letter`), which an older
+/// log may hold and which would hide a name's word boundary.
+fn strip_colours(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next();
+            while chars.next().is_some_and(|c| !c.is_ascii_alphabetic()) {}
+            continue;
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// The login markers [`rdm::redact_url`] leaves, longest first.
@@ -121,7 +138,8 @@ fn site_number(sites: &mut Vec<String>, host: &str) -> usize {
 
 /// Each distinct folder with its `<folder-N>` (numbered in `folders`'
 /// order), longest first so a folder inside another is replaced whole. The
-/// home folder itself is left to show as `~`.
+/// home folder and the folders holding it are left alone, so home still
+/// shows as `~` rather than as a numbered folder and the user's name.
 fn numbered_folders(
     folders: &[PathBuf],
     home: Option<&Path>,
@@ -136,12 +154,16 @@ fn numbered_folders(
             text
         }
     };
-    let mut seen: Vec<String> = home.map(key).into_iter().collect();
+    let home_key = home.map(key);
+    let mut seen: Vec<String> = home_key.iter().cloned().collect();
     let mut out: Vec<(String, PathBuf)> = Vec::new();
     for folder in folders {
         let k = key(folder);
         // A root (`/`, `C:`) would swallow every path.
-        if k.len() < 3 || seen.contains(&k) {
+        let holds_home = home_key
+            .as_ref()
+            .is_some_and(|h| h.strip_prefix(&k).is_some_and(|rest| rest.starts_with('/')));
+        if k.len() < 3 || holds_home || seen.contains(&k) {
             continue;
         }
         seen.push(k);
@@ -152,7 +174,8 @@ fn numbered_folders(
 }
 
 /// Each distinct file name with its `<file-N>.<ext>` (numbered in `files`'
-/// order, keeping the last extension).
+/// order), keeping an extension only if it looks like one (1–4 letters or
+/// digits), so `J.Smith` is just `<file-N>`.
 fn numbered_files(files: &[String]) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     for name in files {
@@ -161,7 +184,11 @@ fn numbered_files(files: &[String]) -> Vec<(String, String)> {
         }
         let n = out.len() + 1;
         let with = match name.rsplit_once('.') {
-            Some((stem, ext)) if !stem.is_empty() && !ext.is_empty() => {
+            Some((stem, ext))
+                if !stem.is_empty()
+                    && (1..=4).contains(&ext.len())
+                    && ext.bytes().all(|b| b.is_ascii_alphanumeric()) =>
+            {
                 format!("<file-{n}>.{ext}")
             }
             _ => format!("<file-{n}>"),
@@ -196,8 +223,9 @@ fn continues_host(rest: &str) -> bool {
     }
 }
 
-/// `text` with each `(needle, with)` replaced in one pass, longest needle
-/// first where several match, and only where the needle isn't part of a
+/// `text` with each `(needle, with)` replaced in one pass, left to right,
+/// the longest needle first where several start at the same place, and only
+/// where the needle isn't part of a
 /// longer word: the character before it fails `before`, and the text after
 /// it fails `continues`.
 fn replace_words(
@@ -379,19 +407,58 @@ Checksum of <file-1>.pdf matched\n"
         );
     }
 
-    /// A file name is replaced only as a whole word, and the longest known
-    /// name wins where two overlap.
+    /// A file name is replaced only as a whole word, the longest known name
+    /// wins where two start at the same place, and an extension is kept
+    /// only if it looks like one.
     #[test]
     fn file_names_match_whole_words_longest_first() {
         let known = Known {
-            files: vec!["a.iso".into(), "data.iso".into(), "my a.iso".into()],
+            files: vec![
+                "a.iso".into(),
+                "data.iso".into(),
+                "my a.iso".into(),
+                "x".into(),
+                "x y.iso".into(),
+                "J.Smith".into(),
+            ],
             ..Known::default()
         };
-        let out = anonymize("data.iso, my a.iso, a.iso.part, banana.iso", &known, false);
+        let out = anonymize(
+            "data.iso, my a.iso, a.iso.part, banana.iso, x y.iso, x, J.Smith",
+            &known,
+            false,
+        );
         assert_eq!(
             out,
-            "<file-2>.iso, <file-3>.iso, <file-1>.iso.part, banana.iso"
+            "<file-2>.iso, <file-3>.iso, <file-1>.iso.part, banana.iso, <file-5>.iso, <file-4>, <file-6>"
         );
+    }
+
+    /// A download folder holding home doesn't swallow it: home stays `~`.
+    #[test]
+    fn a_folder_above_home_leaves_home_alone() {
+        let known = Known {
+            folders: vec![PathBuf::from("/home"), PathBuf::from("/")],
+            home: Some(PathBuf::from("/home/alice")),
+            ..Known::default()
+        };
+        let out = anonymize("Logs: /home/alice/.rdm", &known, false);
+        assert_eq!(out, "Logs: ~/.rdm");
+    }
+
+    /// Colour codes are dropped, so a name right after one is still found.
+    #[test]
+    fn colour_codes_are_dropped() {
+        let known = Known {
+            files: vec!["a.iso".into()],
+            ..Known::default()
+        };
+        let out = anonymize(
+            "task{\x1b[3mfile\x1b[0m\x1b[2m=\x1b[0ma.iso}",
+            &known,
+            false,
+        );
+        assert_eq!(out, "task{file=<file-1>.iso}");
     }
 
     /// Windows folders match in any case and with either separator; a longer

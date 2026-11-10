@@ -27,7 +27,8 @@ desktop app share one version.
 - Settings → Troubleshooting (desktop app): **Open logs folder**, and **Copy
   diagnostics**, which copies a report for a bug report (version, OS,
   settings and the last 300 log lines). It hides links' sites and paths,
-  your downloads' file names and folders, and your home folder.
+  the file names and folders of the downloads in your list, and your home
+  folder.
 - If the desktop app's window fails to draw, it shows "Something went
   wrong" with Reload, Open logs folder and Copy diagnostics instead of a
   blank window, and the error goes into the log, as does any other error
@@ -59,6 +60,8 @@ desktop app share one version.
   closing the app or never finishing.
 - The desktop app's log no longer drops lines under a burst or loses its last
   lines when the app closes.
+- The desktop app's log file no longer has terminal colour codes around a
+  download's fields (seen on Linux).
 
 ## 0.2.0 - 2026-11-10
 

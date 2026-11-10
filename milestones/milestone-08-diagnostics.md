@@ -436,12 +436,17 @@ bytes._
      `https://user:pw@example.com/a/b/report.pdf?token=x` →
      `https://<redacted>:<redacted>@<site-1>/<path>?<redacted>`. A known
      download's site is hidden wherever else it appears too;
-   - each known download's file name becomes `<file-N>.<ext>`, keeping
-     the extension, the longest name first so names that overlap don't
-     leave a piece behind;
+   - each known download's file name (the downloads in the list) becomes
+     `<file-N>.<ext>`, keeping an extension that looks like one (1–4
+     letters or digits), and the longest name first where two start at the
+     same place;
    - the download folders (the default and each download's own) become
-     `<folder-N>`; home is `~`, and the log folder shows as `~/...` when
-     it's under home, else as a numbered folder.
+     `<folder-N>`; home is `~` (a folder holding home is left alone), and
+     the log folder shows as `~/...` when it's under home, else as a
+     numbered folder;
+   - terminal colour codes are dropped. (The file log no longer gets them
+     in span fields on Linux either: its layer has a field formatter of its
+     own.)
    It's a pure function in the GUI crate (`diagnostics/anonymize.rs`),
    unit-tested, and the e2e checks that the fixture's host, path and file
    name are missing from the copied text.

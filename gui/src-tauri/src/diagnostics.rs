@@ -366,13 +366,7 @@ mod tests {
             "{text}"
         );
         // The log folder isn't under home, so it's a numbered folder.
-        assert!(
-            text.contains(
-                "Logs: <folder-1>
-"
-            ),
-            "{text}"
-        );
+        assert!(text.contains("Logs: <folder-1>\n"), "{text}");
         assert!(text.contains("Render error: TypeError"), "{text}");
         assert!(text.contains("\nLast 4 log lines:\nold line\n"), "{text}");
         assert!(text.ends_with("the last line\n"), "{text}");
@@ -415,13 +409,7 @@ mod tests {
         assert!(!text.contains(&home.display().to_string()), "{text}");
         assert!(!text.contains("y.iso"), "{text}");
         let sep = std::path::MAIN_SEPARATOR;
-        assert!(
-            text.contains(&format!(
-                "Logs: ~{sep}.rdm
-"
-            )),
-            "{text}"
-        );
+        assert!(text.contains(&format!("Logs: ~{sep}.rdm\n")), "{text}");
         assert!(
             text.contains(&format!(
                 "Saved to ~{sep}x.iso and <folder-1>{sep}<file-1>.iso"
