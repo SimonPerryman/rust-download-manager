@@ -48,10 +48,10 @@ if (!process.env.RDM_E2E_DRIVER_PORT || !process.env.RDM_E2E_NATIVE_PORT) {
 const DRIVER_PORT = Number(process.env.RDM_E2E_DRIVER_PORT);
 const NATIVE_PORT = Number(process.env.RDM_E2E_NATIVE_PORT);
 
-// On Windows the app opens unfocused and behind other windows (it reads this
-// variable through tauri-driver and msedgedriver), so a local run doesn't
-// take over the desktop; set RDM_E2E_BACKGROUND=0 to watch it instead. Linux
-// CI runs under xvfb and is left as it is.
+// On Windows the app opens unfocused and behind other windows (it inherits
+// this variable via tauri-driver and msedgedriver), so a local run doesn't
+// take over the desktop; set RDM_E2E_BACKGROUND=0 to watch it instead. Other
+// platforms are left as they are (Linux CI runs under xvfb).
 if (isWindows) process.env.RDM_E2E_BACKGROUND ??= "1";
 
 /** The WebdriverIO settings both runs share; each adds its specs and hooks. */

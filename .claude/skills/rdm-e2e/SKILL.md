@@ -13,7 +13,9 @@ tears everything down. No dev stack is needed. Runs are isolated via
 `~/.rdm` and Downloads folder are never touched. tauri-driver and its native
 driver listen on free ports chosen at startup (override with
 `RDM_E2E_DRIVER_PORT` / `RDM_E2E_NATIVE_PORT`), so concurrent runs (e.g. two
-worktrees) are safe. Specs: `gui/e2e/specs/*.e2e.ts`.
+worktrees) are safe. On Windows the app opens unfocused and behind other
+windows (`RDM_E2E_BACKGROUND=1`, the launcher's default; set `0` to watch).
+Specs: `gui/e2e/specs/*.e2e.ts`.
 
 ## 1. Preflight — stop and report exactly what's missing
 - `tauri-driver` on PATH (`cargo install tauri-driver --locked`), or `TAURI_DRIVER_PATH` set.
