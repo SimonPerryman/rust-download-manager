@@ -1,17 +1,19 @@
 // The window's words: view titles, empty states, dialog hints and toast text.
 // Sentence case, user-side verbs, and an action keeps its name through the flow
-// ("Stop" leads to "Stopped", "Remove from list" to "Removed").
+// ("Stop" leads to "Stopped", "Remove" to "Removed", "Archive" to "Archived").
 
 import { formatBytes, formatSpeed } from "./format";
 import { STATUS_FILTERS, type ViewFilter } from "./filters";
 import type { Folder } from "./folders";
 import type { DownloadSnapshot } from "./types";
 
-/** The toolbar heading for a view; a folder view takes the folder's label. */
+/** The toolbar heading for a view; a folder view takes the folder's label, a tag view the tag. */
 export function viewTitle(filter: ViewFilter, folders: readonly Folder[]): string {
   if (filter.kind === "folder") {
     return folders.find((f) => f.dir === filter.dir)?.label ?? filter.dir;
   }
+  if (filter.kind === "archived") return "Archived";
+  if (filter.kind === "tag") return filter.archived ? `Archived › ${filter.tag}` : filter.tag;
   if (filter.status === "all") return "All downloads";
   return STATUS_FILTERS.find((f) => f.key === filter.status)!.label;
 }
@@ -23,7 +25,7 @@ export interface EmptyCopy {
   invitesAdd: boolean;
 }
 
-const EMPTY: Record<Exclude<ViewFilter, { kind: "folder" }>["status"], [string, string]> = {
+const EMPTY: Record<Extract<ViewFilter, { kind: "status" }>["status"], [string, string]> = {
   all: ["No downloads yet", "Paste a link anywhere with Ctrl+V, or use Add."],
   downloading: ["Nothing downloading", "Resume something paused or add a new link to get going."],
   waiting: [
@@ -31,7 +33,7 @@ const EMPTY: Record<Exclude<ViewFilter, { kind: "folder" }>["status"], [string, 
     "Downloads wait here when the most allowed at once are already running.",
   ],
   paused: ["Nothing paused", "Pause a download to free its slot for something else."],
-  done: ["Nothing finished yet", "Finished downloads stay here until you clear them."],
+  done: ["Nothing finished yet", "Finished downloads stay here until you archive them."],
   failed: [
     "No failed downloads",
     "When a download fails, the reason and a Retry button show up here.",
@@ -57,6 +59,22 @@ export function emptyCopy(filter: ViewFilter, title: string, query: string): Emp
       title: `Nothing in ${title}`,
       body: "Downloads saved to this folder show up here.",
       invitesAdd: true,
+    };
+  }
+  if (filter.kind === "archived") {
+    return {
+      title: "Nothing archived",
+      body: "Archive finished downloads to keep the list short. They wait here until you bring them back or remove them.",
+      invitesAdd: false,
+    };
+  }
+  if (filter.kind === "tag") {
+    return {
+      title: filter.archived
+        ? `No archived downloads tagged ${filter.tag}`
+        : `Nothing tagged ${filter.tag}`,
+      body: "Tag a download from its menu (Tags…) or its details.",
+      invitesAdd: !filter.archived,
     };
   }
   const [t, body] = EMPTY[filter.status];
@@ -85,7 +103,7 @@ export function stoppedMessage(d: DownloadSnapshot, keep: boolean): string {
     : `Stopped ${d.filename}.`;
 }
 
-/** The toast after Remove from list. A finished file and a kept partial stay on disk; any other partial is discarded. */
+/** The toast after Remove. A finished file and a kept partial stay on disk; any other partial is discarded. */
 export function removedMessage(d: DownloadSnapshot): string {
   if (d.status === "completed")
     return `Removed ${d.filename} from the list. The file stays on disk.`;
@@ -95,11 +113,30 @@ export function removedMessage(d: DownloadSnapshot): string {
   return `Removed ${d.filename} from the list.`;
 }
 
-/** Remove from list's tooltip; a kept partial says it survives. */
+/** Remove's tooltip; a kept partial says it survives. */
 export function removeTitle(d: DownloadSnapshot): string {
   return d.status === "cancelled" && d.partial_kept
-    ? "Remove from list. The partial file stays on disk."
-    : "Remove from list";
+    ? "Remove from rdm. The partial file stays on disk."
+    : "Remove from rdm. The file stays on disk.";
+}
+
+/** Archive's tooltip. */
+export const archiveTitle = "Archive. It moves to Archived, out of the way, and can come back.";
+
+/** The Remove dialog's heading. */
+export function removeTitleFor(n: number): string {
+  return n > 1 ? `Remove ${n} downloads?` : "Remove this download?";
+}
+
+/** The Remove dialog's text: what rdm forgets and what happens on disk. */
+export function removeBody(ds: readonly DownloadSnapshot[]): string {
+  const parts = [ds.length > 1 ? "rdm forgets them for good." : "rdm forgets it for good."];
+  parts.push("Downloaded files stay on disk.");
+  if (ds.some((d) => d.status === "cancelled" && d.partial_kept)) {
+    parts.push("Kept partial files stay too.");
+  }
+  if (ds.some((d) => d.status === "failed")) parts.push("Unfinished partial files are deleted.");
+  return parts.join(" ");
 }
 
 export function deletedPartialMessage(d: DownloadSnapshot): string {

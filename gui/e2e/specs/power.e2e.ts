@@ -68,8 +68,7 @@ describe("rdm GUI power features", () => {
 
     await openRowMenu(id);
     const menu = $(ROW_MENU);
-    await expect(menu.$('button[data-cmd="remove"]')).toBeExisting();
-    await expect(menu).toHaveText("The partial file stays on disk.", { containing: true });
+    await expect(menu.$('button[data-cmd="archive"]')).toBeExisting();
     await expect(menu.$('button[data-cmd="resume"]')).toHaveText("Resume", { containing: true });
 
     await menu.$('button[data-cmd="deletePartial"]').click();

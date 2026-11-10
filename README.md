@@ -6,7 +6,7 @@ command-line tool and a desktop app.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/main-dark.png">
-  <img alt="The rdm desktop app: a sidebar of status and folder filters, and a table of downloads that are done, downloading, waiting, paused and failed" src="docs/screenshots/main-light.png">
+  <img alt="The rdm desktop app: a sidebar of status, folder and tag filters, and a table of downloads that are done, downloading, waiting, paused and failed" src="docs/screenshots/main-light.png">
 </picture>
 
 ## Highlights
@@ -15,6 +15,7 @@ command-line tool and a desktop app.
 - **Never start over:** resumes after a crash, restart or Ctrl-C.
 - **In control:** pause, resume, stop and speed limits.
 - **A queue (GUI):** downloads wait their turn; paste many links at once.
+- **Archive and tags (GUI):** archive finished downloads and filter by tag.
 - **Verified:** optional SHA-256 checksum checked before the file is saved.
 - **Safe names:** files stay in your folder and never overwrite another.
 - **See it work (GUI):** live connection lanes, a speed graph and a per-download log.

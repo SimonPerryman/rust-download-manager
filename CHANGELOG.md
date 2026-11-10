@@ -7,7 +7,22 @@ desktop app share one version.
 
 ## Unreleased
 
+### Added
+
+- Archive (desktop app): **Archive finished** and a row's Archive move
+  finished downloads out of the working views into **Archived**, with Undo.
+  From Archived, Unarchive moves them back and Remove drops them for good
+  (the file stays on disk), after asking first unless you've told it not to.
+- Tags (desktop app): label downloads in the Add dialog, from Tags… in the
+  menu or in the details pane, and filter by tag from the sidebar, with
+  counts. In Archived, the tags listed are the archived downloads'.
+- The Add dialog notes a link that's already in your archive, and still adds
+  it.
+
 ### Changed
+
+- **Clear finished** is now **Archive finished**: rows go to Archived instead
+  of being deleted, and removing a download for good happens from Archived.
 
 - The desktop app's download list (`state.json`) moves to a new format that
   can hold archived and tagged downloads. A list from 0.1.0 opens unchanged.

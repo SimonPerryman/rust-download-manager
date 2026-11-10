@@ -9,6 +9,8 @@ import { AlertTriangle } from "../icons/AlertTriangle";
 import { Clock } from "../icons/Clock";
 import { Folder } from "../icons/Folder";
 import { Link } from "../icons/Link";
+import { Tag } from "../icons/Tag";
+import { TagEditor } from "../tags/TagEditor";
 import { ChecksumFact } from "./ChecksumFact";
 import { LanesMap } from "./LanesMap";
 
@@ -146,6 +148,12 @@ export function OverviewTab({ d, onReveal, spot, onMove }: Props) {
           </span>
         </div>
         <ChecksumFact key={d.id} d={d} />
+        <div className="fact">
+          <Tag size={16} className="fact-icon" />
+          <div className="min-w-0 flex-1">
+            <TagEditor key={d.id} rows={[d]} />
+          </div>
+        </div>
         {dates && (
           <div className="fact">
             <Clock size={16} className="fact-icon" />

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Batch } from "../../lib/pendingClear";
+import type { UndoBatch } from "../../lib/archive";
 import type { Toast } from "../../lib/useToast";
 import { X } from "../icons/X";
 import { useEntered } from "./useEntered";
@@ -7,8 +7,8 @@ import { useEntered } from "./useEntered";
 const RISE_MS = 200;
 
 type Props = {
-  /** The Clear finished batch in its undo window. */
-  pending: Batch | null;
+  /** The archive the undo toast offers to undo. */
+  pending: UndoBatch | null;
   onUndo: () => void;
   toast: Toast | null;
   onDismissToast: () => void;
@@ -16,7 +16,7 @@ type Props = {
 
 // Bottom-centre toasts: the undo slot sits above the info slot, so no info
 // toast can push the undo away. Dismissing the undo toast only hides it; the
-// clear still commits when its window ends.
+// rows stay archived.
 export function Toasts({ pending, onUndo, toast, onDismissToast }: Props) {
   const [hiddenSeq, setHiddenSeq] = useState<number | null>(null);
   return (

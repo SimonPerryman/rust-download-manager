@@ -94,32 +94,29 @@ describe("rowActions", () => {
 
   it("makes Open the solid primary only while a finished row lingers", () => {
     const done = snap({ status: "completed" });
-    expect(labels(done, true)).toEqual([
-      "Open:primary",
-      "Show in folder:icon",
-      "Remove from list:icon",
-    ]);
-    expect(labels(done, false)).toEqual([
+    expect(labels(done, true)).toEqual(["Open:primary", "Show in folder:icon", "Archive:icon"]);
+    expect(labels(done, false)).toEqual(["Open:icon", "Show in folder:icon", "Archive:icon"]);
+  });
+
+  it("removes rather than archives an archived row", () => {
+    expect(labels(snap({ status: "completed", archived: true }), false)).toEqual([
       "Open:icon",
       "Show in folder:icon",
-      "Remove from list:icon",
+      "Remove:icon",
     ]);
   });
 
   it("offers Retry on failed rows", () => {
-    expect(labels(snap({ status: "failed" }))).toEqual(["Retry:soft", "Remove from list:icon"]);
+    expect(labels(snap({ status: "failed" }))).toEqual(["Retry:soft", "Archive:icon"]);
   });
 
   it("offers Resume and Delete partial file for a kept stop, Download again otherwise", () => {
     expect(labels(snap({ status: "cancelled", partial_kept: true }))).toEqual([
       "Resume:soft",
       "Delete partial file:icon",
-      "Remove from list:icon",
+      "Archive:icon",
     ]);
-    expect(labels(snap({ status: "cancelled" }))).toEqual([
-      "Download again:soft",
-      "Remove from list:icon",
-    ]);
+    expect(labels(snap({ status: "cancelled" }))).toEqual(["Download again:soft", "Archive:icon"]);
   });
 });
 

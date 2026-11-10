@@ -160,13 +160,6 @@ fn move_queued(state: State<'_, AppState>, id: u64, index: usize) {
     state.manager.move_queued(id, index);
 }
 
-/// Remove the finished downloads in `statuses` (only those in `ids`, if
-/// given). Returns how many were removed.
-#[tauri::command]
-fn clear(state: State<'_, AppState>, statuses: Vec<Status>, ids: Option<Vec<u64>>) -> usize {
-    state.manager.clear(&statuses, ids.as_deref())
-}
-
 /// Archive the listed finished downloads. Returns how many changed.
 #[tauri::command]
 fn archive(state: State<'_, AppState>, ids: Vec<u64>) -> usize {
@@ -552,7 +545,6 @@ pub fn run() {
             resume,
             stop,
             move_queued,
-            clear,
             archive,
             unarchive,
             archive_finished,

@@ -1,7 +1,7 @@
 type Props = {
-  testId: "filter" | "folder-filter";
-  /** `data-filter` (status key) or `data-dir` (full folder path). */
-  data: { "data-filter": string } | { "data-dir": string };
+  testId: "filter" | "folder-filter" | "tag-filter";
+  /** `data-filter` (status key, or "archived"), `data-dir` (full folder path) or `data-tag`. */
+  data: { "data-filter": string } | { "data-dir": string } | { "data-tag": string };
   icon: React.ReactNode;
   label: string;
   /** The full folder path, for a label shortened to its last part. */

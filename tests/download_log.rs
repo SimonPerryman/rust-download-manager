@@ -178,7 +178,7 @@ async fn the_layer_ignores_other_layers_filters() {
     );
 }
 
-/// Removing a download, or clearing it, drops its lines.
+/// Removing a download drops its lines; archiving keeps them.
 #[tokio::test]
 async fn lines_go_with_the_download() {
     let server = common::spawn().await;
@@ -187,17 +187,18 @@ async fn lines_go_with_the_download() {
     let _guard = capture(&mgr);
 
     let removed = mgr.add(server.url("/file"), dir.path().join("a"), None, None);
-    let cleared = mgr.add(server.url("/file"), dir.path().join("b"), None, None);
+    let archived = mgr.add(server.url("/file"), dir.path().join("b"), None, None);
     wait_status(&mgr, removed, Status::Completed).await;
-    wait_status(&mgr, cleared, Status::Completed).await;
+    wait_status(&mgr, archived, Status::Completed).await;
     assert!(!mgr.download_log(removed).is_empty());
-    assert!(!mgr.download_log(cleared).is_empty());
+    assert!(!mgr.download_log(archived).is_empty());
 
+    assert_eq!(mgr.archive(&[archived]), 1);
     mgr.remove(removed);
     assert!(mgr.download_log(removed).is_empty());
-    assert!(!mgr.download_log(cleared).is_empty());
-    assert_eq!(mgr.clear(&[Status::Completed], None), 1);
-    assert!(mgr.download_log(cleared).is_empty());
+    assert!(!mgr.download_log(archived).is_empty());
+    mgr.remove(archived);
+    assert!(mgr.download_log(archived).is_empty());
 }
 
 /// A failing download's lines carry none of its URL's secrets (userinfo,

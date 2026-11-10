@@ -5,7 +5,7 @@
 
 mod common;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use rdm::engine::state;
@@ -257,4 +257,122 @@ async fn resuming_an_archived_download_unarchives_it() {
     mgr.resume(id);
     assert!(!row(&mgr, id).archived);
     wait_status(&mgr, id, Status::Completed).await;
+}
+
+/// A `/slow` download to `out`, stopped mid-stream; returns its id.
+async fn stopped(mgr: &Manager, server: &common::TestServer, out: PathBuf, keep: bool) -> u64 {
+    let id = mgr.add(
+        server.url("/slow"),
+        out.parent().unwrap().to_path_buf(),
+        Some(out),
+        None,
+    );
+    wait_for(mgr, id, |s| s.downloaded > 0).await;
+    mgr.stop(id, keep);
+    wait_status(mgr, id, Status::Cancelled).await;
+    id
+}
+
+/// `remove`'s file rule for each finished status: a completed file and a
+/// kept partial stay on disk; a partial that wasn't kept is already gone.
+#[tokio::test]
+async fn remove_keeps_files_and_kept_partials() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+
+    let done = mgr.add(server.url("/file"), dir.path(), None, None);
+    let done_path = wait_status(&mgr, done, Status::Completed)
+        .await
+        .final_path
+        .unwrap();
+    let deleted_out = dir.path().join("deleted.bin");
+    let deleted = stopped(&mgr, &server, deleted_out.clone(), false).await;
+    let kept_out = dir.path().join("kept.bin");
+    let kept = stopped(&mgr, &server, kept_out.clone(), true).await;
+    assert!(state::part_path(&kept_out).exists());
+
+    for id in [done, deleted, kept] {
+        mgr.remove(id);
+    }
+    assert!(mgr.snapshot().is_empty());
+    assert!(done_path.exists(), "a completed file stays on disk");
+    assert!(!state::part_path(&deleted_out).exists());
+    assert!(!state::sidecar_path(&deleted_out).exists());
+    assert!(state::part_path(&kept_out).exists(), "a kept partial stays");
+    assert!(state::sidecar_path(&kept_out).exists());
+}
+
+/// A download stopped without its partial owns nothing, so a newer download
+/// may reuse its target. Removing the old row, or reloading the store, must
+/// not delete or adopt the newer download's kept partial.
+#[tokio::test]
+async fn removing_a_deleted_stop_spares_a_newer_partial_at_the_same_target() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+
+    let old = mgr.add(server.url("/slow"), dir.path(), None, None);
+    let target = wait_for(&mgr, old, |s| s.downloaded > 0).await.target;
+    mgr.stop(old, false);
+    wait_status(&mgr, old, Status::Cancelled).await;
+
+    let new = mgr.add(server.url("/slow"), dir.path(), None, None);
+    let partial = wait_for(&mgr, new, |s| s.downloaded > 0).await;
+    assert_eq!(partial.target, target, "the freed target is reused");
+    mgr.stop(new, true);
+    let kept = wait_status(&mgr, new, Status::Cancelled).await;
+    assert!(kept.partial_kept);
+    drop(mgr);
+
+    let mgr = manager_in(dir.path());
+    let restored = mgr.snapshot();
+    let old_row = restored.iter().find(|s| s.id == old).unwrap();
+    assert_eq!(old_row.downloaded, 0, "the old row adopted the new partial");
+    assert!(old_row.segments.is_empty());
+    let new_row = restored.iter().find(|s| s.id == new).unwrap();
+    assert_eq!(new_row.downloaded, kept.downloaded);
+
+    mgr.archive(&[old]);
+    mgr.remove(old);
+    assert!(state::part_path(&target).exists(), "the kept `.part` went");
+    assert!(
+        state::sidecar_path(&target).exists(),
+        "the kept sidecar went"
+    );
+
+    mgr.resume(new);
+    let done = wait_status(&mgr, new, Status::Completed).await;
+    assert_eq!(
+        std::fs::read(done.final_path.unwrap()).unwrap(),
+        common::payload()
+    );
+}
+
+/// Removing a deleted-stop row leaves a running download at the same target
+/// alone.
+#[tokio::test]
+async fn removing_a_deleted_stop_spares_a_running_download_at_the_same_target() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+
+    let old = mgr.add(server.url("/gated"), dir.path(), None, None);
+    let target = wait_for(&mgr, old, |s| s.downloaded > 0).await.target;
+    mgr.stop(old, false);
+    wait_status(&mgr, old, Status::Cancelled).await;
+
+    let running = mgr.add(server.url("/gated"), dir.path(), None, None);
+    let partial = wait_for(&mgr, running, |s| s.downloaded > 0).await;
+    assert_eq!(partial.target, target, "the freed target is reused");
+
+    mgr.remove(old);
+    assert!(state::part_path(&target).exists(), "the live `.part` went");
+    assert!(
+        state::sidecar_path(&target).exists(),
+        "the live sidecar went"
+    );
+
+    server.gate().release_all();
+    wait_status(&mgr, running, Status::Completed).await;
 }

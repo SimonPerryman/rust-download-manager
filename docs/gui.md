@@ -12,6 +12,7 @@ see [Installing rdm](install.md#desktop-app); to build it, see
 - [The queue](#the-queue)
 - [Lanes and details](#lanes-and-details)
 - [Finished and failed downloads](#finished-and-failed-downloads)
+- [Archive and tags](#archive-and-tags)
 - [Settings](#settings)
 - [State and logs](#state-and-logs)
 
@@ -20,29 +21,30 @@ see [Installing rdm](install.md#desktop-app); to build it, see
 Add downloads with the **Add** button, by dragging a link onto the window, or
 by pressing Ctrl/Cmd+V (outside a text box) with one or more links on the
 clipboard. The dialog takes one link per line and previews each file's name
-and site, skipped lines and links already in your list before anything starts
-("Add 3 downloads"); Ctrl+Enter adds. The folder starts at the one you used
-last. Under **More options** you can give a SHA-256 checksum and a speed
-limit.
+and site, skipped lines and links already in your list or in your archive
+before anything starts ("Add 3 downloads"); a link you've archived is still
+added, so you can download it again. Ctrl+Enter adds. The folder starts at the
+one you used last. **Tags** (comma-separated) go on every download you add.
+Under **More options** you can give a SHA-256 checksum and a speed limit.
 
 ## Finding and selecting
 
-- **Filter** with the sidebar (by status, or by destination folder) or by name
-  from the toolbar. Click a column header to sort. The sidebar also shows the
+- **Filter** with the sidebar (by status, destination folder or
+  [tag](#archive-and-tags)) or by name from the toolbar. Click a column header to sort. The sidebar also shows the
   total speed with a graph of the last minute. In a window narrower than about
   760 px the sidebar shrinks to an icon rail (hover an icon for its name) and
   less important columns hide.
 - **Select** a row by clicking it; Ctrl+click adds or removes rows and
   Shift+click selects a range. With two or more selected, the toolbar offers
-  the actions that apply to them all (Open, Pause, Resume, Stop, Retry, Remove
-  from list).
+  the actions that apply to them all (Open, Pause, Resume, Stop, Retry,
+  Tags…, Archive; in Archived, Unarchive and Remove).
 - **Right-click** a row (or press Shift+F10 or the menu key) for every action
-  that fits it, such as Show in folder, Copy link, Download again, Delete
-  partial file and Remove from list.
+  that fits it, such as Show in folder, Copy link, Download again, Tags…,
+  Delete partial file and Archive (in Archived, Unarchive and Remove).
 - **Keyboard:** with the table focused, ↑/↓ move (Shift extends the
   selection), Home/End jump, Ctrl+A selects all, Space pauses or resumes,
-  Enter opens a finished file, Delete removes from the list and Escape clears
-  the selection.
+  Enter opens a finished file, Delete archives (in Archived, removes) and
+  Escape clears the selection.
 - **Density:** the toolbar toggles compact 32 px rows (the default) and
   comfortable 48 px rows that also show each file's site.
 
@@ -101,15 +103,37 @@ the partial file.
 ## Finished and failed downloads
 
 - **Finished** downloads stay where they are, marked Done, with **Open** and
-  **Show in folder**. **Clear finished** removes Done and Stopped rows from the
-  list (with Undo); downloaded files stay on disk.
+  **Show in folder**, until you [archive](#archive-and-tags) them.
 - **Failed** downloads are pinned to the top with the reason in plain words and
   a **Retry** button.
 
+## Archive and tags
+
+- **Archive** moves a finished download (Done, Failed or Stopped) out of the
+  working views into **Archived** in the sidebar, which counts them; nothing
+  is deleted, and it keeps its details and log. **Archive finished** in the
+  toolbar archives every Done and Stopped download at once, with **Undo** for
+  a few seconds. Each finished row also has an Archive button, and Delete
+  archives the selection.
+- **Archived** lists only archived downloads. Select some and choose
+  **Unarchive** to move them back, or **Remove** to drop them from rdm for
+  good: the downloaded file, and a partial file kept by Stop, stay on disk,
+  while a failed download's partial file is deleted. Remove asks first; tick
+  **Don't ask again** to skip that, and turn **Ask before removing** back on
+  in [Settings](#settings). Retrying or resuming an archived download moves it
+  back too, and **Retry all failed** leaves archived ones alone.
+- **Tags** label downloads (up to 16, each up to 32 characters; case doesn't
+  make a different tag). Add them in the Add dialog, from **Tags…** in a row's
+  menu or the selection toolbar, or in the details pane's Overview, where a
+  tag's × takes it off. The sidebar's **Tags** section lists each tag with a
+  count and filters by it. It follows the view: under Archived it lists the
+  archived downloads' tags and narrows the archive ("Archived › work");
+  elsewhere it lists only the working downloads' tags.
+
 ## Settings
 
-**Settings** (the sliders button) holds the theme, the max number of
-concurrent downloads, the global speed limit and the max connections per
+**Settings** (the sliders button) holds the theme, whether Remove asks first,
+the max number of concurrent downloads, the global speed limit and the max connections per
 download. The status bar shows the total speed, and you can click the global
 limit there to change it.
 

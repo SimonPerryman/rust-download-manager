@@ -1,12 +1,7 @@
 import { useCallback, useRef } from "react";
 import * as api from "./api";
-import {
-  copiedMessage,
-  deletedPartialMessage,
-  deletedPartialsMessage,
-  removedManyMessage,
-  removedMessage,
-} from "./copy";
+import { unarchivedMessage } from "./archive";
+import { copiedMessage, deletedPartialMessage, deletedPartialsMessage } from "./copy";
 import { folderOf } from "./folders";
 import type { MenuCommand } from "./menu";
 import { stepIndex } from "./queue";
@@ -24,6 +19,12 @@ type Deps = {
   retryAll: () => void;
   /** Opens the Stop dialog for these (stoppable) ids. */
   askStop: (ids: number[]) => void;
+  /** Removes these (finished) rows for good, asking first unless told not to. */
+  askRemove: (rows: DownloadSnapshot[]) => void;
+  /** Opens the Tags editor for these ids. */
+  askTags: (ids: number[]) => void;
+  /** Archives the finished rows among these, with an undo toast. */
+  archive: (rows: DownloadSnapshot[]) => void;
 };
 
 /**
@@ -37,6 +38,7 @@ export function useBulkCommands(deps: Deps): (cmd: MenuCommand, ids: readonly nu
 
   return useCallback((cmd: MenuCommand, ids: readonly number[]) => {
     const { downloads, queue, notify, fail, open, reveal, retryAll, askStop } = ref.current;
+    const { askRemove, askTags, archive } = ref.current;
     const list = ids.flatMap((id) => downloads.find((d) => d.id === id) ?? []);
     const each = (
       f: (d: DownloadSnapshot) => boolean,
@@ -90,6 +92,7 @@ export function useBulkCommands(deps: Deps): (cmd: MenuCommand, ids: readonly nu
             folderOf(d.target) || null,
             d.checksum,
             d.limit != null ? String(d.limit) : null,
+            d.tags,
           ),
         ).catch(fail);
       case "deletePartial": {
@@ -107,13 +110,22 @@ export function useBulkCommands(deps: Deps): (cmd: MenuCommand, ids: readonly nu
       }
       case "remove": {
         const targets = list.filter(isRemovable);
+        if (targets.length) askRemove(targets);
+        return;
+      }
+      case "archive":
+        return archive(list);
+      case "unarchive": {
+        const targets = list.filter((d) => d.archived);
         if (!targets.length) return;
-        return void each(isRemovable, (d) => api.remove(d.id))
-          .then(() =>
-            notify(targets.length === 1 ? removedMessage(targets[0]) : removedManyMessage(targets)),
-          )
+        return void api
+          .unarchive(targets.map((d) => d.id))
+          .then(() => notify(unarchivedMessage(targets)))
           .catch(fail);
       }
+      case "tags":
+        if (list.length) askTags(list.map((d) => d.id));
+        return;
     }
   }, []);
 }

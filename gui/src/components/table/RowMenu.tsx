@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { MenuCommand, MenuEntry } from "../../lib/menu";
+import { Archive } from "../icons/Archive";
+import { ArchiveRestore } from "../icons/ArchiveRestore";
 import { ArrowDown } from "../icons/ArrowDown";
 import { ArrowUp } from "../icons/ArrowUp";
 import { ChevronsUp } from "../icons/ChevronsUp";
@@ -12,6 +14,7 @@ import { Pause } from "../icons/Pause";
 import { Play } from "../icons/Play";
 import { Retry } from "../icons/Retry";
 import { Stop } from "../icons/Stop";
+import { Tag } from "../icons/Tag";
 import { Trash } from "../icons/Trash";
 
 const ICON: Record<MenuCommand, (p: { size?: number }) => React.ReactNode> = {
@@ -28,6 +31,9 @@ const ICON: Record<MenuCommand, (p: { size?: number }) => React.ReactNode> = {
   copyLink: Link,
   addAgain: DownloadAgain,
   deletePartial: Trash,
+  tags: Tag,
+  archive: Archive,
+  unarchive: ArchiveRestore,
   remove: ListRemove,
 };
 

@@ -11,10 +11,26 @@ export type BatchEntry =
       /** The filename the link suggests (its last path part, else its host). */
       name: string;
       host: string;
-      /** "listed": already in the download list (still added); "repeat": earlier in this paste (skipped). */
-      dup: "listed" | "repeat" | null;
+      /**
+       * "listed": already in the download list, or "archived": only in the archive (both
+       * still added); "repeat": earlier in this paste (skipped).
+       */
+      dup: Known | "repeat" | null;
     }
   | { kind: "bad"; line: string };
+
+/** Where a URL already is: in the working list, or only in the archive. */
+export type Known = "listed" | "archived";
+
+/** Each known URL's place; a URL both listed and archived counts as listed. */
+export function knownUrls(ds: readonly { url: string; archived: boolean }[]): Map<string, Known> {
+  const out = new Map<string, Known>();
+  for (const d of ds) {
+    if (!d.archived) out.set(d.url, "listed");
+    else if (!out.has(d.url)) out.set(d.url, "archived");
+  }
+  return out;
+}
 
 /** The name a link suggests: its last path segment, decoded, or its host. */
 function suggestedName(u: URL): string {
@@ -31,7 +47,7 @@ function suggestedName(u: URL): string {
  * whitespace-separated links counts as several), blank and `#` comment lines
  * dropped, anything else flagged as not a link.
  */
-export function parseLinks(text: string, existing: ReadonlySet<string>): BatchEntry[] {
+export function parseLinks(text: string, existing: ReadonlyMap<string, Known>): BatchEntry[] {
   const seen = new Set<string>();
   const entries: BatchEntry[] = [];
   for (const raw of text.split(/\r?\n/)) {
@@ -45,7 +61,7 @@ export function parseLinks(text: string, existing: ReadonlySet<string>): BatchEn
         continue;
       }
       const u = new URL(piece);
-      const dup = seen.has(piece) ? "repeat" : existing.has(piece) ? "listed" : null;
+      const dup = seen.has(piece) ? "repeat" : (existing.get(piece) ?? null);
       seen.add(piece);
       entries.push({ kind: "link", url: piece, name: suggestedName(u), host: u.host, dup });
     }

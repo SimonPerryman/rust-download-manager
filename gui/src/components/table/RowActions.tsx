@@ -1,7 +1,8 @@
-import { removeTitle } from "../../lib/copy";
+import { archiveTitle, removeTitle } from "../../lib/copy";
 import { rowActions, type RowAction, type RowActionKey } from "../../lib/rowView";
 import type { DownloadSnapshot } from "../../lib/types";
 import type { LimitEditor } from "../../lib/useLimitEditor";
+import { Archive } from "../icons/Archive";
 import { DownloadAgain } from "../icons/DownloadAgain";
 import { ExternalLink } from "../icons/ExternalLink";
 import { Folder } from "../icons/Folder";
@@ -23,6 +24,7 @@ const ICON: Record<RowActionKey, (p: { size?: number }) => React.ReactNode> = {
   open: ExternalLink,
   reveal: Folder,
   remove: ListRemove,
+  archive: Archive,
   retry: Retry,
   deletePartial: Trash,
   downloadAgain: DownloadAgain,
@@ -57,6 +59,8 @@ export function RowActions({ d, lingering, editor, handlers }: Props) {
         return handlers.reveal(d);
       case "remove":
         return handlers.remove(d);
+      case "archive":
+        return handlers.archive(d);
       case "deletePartial":
         return handlers.deletePartial(d);
     }
@@ -68,7 +72,7 @@ export function RowActions({ d, lingering, editor, handlers }: Props) {
         <ActionButton
           key={a.key}
           action={a}
-          title={a.key === "remove" ? removeTitle(d) : a.label}
+          title={a.key === "remove" ? removeTitle(d) : a.key === "archive" ? archiveTitle : a.label}
           editor={a.key === "limit" ? editor : undefined}
           onClick={() => run(a.key)}
         />

@@ -9,7 +9,9 @@ export interface RowHandlers {
   stop: (d: DownloadSnapshot) => void;
   open: (d: DownloadSnapshot) => void;
   reveal: (d: DownloadSnapshot) => void;
+  /** Remove for good (from the Archived view); may ask first. */
   remove: (d: DownloadSnapshot) => void;
+  archive: (d: DownloadSnapshot) => void;
   deletePartial: (d: DownloadSnapshot) => void;
   retryAll: () => void;
 }

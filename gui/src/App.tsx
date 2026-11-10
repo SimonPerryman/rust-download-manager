@@ -5,27 +5,45 @@ import {
   deletedPartialMessage,
   emptyCopy,
   openFailedMessage,
+  removedManyMessage,
   removedMessage,
   retryAllMessage,
   stoppedManyMessage,
   stoppedMessage,
   viewTitle,
 } from "./lib/copy";
-import { matchesFilter, matchesQuery, statusCounts, type ViewFilter } from "./lib/filters";
+import { finishedToArchive } from "./lib/archive";
+import { knownUrls } from "./lib/batch";
+import {
+  archivedCount,
+  isArchivedView,
+  matchesFilter,
+  matchesQuery,
+  statusCounts,
+  type ViewFilter,
+} from "./lib/filters";
 import { deriveFolders, folderOf } from "./lib/folders";
-import { planBatch } from "./lib/pendingClear";
 import { focusIsFree } from "./lib/focus";
 import { keyCommand } from "./lib/keymap";
 import { menuItems, selectionActions, type MenuCommand, type MenuEntry } from "./lib/menu";
+import { loadConfirmRemove, saveConfirmRemove } from "./lib/prefs";
 import { dropIndex, queueOrder, stepIndex } from "./lib/queue";
-import { continues, isPausable, isStoppable, pauseAllMode, totalSpeed } from "./lib/rowView";
+import {
+  continues,
+  isPausable,
+  isRemovable,
+  isStoppable,
+  pauseAllMode,
+  totalSpeed,
+} from "./lib/rowView";
 import { selectedInOrder, type Modifiers } from "./lib/selection";
 import { arrangeRows, DEFAULT_SORT, isVolatile, nextSort, rankOf, type SortKey } from "./lib/sort";
+import { hasTag, tagCounts } from "./lib/tags";
 import type { DownloadSnapshot } from "./lib/types";
+import { useArchive } from "./lib/useArchive";
 import { useBulkCommands } from "./lib/useBulkCommands";
 import { useDownloads } from "./lib/useDownloads";
 import { useFinishMoment } from "./lib/useFinishMoment";
-import { usePendingClear } from "./lib/usePendingClear";
 import { usePrefs } from "./lib/usePrefs";
 import { usePaneHeight } from "./lib/usePaneHeight";
 import { useSelection } from "./lib/useSelection";
@@ -36,6 +54,8 @@ import { useUrlIntake } from "./lib/useUrlIntake";
 import { DetailsPane } from "./components/details/DetailsPane";
 import type { PaneTab } from "./components/details/tabs";
 import { AddDialog } from "./components/dialogs/AddDialog";
+import { RemoveDialog } from "./components/dialogs/RemoveDialog";
+import { TagsDialog } from "./components/dialogs/TagsDialog";
 import { StopDialog } from "./components/dialogs/StopDialog";
 import { DropOverlay } from "./components/DropOverlay";
 import { FinishNotifications } from "./components/feedback/FinishNotifications";
@@ -66,7 +86,7 @@ export default function App() {
   const { settings, apply: applySettings } = useSettings();
   const { toast, show: notify, dismiss: dismissToast } = useToast();
   const finish = useFinishMoment(downloads, seeded);
-  const clear = usePendingClear(downloads, notify);
+  const archiver = useArchive(notify);
   const history = useSpeedHistory(downloads);
   const pane = usePaneHeight();
 
@@ -77,6 +97,9 @@ export default function App() {
   const [addOpen, setAddOpen] = useState(false);
   const [prefillText, setPrefillText] = useState("");
   const [stopIds, setStopIds] = useState<number[] | null>(null);
+  const [removeRows, setRemoveRows] = useState<DownloadSnapshot[] | null>(null);
+  const [tagIds, setTagIds] = useState<number[] | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(loadConfirmRemove);
   const [refocusId, setRefocusId] = useState<number | null>(null);
   // The row in the details pane. Kept apart from the selection so the pane stays
   // when its row leaves the view (it finishes, or a search hides it).
@@ -97,44 +120,61 @@ export default function App() {
     setPrefillText(text);
     setAddOpen(true);
   }, []);
-  const draggingUrl = useUrlIntake(openAdd, !addOpen && stopIds == null);
-
-  // Rows hidden by a pending clear are left out of every view and count.
-  const shown = useMemo(
-    () => downloads.filter((d) => !clear.hidden.has(d.id)),
-    [downloads, clear.hidden],
+  const draggingUrl = useUrlIntake(
+    openAdd,
+    !addOpen && stopIds == null && removeRows == null && tagIds == null,
   );
-  const counts = useMemo(() => statusCounts(shown), [shown]);
-  const folders = useMemo(() => deriveFolders(downloads, shown), [downloads, shown]);
 
-  // A folder view falls back to All only once no download at all is saved there
-  // (not while a pending clear merely hides them).
-  const folderGone =
-    filter.kind === "folder" && !downloads.some((d) => folderOf(d.target) === filter.dir);
-  const view = folderGone ? ALL : filter;
+  // The working views and their counts leave archived rows out.
+  const live = useMemo(() => downloads.filter((d) => !d.archived), [downloads]);
+  const counts = useMemo(() => statusCounts(downloads), [downloads]);
+  const folders = useMemo(() => deriveFolders(live, live), [live]);
+  const archived = archivedCount(downloads);
+
+  // A folder or tag view falls back once nothing in its scope is left (an
+  // archived tag to Archived, anything else to All).
+  const viewGone =
+    (filter.kind === "folder" && !live.some((d) => folderOf(d.target) === filter.dir)) ||
+    (filter.kind === "tag" &&
+      !downloads.some((d) => d.archived === filter.archived && hasTag(d, filter.tag)));
+  const fallback: ViewFilter =
+    filter.kind === "tag" && filter.archived ? { kind: "archived" } : ALL;
+  const view = viewGone ? fallback : filter;
   useEffect(() => {
-    if (folderGone) setFilter(ALL);
-  }, [folderGone]);
+    if (viewGone) setFilter(fallback);
+  }, [viewGone, fallback]);
+  const inArchive = isArchivedView(view);
+  const tags = useMemo(
+    () => tagCounts(downloads.filter((d) => d.archived === inArchive)),
+    [downloads, inArchive],
+  );
 
   const visible = useMemo(
     () =>
       arrangeRows(
-        shown.filter((d) => matchesFilter(d, view) && matchesQuery(d, query)),
+        downloads.filter((d) => matchesFilter(d, view) && matchesQuery(d, query)),
         { sort, frozen, pinFailed: view.kind === "status" && view.status === "all" },
       ),
-    [shown, view, query, sort, frozen],
+    [downloads, view, query, sort, frozen],
   );
-  const failed = useMemo(() => shown.filter((d) => d.status === "failed"), [shown]);
+  // Retry all failed leaves archived rows alone, as the engine command does.
+  const failed = useMemo(() => live.filter((d) => d.status === "failed"), [live]);
   const visibleIds = useMemo(() => visible.map((d) => d.id), [visible]);
   const selection = useSelection(visibleIds);
   const sel = selection.selection;
   const queue = useMemo(() => queueOrder(downloads), [downloads]);
   // Keyed on the URLs themselves so the Add preview doesn't re-parse on every tick.
-  const urlKey = JSON.stringify(downloads.map((d) => d.url));
-  const existingUrls = useMemo(() => new Set<string>(JSON.parse(urlKey)), [urlKey]);
+  const urlKey = JSON.stringify(downloads.map((d) => [d.url, d.archived]));
+  const existingUrls = useMemo(
+    () =>
+      knownUrls(
+        (JSON.parse(urlKey) as [string, boolean][]).map(([url, archived]) => ({ url, archived })),
+      ),
+    [urlKey],
+  );
   const byId = useCallback((id: number) => downloads.find((d) => d.id === id), [downloads]);
-  // The pane follows the live row and closes once it's gone (removed or cleared).
-  const detailsRow = shown.find((d) => d.id === detailsId);
+  // The pane follows the live row and closes once it's gone (removed).
+  const detailsRow = downloads.find((d) => d.id === detailsId);
   useEffect(() => {
     if (detailsId != null && seeded && !detailsRow) setDetailsId(null);
   }, [detailsId, seeded, detailsRow]);
@@ -149,6 +189,52 @@ export default function App() {
 
   const fail = useCallback((e: unknown) => notify(String(e)), [notify]);
   const { markOpened } = finish;
+
+  // ---- remove (for good, from the archive) and tags ----
+  const removeNow = useCallback(
+    (rows: readonly DownloadSnapshot[]) => {
+      Promise.all(rows.map((d) => api.remove(d.id)))
+        .then(() => notify(rows.length === 1 ? removedMessage(rows[0]) : removedManyMessage(rows)))
+        .catch(fail);
+    },
+    [notify, fail],
+  );
+  const askRemove = useCallback(
+    (rows: DownloadSnapshot[]) => (confirmRemove ? setRemoveRows(rows) : removeNow(rows)),
+    [confirmRemove, removeNow],
+  );
+  const updateConfirmRemove = useCallback((ask: boolean) => {
+    setConfirmRemove(ask);
+    saveConfirmRemove(ask);
+  }, []);
+  const cancelRemove = useCallback(() => {
+    setRemoveRows(null);
+    setTimeout(() => focusIsFree() && tableRef.current?.focus({ preventScroll: true }));
+  }, []);
+  const confirmRemoveRows = (dontAsk: boolean) => {
+    // Only what's still archived and finished: a row resumed or unarchived
+    // while the dialog was open stays.
+    const rows = (removeRows ?? []).flatMap((r) => {
+      const d = byId(r.id);
+      return d && d.archived && isRemovable(d) ? [d] : [];
+    });
+    setRemoveRows(null);
+    if (dontAsk) updateConfirmRemove(false);
+    removeNow(rows);
+    setTimeout(() => focusIsFree() && tableRef.current?.focus({ preventScroll: true }));
+  };
+  // The Tags dialog follows the live rows and closes itself once none is left.
+  const tagRows = useMemo(
+    () => (tagIds ?? []).flatMap((id) => downloads.find((d) => d.id === id) ?? []),
+    [tagIds, downloads],
+  );
+  const closeTags = useCallback(() => {
+    setTagIds(null);
+    setTimeout(() => focusIsFree() && tableRef.current?.focus({ preventScroll: true }));
+  }, []);
+  useEffect(() => {
+    if (tagIds != null && seeded && tagRows.length === 0) setTagIds(null);
+  }, [tagIds, seeded, tagRows.length]);
 
   const openDownload = useCallback(
     (d: DownloadSnapshot) => {
@@ -181,11 +267,8 @@ export default function App() {
       stop: (d) => setStopIds([d.id]),
       open: openDownload,
       reveal: revealDownload,
-      remove: (d) =>
-        api
-          .remove(d.id)
-          .then(() => notify(removedMessage(d)))
-          .catch(fail),
+      remove: (d) => askRemove([d]),
+      archive: (d) => archiver.archive([d]),
       deletePartial: (d) =>
         api
           .stop(d.id, false)
@@ -193,7 +276,7 @@ export default function App() {
           .catch(fail),
       retryAll,
     }),
-    [fail, notify, openDownload, revealDownload, retryAll],
+    [fail, notify, openDownload, revealDownload, retryAll, askRemove, archiver.archive],
   );
 
   const run = useBulkCommands({
@@ -205,6 +288,9 @@ export default function App() {
     reveal: revealDownload,
     retryAll,
     askStop: setStopIds,
+    askRemove,
+    askTags: setTagIds,
+    archive: archiver.archive,
   });
 
   // The dialog follows the live rows and closes itself once none can be stopped.
@@ -299,9 +385,11 @@ export default function App() {
       if (!onSelected) selectRow(id, {});
       const ids = onSelected ? selectedIds : [id];
       const rows = ids.flatMap((i) => byId(i) ?? []);
-      if (rows.length) setMenu({ x, y, ids, entries: menuItems(rows, queue, failed.length) });
+      if (rows.length) {
+        setMenu({ x, y, ids, entries: menuItems(rows, queue, failed.length, inArchive) });
+      }
     },
-    [sel, selectedIds, selectRow, byId, queue, failed.length],
+    [sel, selectedIds, selectRow, byId, queue, failed.length, inArchive],
   );
 
   const closeMenu = useCallback(() => {
@@ -354,7 +442,8 @@ export default function App() {
         if (cursor?.status === "completed") openDownload(cursor);
         return;
       case "remove":
-        return run("remove", selectedIds);
+        // Del archives; in the archive it removes for good.
+        return run(inArchive ? "remove" : "archive", selectedIds);
       case "menu": {
         e.preventDefault();
         const row = cursor && document.getElementById(`row-${cursor.id}`);
@@ -417,6 +506,8 @@ export default function App() {
         onFilter={setFilter}
         counts={counts}
         folders={folders}
+        archivedCount={archived}
+        tags={tags}
         bumpSeq={finish.bumpSeq}
         speed={totalSpeed(downloads)}
         speedSamples={history.total}
@@ -436,8 +527,19 @@ export default function App() {
           pauseMode={pauseAllMode(downloads)}
           onPauseAll={() => api.pauseAll().catch(fail)}
           onResumeAll={() => api.resumeAll().catch(fail)}
-          canClear={planBatch(shown, 0) != null}
-          onClear={() => clear.clearFinished(shown)}
+          onArchiveFinished={inArchive ? null : () => archiver.archiveFinished(live)}
+          canArchiveFinished={finishedToArchive(live).length > 0}
+          archived={
+            inArchive
+              ? {
+                  canAct: selectedIds.length > 0,
+                  onUnarchive: () => run("unarchive", selectedIds),
+                  onRemove: () => run("remove", selectedIds),
+                }
+              : null
+          }
+          confirmRemove={confirmRemove}
+          onConfirmRemove={updateConfirmRemove}
           onAdd={() => openAdd()}
           prefs={prefs}
           resolved={resolved}
@@ -445,7 +547,7 @@ export default function App() {
           onSettingsApplied={applySettings}
           selection={
             selectedRows.length >= 2
-              ? { count: selectedRows.length, actions: selectionActions(selectedRows) }
+              ? { count: selectedRows.length, actions: selectionActions(selectedRows, inArchive) }
               : null
           }
           onSelectionCommand={(cmd) => {
@@ -522,9 +624,13 @@ export default function App() {
         onClose={() => setAddOpen(false)}
         onAdded={(n) => n > 1 && notify(addedMessage(n))}
       />
+      {removeRows && (
+        <RemoveDialog ds={removeRows} onCancel={cancelRemove} onConfirm={confirmRemoveRows} />
+      )}
+      {tagRows.length > 0 && <TagsDialog ds={tagRows} onClose={closeTags} />}
       <Toasts
-        pending={clear.pending}
-        onUndo={clear.undo}
+        pending={archiver.pending}
+        onUndo={archiver.undo}
         toast={toast}
         onDismissToast={dismissToast}
       />

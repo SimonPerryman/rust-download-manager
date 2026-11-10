@@ -2,7 +2,9 @@ import type { MenuCommand } from "../../lib/menu";
 import type { Prefs } from "../../lib/prefs";
 import type { SettingsField } from "../../lib/settings";
 import type { Settings } from "../../lib/types";
-import { ClearDone } from "../icons/ClearDone";
+import { Archive } from "../icons/Archive";
+import { ArchiveRestore } from "../icons/ArchiveRestore";
+import { ListRemove } from "../icons/ListRemove";
 import { Pause } from "../icons/Pause";
 import { Play } from "../icons/Play";
 import { Plus } from "../icons/Plus";
@@ -24,13 +26,19 @@ type Props = {
   pauseMode: "pause" | "resume" | null;
   onPauseAll: () => void;
   onResumeAll: () => void;
-  canClear: boolean;
-  onClear: () => void;
+  /** Archive finished; null hides it (the Archived view). */
+  onArchiveFinished: (() => void) | null;
+  canArchiveFinished: boolean;
+  /** The Archived view's actions on the selected row(s); null elsewhere. */
+  archived: { canAct: boolean; onUnarchive: () => void; onRemove: () => void } | null;
   onAdd: () => void;
   prefs: Prefs;
   resolved: "light" | "dark";
   onPrefs: (patch: Partial<Prefs>) => void;
   onSettingsApplied: (applied: Settings, fields: SettingsField[]) => void;
+  /** Whether Remove asks first (a Settings toggle). */
+  confirmRemove: boolean;
+  onConfirmRemove: (ask: boolean) => void;
   /** Two or more rows selected: the toolbar turns into their actions. */
   selection: { count: number; actions: MenuCommand[] } | null;
   onSelectionCommand: (cmd: MenuCommand) => void;
@@ -80,16 +88,42 @@ export function Toolbar(p: Props) {
             <span className="tb-label">Resume all</span>
           </button>
         )}
-        <button
-          className="btn btn-ghost"
-          aria-label="Clear finished"
-          disabled={!p.canClear}
-          onClick={p.onClear}
-          title="Remove done and stopped downloads from the list, in every folder. Files stay on disk."
-        >
-          <ClearDone />
-          <span className="tb-label">Clear finished</span>
-        </button>
+        {p.onArchiveFinished && (
+          <button
+            className="btn btn-ghost"
+            aria-label="Archive finished"
+            disabled={!p.canArchiveFinished}
+            onClick={p.onArchiveFinished}
+            title="Move done and stopped downloads to Archived, in every folder. Nothing is deleted."
+          >
+            <Archive />
+            <span className="tb-label">Archive finished</span>
+          </button>
+        )}
+        {p.archived && (
+          <>
+            <button
+              className="btn btn-ghost"
+              aria-label="Unarchive"
+              disabled={!p.archived.canAct}
+              onClick={p.archived.onUnarchive}
+              title="Move the selected download back to its views"
+            >
+              <ArchiveRestore />
+              <span className="tb-label">Unarchive</span>
+            </button>
+            <button
+              className="btn btn-ghost"
+              aria-label="Remove"
+              disabled={!p.archived.canAct}
+              onClick={p.archived.onRemove}
+              title="Remove the selected download from rdm for good. The file stays on disk."
+            >
+              <ListRemove />
+              <span className="tb-label">Remove</span>
+            </button>
+          </>
+        )}
         <button
           data-testid="add-button"
           className="btn btn-primary"
@@ -102,7 +136,13 @@ export function Toolbar(p: Props) {
         <span className="mx-1 h-5 w-px bg-line-strong" />
         <DensityToggle density={p.prefs.density} onPrefs={p.onPrefs} />
         <ThemeToggle resolved={p.resolved} onPrefs={p.onPrefs} />
-        <SettingsMenu prefs={p.prefs} onPrefs={p.onPrefs} onApplied={p.onSettingsApplied} />
+        <SettingsMenu
+          prefs={p.prefs}
+          onPrefs={p.onPrefs}
+          onApplied={p.onSettingsApplied}
+          confirmRemove={p.confirmRemove}
+          onConfirmRemove={p.onConfirmRemove}
+        />
       </div>
     </header>
   );

@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../lib/api";
-import { addLabel, addLinks, linksToAdd, parseLinks, partialAddError } from "../../lib/batch";
+import {
+  addLabel,
+  addLinks,
+  linksToAdd,
+  parseLinks,
+  partialAddError,
+  type Known,
+} from "../../lib/batch";
 import { formatSpeed } from "../../lib/format";
 import { loadLastDir, saveLastDir } from "../../lib/prefs";
 import { NO_LIMIT, composeRate, exceeds, type RateDraft } from "../../lib/rate";
+import { parseTags, tagsError } from "../../lib/tags";
 import { ChevronDown } from "../icons/ChevronDown";
 import { Folder } from "../icons/Folder";
 import { RateInput } from "../RateInput";
@@ -14,8 +22,8 @@ type Props = {
   open: boolean;
   /** Text to start with (a pasted list or a dropped link). */
   initialText?: string;
-  /** URLs already in the list, flagged in the preview. */
-  existingUrls: ReadonlySet<string>;
+  /** URLs already in the list or the archive, flagged in the preview. */
+  existingUrls: ReadonlyMap<string, Known>;
   onClose: () => void;
   /** After a successful add of `n` downloads. */
   onAdded: (n: number) => void;
@@ -29,6 +37,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
   const [text, setText] = useState("");
   const [dest, setDest] = useState("");
   const [checksum, setChecksum] = useState("");
+  const [tagsText, setTagsText] = useState("");
   const [limit, setLimit] = useState<RateDraft>(NO_LIMIT);
   const [moreOpen, setMoreOpen] = useState(false);
   const [globalLimit, setGlobalLimit] = useState<number | null>(null);
@@ -48,6 +57,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     setError(null);
     setText(initialText);
     setChecksum("");
+    setTagsText("");
     setLimit(NO_LIMIT);
     setMoreOpen(false);
     const last = loadLastDir();
@@ -112,11 +122,17 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
       fail(rate.error);
       return;
     }
+    const tags = parseTags(tagsText);
+    const tagProblem = tagsError(tags);
+    if (tagProblem) {
+      setError(tagProblem);
+      return;
+    }
     setBusy(true);
     setError(null);
     const dir = dest.trim() || null;
     const outcome = await addLinks(links, (url) =>
-      api.addDownload(url, dir, (single && checksum.trim()) || null, rate.rate || null),
+      api.addDownload(url, dir, (single && checksum.trim()) || null, rate.rate || null, tags),
     );
     setBusy(false);
     const { added, failed } = outcome;
@@ -195,6 +211,27 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
                 </button>
               </div>
               <p className="text-xs text-g400">rdm remembers the last folder you used.</p>
+            </Field>
+
+            <Field label="Tags" htmlFor="add-tags">
+              <input
+                id="add-tags"
+                type="text"
+                aria-label="Tags"
+                value={tagsText}
+                onChange={(e) => setTagsText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void submit();
+                  }
+                }}
+                placeholder="Optional, e.g. work, iso"
+                className="flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 text-sm transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden"
+              />
+              <p className="text-xs text-g400">
+                Separate tags with commas. They apply to every link added here.
+              </p>
             </Field>
 
             <div>

@@ -805,33 +805,6 @@ impl Manager {
         self.inner.publish(st);
     }
 
-    /// Remove every finished (completed, failed or cancelled) download whose
-    /// status is in `statuses` and, with `only`, whose id is listed; files are
-    /// treated as by [`remove`](Self::remove). Returns how many were removed.
-    pub fn clear(&self, statuses: &[Status], only: Option<&[u64]>) -> usize {
-        let st = &mut *self.inner.state.lock().unwrap();
-        let doomed: HashSet<u64> = st
-            .entries
-            .values()
-            .filter(|e| e.record.status.is_terminal() && statuses.contains(&e.record.status))
-            .filter(|e| only.is_none_or(|ids| ids.contains(&e.record.id)))
-            .map(|e| e.record.id)
-            .collect();
-        if doomed.is_empty() {
-            return 0;
-        }
-        st.order.retain(|id| !doomed.contains(id));
-        for id in &doomed {
-            if let Some(e) = st.entries.remove(id) {
-                discard_files(st, &e.record);
-            }
-            self.inner.logs.forget(*id);
-        }
-        self.inner.persist(st);
-        self.inner.publish(st);
-        doomed.len()
-    }
-
     /// Archive the listed downloads: hide them from the working views but
     /// keep their records. Only finished (completed, failed or cancelled)
     /// downloads are archived; any other id is left unchanged. Returns how
@@ -1239,7 +1212,7 @@ fn move_among(order: &mut [u64], waiting: impl Fn(u64) -> bool, id: u64, index: 
     }
 }
 
-/// The files rule shared by `remove` and `clear`: a completed download's file
+/// The files rule `remove` follows: a completed download's file
 /// stays, as does a partial the user chose to keep; any other partial the
 /// record owns goes, unless another download in `st` owns the same target.
 fn discard_files(st: &ManagerState, record: &DownloadRecord) {

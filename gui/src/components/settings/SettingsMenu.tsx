@@ -19,11 +19,14 @@ type Props = {
   onPrefs: (patch: Partial<Prefs>) => void;
   /** A `set_settings` result from the Downloads section, for the status bar to follow. */
   onApplied: (applied: Settings, fields: SettingsField[]) => void;
+  /** Whether Remove (from the archive) asks first. */
+  confirmRemove: boolean;
+  onConfirmRemove: (ask: boolean) => void;
 };
 
-// The toolbar's settings popover: the theme pref (kept in localStorage) and
-// the engine-backed Downloads settings.
-export function SettingsMenu({ prefs, onPrefs, onApplied }: Props) {
+// The toolbar's settings popover: the theme and Remove's confirmation (kept in
+// localStorage) and the engine-backed Downloads settings.
+export function SettingsMenu({ prefs, onPrefs, onApplied, confirmRemove, onConfirmRemove }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -69,6 +72,15 @@ export function SettingsMenu({ prefs, onPrefs, onApplied }: Props) {
             value={prefs.theme}
             onChange={(theme) => onPrefs({ theme })}
           />
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              aria-label="Ask before removing"
+              checked={confirmRemove}
+              onChange={(e) => onConfirmRemove(e.target.checked)}
+            />
+            Ask before removing a download for good
+          </label>
           <div className="-mx-4 h-px bg-line" />
           <SectionHeading>Downloads</SectionHeading>
           <DownloadSettings onApplied={onApplied} />
