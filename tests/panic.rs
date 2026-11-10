@@ -17,10 +17,19 @@ use rdm::{JsonStore, Manager, Status, Store};
 #[cfg(feature = "fault-injection")]
 const T: Duration = Duration::from_secs(20);
 
+/// A Manager over a fresh store in `dir`, with this thread's events routed
+/// through its log layer (`#[tokio::test]` runs spawned tasks on this thread).
+/// Every test here installs one: a test thread with no subscriber can race
+/// another's callsite registration and leave its events unrecorded.
 #[cfg(feature = "fault-injection")]
-fn manager_in(dir: &Path) -> Manager {
+fn manager_in(dir: &Path) -> (Manager, tracing::subscriber::DefaultGuard) {
+    use tracing_subscriber::prelude::*;
+
     let store: Box<dyn Store> = Box::new(JsonStore::new(dir.join("state.json")));
-    Manager::load(store, tokio::runtime::Handle::current()).unwrap()
+    let mgr = Manager::load(store, tokio::runtime::Handle::current()).unwrap();
+    let guard =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(mgr.log_layer()));
+    (mgr, guard)
 }
 
 #[cfg(feature = "fault-injection")]
@@ -47,14 +56,10 @@ async fn wait_status(mgr: &Manager, id: u64, want: Status) {
 #[tokio::test]
 async fn a_panicking_download_fails_alone_and_frees_its_slot() {
     use rdm::LogLevel;
-    use tracing_subscriber::prelude::*;
 
     let server = common::spawn().await;
     let dir = tempfile::tempdir().unwrap();
-    let mgr = manager_in(dir.path());
-    // `#[tokio::test]` runs spawned tasks on this thread, so their lines are caught.
-    let _guard =
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(mgr.log_layer()));
+    let (mgr, _log) = manager_in(dir.path());
     mgr.set_max_concurrent(1);
 
     let panicking = mgr.add(server.url("/__panic"), dir.path(), None, None);
@@ -110,7 +115,7 @@ async fn a_panicking_checksum_check_still_ends() {
 
     let server = common::spawn().await;
     let dir = tempfile::tempdir().unwrap();
-    let mgr = manager_in(dir.path());
+    let (mgr, _log) = manager_in(dir.path());
     let options = AddOptions {
         out: Some(dir.path().join("__panic.bin")),
         ..AddOptions::default()
