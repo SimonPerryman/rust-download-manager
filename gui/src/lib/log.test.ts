@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   atBottom,
+  copiedAnnouncement,
+  copyText,
   isDetail,
   LOG_POLL_MS,
   logText,
@@ -27,6 +29,27 @@ describe("logTime", () => {
     const at = new Date(2026, 10, 8, 9, 4, 5, 678).getTime();
     expect(logTime(at)).toBe("09:04:05");
     expect(logTime(new Date(2026, 10, 8, 23, 59, 59).getTime())).toBe("23:59:59");
+  });
+});
+
+describe("copyText", () => {
+  it("puts each line as its time, two spaces, then its text", () => {
+    const at = new Date(2026, 10, 8, 9, 4, 5).getTime();
+    const lines = [
+      line({ at, message: "Paused" }),
+      line({ at: at + 61_000, message: "Target claimed", fields: "path=/data/a.iso" }),
+    ];
+    expect(copyText(lines)).toBe(
+      ["09:04:05  Paused", "09:05:06  Target claimed path=/data/a.iso"].join("\n"),
+    );
+    expect(copyText([])).toBe("");
+  });
+});
+
+describe("copiedAnnouncement", () => {
+  it("counts the lines copied", () => {
+    expect(copiedAnnouncement(1)).toBe("Copied 1 line");
+    expect(copiedAnnouncement(12)).toBe("Copied 12 lines");
   });
 });
 

@@ -28,7 +28,7 @@ export function progressView(d: DownloadSnapshot): ProgressView {
       if (pct == null) return { kind: "text", text: "Paused", tone: "stopped" };
       return { kind: "bar", pct, text: `${Math.floor(pct)}%`, muted: true };
     case "completed":
-      return { kind: "text", text: "Done", tone: "done" };
+      return { kind: "text", text: "Completed", tone: "done" };
     case "failed":
       return { kind: "text", text: "Failed", tone: "failed" };
     case "cancelled":

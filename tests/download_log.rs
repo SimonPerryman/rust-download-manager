@@ -259,7 +259,7 @@ async fn pause_resume_and_detail_through_the_manager() {
     let lines = mgr.download_log(id);
     let story = concise(&lines);
     assert_eq!(
-        story[0].message, "Started · 4.00 MB · resumable · up to 4 lanes",
+        story[0].message, "Started · 4.00 MB · resumable · 4 pieces, up to 4 lanes",
         "{lines:#?}"
     );
     let paused = story.iter().position(|l| l.message == "Paused");

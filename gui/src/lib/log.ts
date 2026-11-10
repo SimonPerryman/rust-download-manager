@@ -23,6 +23,16 @@ export function logText(line: LogLine): string {
   return line.fields ? `${line.message} ${line.fields}` : line.message;
 }
 
+/** The lines as the Log tab's Copy puts them on the clipboard: `HH:MM:SS  text`, one per line. */
+export function copyText(lines: readonly LogLine[]): string {
+  return lines.map((l) => `${logTime(l.at)}  ${logText(l)}`).join("\n");
+}
+
+/** What Copy tells a screen reader once the lines are on the clipboard. */
+export function copiedAnnouncement(n: number): string {
+  return `Copied ${n} line${n === 1 ? "" : "s"}`;
+}
+
 /** Whether a line is per-request detail (DEBUG and below), shown only in the Detailed view. */
 export function isDetail(line: LogLine): boolean {
   return line.level === "debug" || line.level === "trace";

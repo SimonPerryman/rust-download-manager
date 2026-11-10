@@ -94,7 +94,7 @@ export function Toolbar(p: Props) {
             aria-label="Archive finished"
             disabled={!p.canArchiveFinished}
             onClick={p.onArchiveFinished}
-            title="Move done and stopped downloads to Archived, in every folder. Nothing is deleted."
+            title="Move completed and stopped downloads to Archived, in every folder. Nothing is deleted."
           >
             <Archive />
             <span className="tb-label">Archive finished</span>

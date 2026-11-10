@@ -47,7 +47,7 @@ export function ProgressCell({ d, nextUp }: { d: DownloadSnapshot; nextUp: boole
     const muted = view.kind === "bar" && view.muted;
     return (
       <div className="flex h-full items-center gap-2 text-xs tabular-nums">
-        <Lanes d={d} size="cell" converged={merging} />
+        <Lanes d={d} converged={merging} />
         <span className={`min-w-10 text-right ${muted ? "text-g600" : "font-medium text-ink"}`}>
           {view.kind === "bar" ? view.text : "100%"}
         </span>

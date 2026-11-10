@@ -20,7 +20,19 @@ into byte ranges fetched in parallel, over up to 4 connections by default
 (1–16 with `-c`, or the GUI's max connections setting).
 
 - **Ramping:** a download starts on one connection and adds more, up to the
-  maximum, while the measured speed keeps rising.
+  maximum, while the measured speed keeps rising. If more connections stop
+  helping, it closes one again.
+- **Which lane closes:** connections are numbered Lane 1, Lane 2… in the
+  order they open, and the highest-numbered one closes first, so Lane 1
+  usually stays for the whole download and the numbers stay compact. A lane
+  closes between two reads, putting the rest of its piece back for another
+  lane. If the highest lane is stuck (say, waiting on a slow server) and
+  hasn't closed within 3 seconds, the next lane that's free to stop closes
+  instead, so a stuck lane can't keep more connections open than the
+  download should have; Lane 1 stands in only when it is the one other lane.
+  3 seconds is three of the ramp's 1-second measuring windows: long enough
+  that a lane mid-read gets its turn, short enough that a slow host isn't
+  kept busy for long.
 - **Work-stealing:** a connection that finishes its range takes over half of
   the largest remaining range, so the last few seconds don't hang on one slow
   connection.

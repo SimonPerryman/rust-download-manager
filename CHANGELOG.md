@@ -18,6 +18,7 @@ desktop app share one version.
   counts. In Archived, the tags listed are the archived downloads'.
 - The Add dialog notes a link that's already in your archive, and still adds
   it.
+- The Log tab's **Copy** button copies the lines shown, each with its time.
 
 ### Changed
 
@@ -29,6 +30,22 @@ desktop app share one version.
   A list saved by a newer rdm is now refused with a message naming its
   version, rather than opened and saved back without what this version
   doesn't understand.
+- The details pane draws one bar per open connection (lane) instead of one
+  line per piece, headed with how many lanes are open. Bars appear as lanes
+  open and merge back as they close, each showing only its own lane's work,
+  so nothing is drawn twice; hover one for its lane and piece. A completed
+  download shows one finish bar and a line such as "Downloaded in 4 pieces ·
+  up to 3 lanes".
+- "Completed" replaces "Done" for a download that worked: the sidebar
+  filter, the row's status, the details pane and the finish notification
+  ("Download complete"). "Finished" still means any ending, as in **Archive
+  finished**.
+- When rdm closes a connection because more weren't helping, it closes the
+  highest-numbered lane, so Lane 1 usually stays. If that lane is stuck, the
+  next free one closes after 3 seconds instead.
+- Clearer log lines: "Added Lane 2 — now 2 lanes", "Closing Lane 3 — more
+  lanes didn't speed this up", and in the detail, which piece each lane is on
+  and whose work it took over, with sizes rather than byte offsets.
 
 ## 0.1.0 - 2026-11-09
 

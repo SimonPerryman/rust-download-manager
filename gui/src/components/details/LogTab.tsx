@@ -1,8 +1,21 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { atBottom, logText, logTime, logView, visibleLines } from "../../lib/log";
+import {
+  atBottom,
+  copiedAnnouncement,
+  copyText,
+  logText,
+  logTime,
+  logView,
+  visibleLines,
+} from "../../lib/log";
 import { loadLogDetailed, saveLogDetailed } from "../../lib/prefs";
 import type { LogLevel } from "../../lib/types";
 import { useDownloadLog } from "../../lib/useDownloadLog";
+import { Check } from "../icons/Check";
+import { Copy } from "../icons/Copy";
+
+/** How long Copy says "Copied" before it goes back to its label. */
+const COPIED_MS = 1_500;
 
 /** Spoken before a line whose colour marks it, so the level isn't colour alone. */
 const LEVEL_WORD: Partial<Record<LogLevel, string>> = { error: "Error: ", warn: "Warning: " };
@@ -18,6 +31,14 @@ export function LogTab({ id }: { id: number }) {
   const list = useRef<HTMLOListElement>(null);
   const stick = useRef(true);
   const hasList = shown.length > 0;
+  // How many lines the last Copy put on the clipboard, while it says so.
+  const [copied, setCopied] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (copied == null) return;
+    const t = setTimeout(() => setCopied(null), COPIED_MS);
+    return () => clearTimeout(t);
+  }, [copied]);
 
   useEffect(() => {
     const scroller = list.current?.parentElement;
@@ -51,9 +72,32 @@ export function LogTab({ id }: { id: number }) {
     setDetailed(on);
     saveLogDetailed(on);
   };
+  const copy = () => {
+    const n = shown.length;
+    void Promise.resolve()
+      .then(() => navigator.clipboard.writeText(copyText(shown)))
+      .then(() => setCopied(n))
+      .catch(() => {});
+  };
   return (
     <>
       <div className="log-bar">
+        {view === "list" && (
+          <button
+            type="button"
+            className={`btn btn-ghost btn-sm${copied != null ? " copied" : ""}`}
+            data-testid="log-copy"
+            title="Copy the lines shown"
+            onClick={copy}
+          >
+            {copied != null ? <Check size={14} strokeWidth={2.5} /> : <Copy size={14} />}
+            {copied != null ? "Copied" : "Copy"}
+          </button>
+        )}
+        <span className="sr-only" role="status">
+          {copied != null ? copiedAnnouncement(copied) : ""}
+        </span>
+        {view === "list" && <span className="log-bar-sep" aria-hidden="true" />}
         <label className="log-detail" title="Also show each request and lane hand-off">
           <input
             type="checkbox"

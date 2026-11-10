@@ -1,6 +1,6 @@
 // End-to-end: the finish moment. A download that completes while the app is
 // watching stays where it was in All, lingers with a solid Open button and a
-// notification, and bumps Done's count; opening it once (from the row or the
+// notification, and bumps Completed's count; opening it once (from the row or the
 // notification) ends the linger, and what "opened" is checked in the
 // RDM_OPEN_LOG file instead of launching a program. An unopened row keeps its
 // linger across a reload, but a reload never replays the moment itself.
@@ -57,11 +57,11 @@ describe("rdm GUI finish moment", () => {
     await removeAll(ids);
   });
 
-  it("keeps a finished download in place, lingering with Open, a notification and Done's bump", async () => {
+  it("keeps a finished download in place, lingering with Open, a notification and Completed's bump", async () => {
     await selectFilter("all");
     const doneBefore = await filterCount("done");
 
-    // Watch the Done count element for the bump class from here on: the bump is
+    // Watch the Completed count element for the bump class from here on: the bump is
     // short, so a single read after the finish could miss it.
     await browser.execute((sel) => {
       const el = document.querySelector(sel)!;
@@ -86,18 +86,18 @@ describe("rdm GUI finish moment", () => {
     await waitForText(`${rowSelector(a)} button[aria-label="Open"]`, "Open");
 
     const card = notificationSelector(a);
-    await waitForText(card, "Download finished");
+    await waitForText(card, "Download complete");
     await waitForText(card, (await attr(a, "data-filename"))!);
 
     await browser.waitUntil(async () => (await filterCount("done")) === doneBefore + 1, {
-      timeoutMsg: `Done's count never went from ${doneBefore} to ${doneBefore + 1}`,
+      timeoutMsg: `Completed's count never went from ${doneBefore} to ${doneBefore + 1}`,
     });
     expect(
       await browser.execute(() => (window as unknown as { __rdmBumpSeen: boolean }).__rdmBumpSeen),
     ).toBe(true);
 
     await selectFilter("done");
-    await rowById(a).waitForExist({ timeoutMsg: `download ${a} isn't shown under Done` });
+    await rowById(a).waitForExist({ timeoutMsg: `download ${a} isn't shown under Completed` });
     await selectFilter("all");
   });
 

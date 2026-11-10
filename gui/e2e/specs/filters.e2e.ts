@@ -28,7 +28,7 @@ const FILTERS: { key: string; title: string; statuses: string[] }[] = [
   { key: "downloading", title: "Downloading", statuses: ["downloading"] },
   { key: "waiting", title: "Waiting", statuses: ["queued"] },
   { key: "paused", title: "Paused", statuses: ["paused"] },
-  { key: "done", title: "Done", statuses: ["completed"] },
+  { key: "done", title: "Completed", statuses: ["completed"] },
   { key: "failed", title: "Failed", statuses: ["failed"] },
   { key: "stopped", title: "Stopped", statuses: ["cancelled"] },
 ];

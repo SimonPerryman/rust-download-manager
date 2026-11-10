@@ -25,6 +25,8 @@ export function snap(overrides: Partial<DownloadSnapshot> = {}): DownloadSnapsho
     checksum: null,
     checksum_state: "none",
     segments: [],
+    lanes: [],
+    peak_lanes: 0,
     active_ms: null,
     archived: false,
     tags: [],

@@ -33,7 +33,7 @@ const EMPTY: Record<Extract<ViewFilter, { kind: "status" }>["status"], [string, 
     "Downloads wait here when the most allowed at once are already running.",
   ],
   paused: ["Nothing paused", "Pause a download to free its slot for something else."],
-  done: ["Nothing finished yet", "Finished downloads stay here until you archive them."],
+  done: ["Nothing completed yet", "Completed downloads stay here until you archive them."],
   failed: [
     "No failed downloads",
     "When a download fails, the reason and a Retry button show up here.",

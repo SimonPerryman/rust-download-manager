@@ -252,9 +252,9 @@ async fn a_paused_download_keeps_its_time_across_a_restart() {
     assert_eq!(snap(&reloaded, id).active_ms, paused.active_ms);
 }
 
-/// `/seg-gated` holds a 4-connection download at its 4-way plan: the tiling
-/// never gains a stolen piece while the gate is shut, and releasing it lets the
-/// download finish.
+/// `/seg-gated` holds a 4-connection download at its 4-way plan: the ramp
+/// opens Lanes 1–4, one per piece, the tiling never gains a stolen piece while
+/// the gate is shut, and releasing it lets the download finish.
 #[tokio::test]
 async fn seg_gated_holds_the_initial_tiling() {
     let server = common::spawn().await;
@@ -266,7 +266,16 @@ async fn seg_gated_holds_the_initial_tiling() {
     wait_for(&mgr, id, T, |s| s.segments.len() == 4)
         .await
         .expect("never planned 4 segments");
-    // Long enough for the ramp to add workers and for any steal to show.
+    // Each piece trickles at the same rate, so every lane the ramp adds helps.
+    wait_for(&mgr, id, Duration::from_secs(30), |s| {
+        let mut lanes = s.lanes.clone();
+        lanes.sort();
+        lanes == [Some(1), Some(2), Some(3), Some(4)]
+    })
+    .await
+    .expect("never ran Lanes 1-4, one per piece");
+    assert_eq!(snap(&mgr, id).peak_lanes, 4);
+    // Long enough for any steal to show.
     let deadline = Instant::now() + Duration::from_secs(3);
     while Instant::now() < deadline {
         let s = snap(&mgr, id);
@@ -276,5 +285,11 @@ async fn seg_gated_holds_the_initial_tiling() {
     }
 
     server.gate().release_all();
-    wait_status(&mgr, id, Status::Completed).await;
+    let done = wait_status(&mgr, id, Status::Completed).await;
+    assert!(
+        done.lanes.is_empty(),
+        "lanes are live only: {:?}",
+        done.lanes
+    );
+    assert_eq!(done.peak_lanes, 4, "the peak outlives the lanes");
 }

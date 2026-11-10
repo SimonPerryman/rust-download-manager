@@ -78,6 +78,9 @@
 //! - `GET /seg-ramp`   — [`SEG_RAMP_CHUNK`]s paced by deadline (no burst) at
 //!   [`SEG_RAMP_RATE`] per connection and [`SEG_RAMP_CAP`] across all of
 //!   them, like a host whose link saturates at four connections.
+//! - `GET /seg-ramp-stuck` — `/seg-ramp`, but from ranged request
+//!   [`SEG_RAMP_STUCK_FROM`] on, each sends its headers and then no body until
+//!   [`TestServer::gate`] releases it: a lane opened late sits stuck.
 //! - `GET /seg-429`    — the first [`FixtureConfig::seg_refusals`] ranged
 //!   requests get 429 (with `Retry-After` from
 //!   [`FixtureConfig::seg_retry_after`]), like a per-IP rate limit.
@@ -193,6 +196,10 @@ pub const SEG_RAMP_RATE: u64 = 256 * 1024;
 
 /// `/seg-ramp`: the most all connections together are served, in bytes/s.
 pub const SEG_RAMP_CAP: u64 = 4 * SEG_RAMP_RATE;
+
+/// `/seg-ramp-stuck`: the first ranged request (0-based) held without a body;
+/// the ones before it serve the second to fourth lanes.
+pub const SEG_RAMP_STUCK_FROM: usize = 3;
 
 /// How long an aborting body waits after its prefix before erroring.
 pub const ABORT_GRACE: Duration = Duration::from_millis(25);
@@ -438,6 +445,7 @@ const COUNTED_ROUTES: &[&str] = &[
     "/seg-expiring",
     "/seg-signed",
     "/seg-ramp",
+    "/seg-ramp-stuck",
     "/seg-gated",
     "/seg-stall",
     "/seg-hang",
@@ -992,6 +1000,7 @@ enum Seg {
     Identity,
     Signed,
     Ramp,
+    RampStuck,
     RateLimited,
     RateLimitedDrop,
     RateLimitedThenDrop,
@@ -1020,6 +1029,7 @@ impl Seg {
             Seg::Identity => "/seg-identity",
             Seg::Signed => "/seg-signed",
             Seg::Ramp => "/seg-ramp",
+            Seg::RampStuck => "/seg-ramp-stuck",
             Seg::RateLimited => "/seg-429",
             Seg::RateLimitedDrop => "/seg-429-drop",
             Seg::RateLimitedThenDrop => "/seg-429-then-drop",
@@ -1181,6 +1191,16 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg, data: Bytes) -
         gated_seg_stream(data.slice(start..end), state.gate.enter(), guard)
     } else if kind == Seg::Ramp {
         paced_stream(data.slice(start..end), state.ramp_next_free.clone(), guard)
+    } else if kind == Seg::RampStuck {
+        let hold = ranged_index
+            .filter(|&i| i >= SEG_RAMP_STUCK_FROM)
+            .map(|_| state.gate.enter());
+        held_paced_stream(
+            data.slice(start..end),
+            state.ramp_next_free.clone(),
+            hold,
+            guard,
+        )
     } else if kind == Seg::Stall && ranged {
         stalled_stream(guard)
     } else {
@@ -1202,6 +1222,36 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg, data: Bytes) -
 /// [`SEG_RAMP_CAP`] chunk time). Deadlines, not sleeps, so a late timer
 /// (Windows' ~15.6 ms tick) only jitters the pace and never banks a burst.
 fn paced_stream(data: Bytes, next_free: Arc<Mutex<tokio::time::Instant>>, guard: InFlight) -> Body {
+    Body::from_stream(paced(data, next_free, guard))
+}
+
+/// [`paced_stream`], but with `hold` it sends nothing until that ticket is
+/// released (pacing starts from the release).
+fn held_paced_stream(
+    data: Bytes,
+    next_free: Arc<Mutex<tokio::time::Instant>>,
+    hold: Option<GateTicket>,
+    guard: InFlight,
+) -> Body {
+    let start = async move {
+        if let Some(ticket) = hold {
+            while !ticket.released() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+        paced(data, next_free, guard)
+    };
+    Body::from_stream(futures_util::StreamExt::flatten(
+        futures_util::stream::once(start),
+    ))
+}
+
+/// The chunks of [`paced_stream`].
+fn paced(
+    data: Bytes,
+    next_free: Arc<Mutex<tokio::time::Instant>>,
+    guard: InFlight,
+) -> impl futures_util::Stream<Item = Result<Bytes, std::io::Error>> {
     let own_gap = Duration::from_secs_f64(SEG_RAMP_CHUNK as f64 / SEG_RAMP_RATE as f64);
     let link_gap = Duration::from_secs_f64(SEG_RAMP_CHUNK as f64 / SEG_RAMP_CAP as f64);
     let started = tokio::time::Instant::now();
@@ -1231,7 +1281,7 @@ fn paced_stream(data: Bytes, next_free: Arc<Mutex<tokio::time::Instant>>, guard:
             }
         },
     );
-    Body::from_stream(s)
+    s
 }
 
 /// A body that never yields a byte; holds the in-flight slot until dropped.
@@ -1473,6 +1523,7 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/seg-expiring", get(seg_expiring_handler))
         .route("/seg-signed", get(seg_signed_handler))
         .route("/seg-ramp", seg_route(Seg::Ramp))
+        .route("/seg-ramp-stuck", seg_route(Seg::RampStuck))
         .route("/seg-gated", seg_route(Seg::Gated))
         .route("/seg-stall", seg_route(Seg::Stall))
         .route("/seg-hang", seg_route(Seg::Hang))

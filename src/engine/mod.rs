@@ -85,6 +85,7 @@ pub struct DownloadRequest {
     /// single). Default 1 MiB; a tuning knob, mainly for tests.
     pub min_segment_size: u64,
     ramp: Ramping,
+    shed_grace: Duration,
     read_timeout: Duration,
     tally: Arc<Tally>,
     active_before: Duration,
@@ -146,6 +147,7 @@ impl DownloadRequest {
             connections: DEFAULT_CONNECTIONS,
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
             ramp: Ramping::default(),
+            shed_grace: segment::SHED_GRACE,
             read_timeout: READ_TIMEOUT,
             tally: Arc::default(),
             active_before: Duration::ZERO,
@@ -165,6 +167,7 @@ impl DownloadRequest {
             connections: DEFAULT_CONNECTIONS,
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
             ramp: Ramping::default(),
+            shed_grace: segment::SHED_GRACE,
             read_timeout: READ_TIMEOUT,
             tally: Arc::default(),
             active_before: Duration::ZERO,
@@ -209,6 +212,14 @@ impl DownloadRequest {
     #[doc(hidden)]
     pub fn with_ramp(mut self, ramp: Ramping) -> Self {
         self.ramp = ramp;
+        self
+    }
+
+    /// Override how long the highest-numbered lane gets to close when the
+    /// ramp sheds one, before another may (test seam; frontends never call this).
+    #[doc(hidden)]
+    pub fn with_shed_grace(mut self, grace: Duration) -> Self {
+        self.shed_grace = grace;
         self
     }
 
@@ -669,9 +680,10 @@ async fn attempt_once(
             *segmented = true;
             let segments = segment::plan(total, req.effective_connections(), req.min_segment_size);
             let workers = segments.len();
+            let pieces = human::count(workers as u32, "piece", "pieces");
             let lanes = match req.ramp {
-                Ramping::Window(_) => format!("up to {workers} lanes"),
-                Ramping::Off => human::count(workers as u32, "lane", "lanes"),
+                Ramping::Window(_) => format!("{pieces}, up to {workers} lanes"),
+                Ramping::Off => format!("{pieces}, {workers} lanes"),
             };
             announce_start(req, &resp, &lanes);
             let st = DownloadState::segmented(
@@ -700,6 +712,7 @@ async fn attempt_once(
                 min_segment_size: req.min_segment_size,
                 read_timeout: req.read_timeout,
                 ramp: req.ramp,
+                shed_grace: req.shed_grace,
                 first: Some(resp),
                 tally: &req.tally,
             };
@@ -754,6 +767,7 @@ async fn resume_segmented(
         min_segment_size: req.min_segment_size,
         read_timeout: req.read_timeout,
         ramp: req.ramp,
+        shed_grace: req.shed_grace,
         first: None,
         tally: &req.tally,
     };
@@ -860,6 +874,7 @@ async fn resume(
                         eta: None,
                         connections: 0,
                         segments: single_segment(offset, Some(total)),
+                        lanes: vec![None],
                     });
                     return Ok((status.as_u16(), part.to_path_buf(), offset));
                 }
@@ -945,6 +960,7 @@ async fn stream_to_part(
         eta: None,
         connections: 1,
         segments: single_segment(downloaded, total),
+        lanes: single_lane(total),
     });
 
     let mut stream = resp.bytes_stream();
@@ -980,11 +996,18 @@ async fn stream_to_part(
             eta: progress::eta(downloaded, total, bytes_per_sec),
             connections: 1,
             segments: single_segment(downloaded, total),
+            lanes: single_lane(total),
         });
     }
 
     file.flush().await?;
     Ok(downloaded)
+}
+
+/// The one lane of a single-connection download, on its one segment (none
+/// while the size is unknown, as in [`single_segment`]).
+fn single_lane(total: Option<u64>) -> Vec<Option<u8>> {
+    total.map(|_| Some(1)).into_iter().collect()
 }
 
 /// A single connection's progress as one segment over the whole file, or none
@@ -1006,7 +1029,8 @@ fn size_text(total: Option<u64>) -> String {
 }
 
 /// Say how a fresh download starts (once per run), e.g. `Started · 6.25 GB ·
-/// resumable · up to 4 lanes`. Resumable means the server takes byte ranges.
+/// resumable · 4 pieces, up to 4 lanes`. Resumable means the server takes
+/// byte ranges.
 fn announce_start(req: &DownloadRequest, resp: &reqwest::Response, lanes: &str) {
     if !req.tally.announce() {
         return;

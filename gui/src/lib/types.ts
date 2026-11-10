@@ -43,6 +43,13 @@ export interface DownloadSnapshot {
    */
   segments: Segment[];
   /**
+   * For each of `segments`, the lane fetching it now (numbered from 1, as the
+   * log names it), or null; empty unless downloading.
+   */
+  lanes: (number | null)[];
+  /** The most lanes open at once since it last started from zero (this session). */
+  peak_lanes: number;
+  /**
    * Milliseconds spent running (not waiting or paused) since it last started from zero;
    * null when unknown (an older build's record, or a run cut short by a crash).
    */

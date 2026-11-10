@@ -34,7 +34,7 @@ export const STATUS_FILTERS: readonly { key: StatusFilter; label: string }[] = [
   { key: "downloading", label: "Downloading" },
   { key: "waiting", label: "Waiting" },
   { key: "paused", label: "Paused" },
-  { key: "done", label: "Done" },
+  { key: "done", label: "Completed" },
   { key: "failed", label: "Failed" },
   { key: "stopped", label: "Stopped" },
 ];

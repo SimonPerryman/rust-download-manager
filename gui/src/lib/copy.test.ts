@@ -55,7 +55,7 @@ describe("emptyCopy", () => {
   });
 
   it("quotes a query that matched nothing and doesn't offer Add", () => {
-    const q = emptyCopy({ kind: "status", status: "done" }, "Done", "  zzq ");
+    const q = emptyCopy({ kind: "status", status: "done" }, "Completed", "  zzq ");
     expect(q.title).toBe("Nothing matches “zzq”");
     expect(q.invitesAdd).toBe(false);
   });

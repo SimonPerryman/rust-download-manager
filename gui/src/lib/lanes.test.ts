@@ -3,8 +3,6 @@ import {
   CELL_LANES,
   hasLanes,
   laneRows,
-  lanesHead,
-  laneTip,
   pieceBox,
   scaleMarks,
   showsCellLanes,
@@ -73,40 +71,6 @@ describe("hasLanes", () => {
   });
 });
 
-describe("lanesHead", () => {
-  it("counts unfinished pieces while running", () => {
-    const d = snap({ status: "downloading", segments: [seg(0, 100, 100), seg(100, 200, 5)] });
-    expect(lanesHead(d)).toBe("2 pieces, 1 unfinished");
-  });
-
-  it("says the pieces were joined once done", () => {
-    const d = snap({ status: "completed", segments: [seg(0, 100, 100)] });
-    expect(lanesHead(d)).toBe("Fetched in 1 piece, joined into one file");
-  });
-});
-
-describe("laneTip", () => {
-  it("describes one piece", () => {
-    const [row] = laneRows([seg(0, 2048, 1024)], 8);
-    expect(laneTip(row, 4)).toEqual({
-      title: "Piece 1 of 4",
-      lines: ["0 B to 2.00 KB", "50% fetched"],
-    });
-  });
-
-  it("describes a shared line as a span of pieces", () => {
-    const rows = laneRows(tiling(12, 1024), 8);
-    const tip = laneTip(rows[1], 12);
-    expect(tip.title).toBe("Pieces 3 to 4 of 12");
-    expect(tip.lines).toEqual(["2.00 KB to 4.00 KB", "Not started"]);
-  });
-
-  it("says when a piece is finished", () => {
-    const [row] = laneRows([seg(0, 10, 10)], 8);
-    expect(laneTip(row, 1).lines[1]).toBe("Finished");
-  });
-});
-
 describe("scaleMarks", () => {
   it("marks quarters of the file", () => {
     expect(scaleMarks(4 * 1024 * 1024)).toEqual(["0", "1.00 MB", "2.00 MB", "3.00 MB", "4.00 MB"]);
@@ -152,7 +116,7 @@ describe("startsMerge", () => {
     expect(startsMerge(true, snap({ status: "completed", total: 400 }))).toBe(false);
   });
 
-  it("only merges into Done", () => {
+  it("only merges into Completed", () => {
     expect(startsMerge(true, snap({ status: "failed", segments: tiling(4), total: 400 }))).toBe(
       false,
     );

@@ -1,14 +1,14 @@
-// The lanes: one line per piece of the file (the engine's segment tiling),
-// drawn across the whole file so each line shows where its piece sits and how
-// far it has got. Pure; the Lanes component only renders what this returns.
+// The table cell's lanes: one hairline per piece of the file (the engine's
+// segment tiling), drawn across the whole file so each line shows where its
+// piece sits and how far it has got. Pure; the Lanes component only renders
+// what this returns. (The details pane draws one row per connection instead;
+// see laneWork.ts.)
 
 import { formatBytes } from "./format";
 import type { DownloadSnapshot, Segment } from "./types";
 
 /** A 32 px table row fits 8 hairlines. */
 export const CELL_LANES = 8;
-/** The details pane shows up to the engine's connection cap. */
-export const PANE_LANES = 16;
 
 /** One drawn line: pieces `first`..`last` (1-based, in file order) sharing it. */
 export interface LaneRow {
@@ -32,7 +32,6 @@ export function laneRows(segments: readonly Segment[], max: number): LaneRow[] {
 }
 
 const pieceLen = (s: Segment) => Math.max(0, s.end - s.start);
-const isFinished = (s: Segment) => s.done >= pieceLen(s);
 
 /**
  * Whether the download has lanes worth drawing: more than one piece (a
@@ -58,32 +57,6 @@ export function showsCellLanes(d: DownloadSnapshot): boolean {
  */
 export function startsMerge(showedLanes: boolean, d: DownloadSnapshot): boolean {
   return showedLanes && d.status === "completed" && hasLanes(d);
-}
-
-/** The pane's heading over the lanes. */
-export function lanesHead(d: DownloadSnapshot): string {
-  const n = d.segments.length;
-  const pieces = `${n} piece${n === 1 ? "" : "s"}`;
-  if (d.status === "completed") return `Fetched in ${pieces}, joined into one file`;
-  const left = d.segments.filter((s) => !isFinished(s)).length;
-  return `${pieces}, ${left} unfinished`;
-}
-
-/** The hover tooltip for one pane lane. */
-export function laneTip(row: LaneRow, count: number): { title: string; lines: string[] } {
-  const title =
-    row.first === row.last
-      ? `Piece ${row.first} of ${count}`
-      : `Pieces ${row.first} to ${row.last} of ${count}`;
-  const start = Math.min(...row.pieces.map((s) => s.start));
-  const end = Math.max(...row.pieces.map((s) => s.end));
-  const len = row.pieces.reduce((n, s) => n + pieceLen(s), 0);
-  const done = row.pieces.reduce((n, s) => n + Math.min(s.done, pieceLen(s)), 0);
-  let state: string;
-  if (row.pieces.every(isFinished)) state = "Finished";
-  else if (done === 0) state = "Not started";
-  else state = `${Math.floor((done / Math.max(1, len)) * 100)}% fetched`;
-  return { title, lines: [`${formatBytes(start)} to ${formatBytes(end)}`, state] };
 }
 
 /** Labels under the pane's lanes: 0, a quarter, half, three quarters and the whole size. */
