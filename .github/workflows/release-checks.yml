@@ -48,10 +48,10 @@ jobs:
             done
           done
           # Exact names, then the GUI bundles' patterns (their names carry the version).
-          for name in rdm-installer.sh rdm-installer.ps1 rdm.rb; do
+          for name in rdm-installer.sh rdm-installer.ps1 rdm.rb latest.json; do
             grep -qxF "$name" <<<"$names" || { echo "::error::missing $name"; missing=1; }
           done
-          for pattern in '_x64-setup\.exe$' '_x64_.*\.msi$' '_aarch64\.dmg$' '_x64\.dmg$' '\.AppImage$' '\.deb$'; do
+          for pattern in '_x64-setup\.exe$' '_x64_.*\.msi$' '_aarch64\.dmg$' '_x64\.dmg$' '_aarch64\.app\.tar\.gz$' '_x64\.app\.tar\.gz$' '\.AppImage$' '\.deb$'; do
             grep -qE "$pattern" <<<"$names" || { echo "::error::no asset matches $pattern"; missing=1; }
           done
           exit "$missing"

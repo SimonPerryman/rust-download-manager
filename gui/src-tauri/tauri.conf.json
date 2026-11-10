@@ -44,5 +44,16 @@
       "icons/icon.ico"
     ]
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYxNjYwRDMxODU2OEM3MTQKUldRVXgyaUZNUTFtOFN5cUVsZVoxeVBPalZFTThoVEFFbXRLekFrQkIxUXd0ZzBISDRZMURvNGkK",
+      "endpoints": [
+        "https://github.com/SimonPerryman/rust-download-manager/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }

@@ -20,7 +20,10 @@ impl Manager {
     /// off surprise network activity; one still downloading (the process
     /// ended without [`shutdown`](Self::shutdown)) has its active time marked
     /// unknown. A checksum hash cut short by the shutdown is restored as
-    /// unchecked.
+    /// unchecked. A restart into an update
+    /// ([`shutdown_for_restart`](Self::shutdown_for_restart)) is no different:
+    /// nothing resumes on its own, and the downloads it marked stay marked
+    /// (see [`paused_for_update`](Self::paused_for_update)).
     ///
     /// Taking an explicit [`tokio::runtime::Handle`] (instead of relying on an
     /// ambient runtime) lets the manager be driven from a synchronous caller
