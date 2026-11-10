@@ -82,6 +82,12 @@ async fn paused_time_is_not_counted() {
     let dir = tempfile::tempdir().unwrap();
     let mgr = manager_in(dir.path());
 
+    // The download's log goes into a failure message: it says whether the
+    // resume continued the partial or started over.
+    let _log = tracing::subscriber::set_default(tracing_subscriber::layer::SubscriberExt::with(
+        tracing_subscriber::registry(),
+        mgr.log_layer(),
+    ));
     let id = mgr.add(server.url("/crawl"), dir.path(), None, None);
     wait_for(&mgr, id, T, |s| ms(s) >= 300)
         .await
@@ -101,9 +107,18 @@ async fn paused_time_is_not_counted() {
     })
     .await
     .expect("never resumed");
+    let log: Vec<String> = mgr
+        .download_log(id)
+        .into_iter()
+        .map(|l| l.message)
+        .collect();
     assert!(
         ms(&resumed) >= ms(&paused),
-        "a resumed partial lost its earlier time"
+        "a resumed partial lost its earlier time: {} ms at {} B paused, {} ms at {} B resumed; log: {log:#?}",
+        ms(&paused),
+        paused.downloaded,
+        ms(&resumed),
+        resumed.downloaded,
     );
     let done = wait_status(&mgr, id, Status::Completed).await;
     assert!(ms(&done) > ms(&paused));
