@@ -82,7 +82,9 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      # rustfmt's output doesn't depend on the OS, so one runner is enough.
       - name: Format check
+        if: runner.os == 'Linux'
         run: cargo fmt --all --check
 
       - name: Clippy (deny warnings)
