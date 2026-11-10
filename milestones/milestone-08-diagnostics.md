@@ -1,7 +1,7 @@
 ---
 id: M8
 title: Diagnostics — finding the bug when rdm crashes
-status: in-progress
+status: done
 depends-on: [M7]
 tags: [engine, cli, gui, testing]
 ---
@@ -143,9 +143,10 @@ Roadmap: [roadmap.md](../roadmap.md).
   status. No URLs, paths or tags. The CLI logs the same version and OS line
   at `info` (`-v`).
 - **Frontend errors reach the log (GUI).**
-  - A top-level React error boundary shows a fallback screen: "Something
-    went wrong", the error message, and **Reload**, **Open logs folder**
-    and **Copy diagnostics** buttons.
+  - A top-level React error boundary shows a fallback screen (decision 6):
+    "Something went wrong", a plain sentence, **Reload**, **Open logs
+    folder** and **Copy diagnostics** buttons, and the error message behind
+    a collapsed **Show details**.
   - `window.onerror` and `unhandledrejection` handlers.
   - All three call a new `log_frontend_error` Tauri command (message,
     stack, component stack, source), which logs at ERROR with target
@@ -245,27 +246,31 @@ Roadmap: [roadmap.md](../roadmap.md).
   `docs/cli.md` (troubleshooting, bug reports).
 
 ### PR B — frontend errors, diagnostics UI, issue template
-- [ ] Tauri commands `log_frontend_error`, `open_logs_folder` and
-  `diagnostics`, mirrored in `gui/src/lib/api.ts`.
-- [ ] Engine: `redact_urls_in(text)` next to `redact_url`, with a doc
+- [x] Tauri commands `log_frontend_error`, `open_logs_folder` and
+  `diagnostics`, mirrored in `gui/src/lib/api.ts`. Also `logs_folder` (the
+  button's tooltip), `save_text_file` (Save…, with an `RDM_SAVE_PATH` seam)
+  and `open_bug_report` (the fallback's GitHub link: a fixed URL, so the
+  webview can't open one of its choosing). The diagnostics report writes
+  the home folder as `~` throughout, log lines included.
+- [x] Engine: `redact_urls_in(text)` next to `redact_url`, with a doc
   comment and unit tests.
-- [ ] GUI: an error boundary with a fallback screen, global `error` and
+- [x] GUI: an error boundary with a fallback screen, global `error` and
   `unhandledrejection` handlers, and a rate-limited reporter
   (`gui/src/lib/errorReport.ts`).
-- [ ] GUI: Open logs folder and Copy diagnostics in the settings menu and
+- [x] GUI: Open logs folder and Copy diagnostics in the settings menu and
   on the fallback screen, with a "Copied" confirmation like the Log tab's.
-- [ ] Log tab (decision 2): the existing **Copy** copies every buffered
-  line for the download, whatever Detailed says, and a save action (label
-  per the approved mock-up) saves the same lines as plain text through a
-  save dialog (default name `<download name>.log`), with a test seam so
-  e2e opens no real dialog. The Detailed toggle (a view control) is
-  grouped apart from the actions, per the approved mock-up.
-- [ ] Move `stubClipboard` / `restoreClipboard` from `log.e2e.ts` into
+- [x] Log tab (decision 2): the existing **Copy** copies every buffered
+  line for the download, whatever Detailed says, and **Save…** saves the
+  same lines as plain text through a save dialog (default name
+  `<download name>.log`), with a test seam so e2e opens no real dialog.
+  A **Simple | Detailed** segmented switch on the left replaces the
+  Detailed checkbox; the actions sit on the right.
+- [x] Move `stubClipboard` / `restoreClipboard` from `log.e2e.ts` into
   `gui/e2e/helpers.ts` for reuse.
-- [ ] Troubleshooting group (decision 4): visible to everyone (no
+- [x] Troubleshooting group (decision 4): visible to everyone (no
   developer mode), quiet and secondary: last in the settings menu, muted.
-- [ ] `.github/ISSUE_TEMPLATE/bug_report.yml` and `config.yml`.
-- [ ] Docs: `docs/gui.md` "Logs and troubleshooting" (and the URL wording
+- [x] `.github/ISSUE_TEMPLATE/bug_report.yml` and `config.yml`.
+- [x] Docs: `docs/gui.md` "Logs and troubleshooting" (and the URL wording
   fix), the `SECURITY.md` supported-versions line, and the README link if
   it fits.
 
@@ -286,10 +291,12 @@ bytes._
 - [x] After that panic, `list`, `add`, `pause` and `remove` still work: no
   poisoned-lock panic. (`tests/panic.rs`; a poisoned state lock itself in
   `manager::tests::commands_survive_a_poisoned_state_lock`)
-- [ ] `redact_urls_in` redacts every URL in a multi-line text containing
+- [x] `redact_urls_in` redacts every URL in a multi-line text containing
   `https://user:pw@host/p?token=SECRET#frag`, a bare `http://h/x?sig=abc`
   and a URL inside quotes and parentheses. No `SECRET`, `sig=abc`, `pw` or
-  `#frag` survives, and text without URLs is unchanged.
+  `#frag` survives, and text without URLs is unchanged. A login shows as
+  `<redacted>:<redacted>@` (`<redacted>@` for a user name alone), and
+  redacting twice changes nothing (decision 7).
   (`src/engine/redact.rs` unit tests)
 - [x] A panic on the blocking pool (hashing a file named `__panic…`)
   fails that step as an internal error: a Manager checksum check ends
@@ -317,10 +324,10 @@ bytes._
   `test_panic` (sync) and `test_panic_async` rejects with the internal
   error text, and `list` still answers afterwards.
   (`gui/e2e/specs/command-panic.e2e.ts`)
-- [ ] **Diagnostics redact.** `diagnostics()` over a temp log dir whose log
+- [x] **Diagnostics redact.** `diagnostics()` over a temp log dir whose log
   contains a signed URL and a `user:pass@` URL returns text with neither
   secret. It also contains the version line and the last line of the log.
-- [ ] `log_frontend_error` writes one ERROR line with target
+- [x] `log_frontend_error` writes one ERROR line with target
   `rdm::frontend`, the message and the stack.
 
 **CLI (`cargo test --features fault-injection --test cli_panic`):**
@@ -329,33 +336,33 @@ bytes._
   URL hint. (`tests/cli_panic.rs`, `assert_cmd`-style)
 
 **Frontend (Vitest):**
-- [ ] A component that throws during render, wrapped in the error boundary,
-  shows the fallback screen (heading, message, Reload, Open logs folder,
-  Copy diagnostics). The mocked `log_frontend_error` is invoked once with
+- [x] A component that throws during render, wrapped in the error boundary,
+  shows the fallback screen (heading, Reload, Open logs folder, Copy
+  diagnostics, and the message once Show details is opened). The mocked `log_frontend_error` is invoked once with
   the message and a component stack.
-- [ ] Dispatching an `ErrorEvent` and a `PromiseRejectionEvent` on `window`
+- [x] Dispatching an `ErrorEvent` and a `PromiseRejectionEvent` on `window`
   each invoke `log_frontend_error`. 50 errors in a burst invoke it at most
   20 times.
-- [ ] Log tab **Copy** copies every buffered line, including debug ones,
+- [x] Log tab **Copy** copies every buffered line, including debug ones,
   with Detailed off; the save action saves the same text.
 
 **E2E (`gui/e2e/specs/diagnostics.e2e.ts`, against the fixture server):**
-- [ ] **Open logs folder:** clicking it in the settings menu appends
+- [x] **Open logs folder:** clicking it in the settings menu appends
   `open <RDM_HOME>` (the log dir) to `RDM_OPEN_LOG`, checked with
   `openLog()`.
-- [ ] **Copy diagnostics:**
+- [x] **Copy diagnostics:**
   - Add a fixture URL with `?token=SECRET`, then click Copy diagnostics
     with the clipboard stubbed.
   - The text has the version line and `?<redacted>`, and doesn't have
     `SECRET`.
   - The button's "Copied" confirmation is read with `waitForText`.
-- [ ] **Fallback screen:** a fault-injection-only command (or a
+- [x] **Fallback screen:** a fault-injection-only command (or a
   `browser.execute` throw inside a render through a test hook) shows the
   fallback screen. Its Copy diagnostics works, and the log file contains
   the `rdm::frontend` ERROR line.
 
 **Repo:**
-- [ ] `.github/ISSUE_TEMPLATE/bug_report.yml` is valid YAML with required
+- [x] `.github/ISSUE_TEMPLATE/bug_report.yml` is valid YAML with required
   version, OS and steps fields (checked by a small script in `pnpm lint`,
   or by `yq` in CI).
 
@@ -368,14 +375,22 @@ bytes._
    (up to 200 info-and-up plus 300 debug), whatever the Detailed toggle
    says; there's no separate "Copy all". A save action writes the same lines
    to a plain-text file through a save dialog, default name
-   `<download name>.log`. The owner rejected the label "Export log…"; the
-   label and the toolbar layout (Detailed grouped apart from the actions)
-   follow the approved mock-up. PR B, with e2e coverage.
+   `<download name>.log`. Approved mock-up: the save button is labelled
+   **Save…** with the tooltip "Save the log as a file" ("Export log…" was
+   rejected). The toolbar puts the view control on the left, a segmented
+   **Simple | Detailed** switch that replaces the Detailed checkbox (same
+   stored preference, exposing its pressed state), and the actions,
+   **Copy** and **Save…**, on the right. PR B, with e2e coverage.
 3. **Copy diagnostics log tail:** 300 lines.
 4. **Placement:** a "Troubleshooting" group in the settings menu, plus the
    fallback screen. It is always visible, not behind a developer mode, so
    someone filing a bug needn't find a hidden switch first; it sits last
-   in the menu and is styled quiet and secondary.
+   in the menu and is styled quiet and secondary: a small muted heading,
+   ghost buttons **Open logs folder** (its tooltip is the folder's path)
+   and **Copy diagnostics**, and the hint "Links in diagnostics have
+   passwords and query strings removed." (The mock-up's "Diagnostics
+   contain no download links." wasn't true, since redacted links keep
+   their host and path; see decision 7.)
 5. **Crashes outside downloads:** any crash is logged: the panic hook logs
    every panic on every thread, and the locks are poison-tolerant. A
    command that panics is contained (gap 9 shows Tauri doesn't): the
@@ -383,3 +398,20 @@ bytes._
    keeps working. The startup line and Copy diagnostics include the
    process's resident memory. No user tracking or telemetry: everything
    stays local and redacted.
+6. **Fallback screen** (approved mock-up): centred, an alert icon above
+   the heading "Something went wrong", the plain sentence "rdm hit a
+   problem drawing this window. Your downloads keep running.", then
+   **Reload**, **Open logs folder** and **Copy diagnostics**, and a line
+   saying to paste the diagnostics into a new GitHub issue. The technical
+   error text (e.g. `TypeError: …`) sits behind a **Show details**
+   disclosure, collapsed by default and small and muted when open; Copy
+   diagnostics still carries the full error and component stack.
+7. **What redaction shows:** a redacted link keeps its scheme, host and
+   path, and the wording says so (the hint, `docs/`, the issue template).
+   A login is replaced, not dropped, so a report still shows one was used
+   (useful for a 401 or 403): `<redacted>:<redacted>@` with a password,
+   `<redacted>@` for a user name alone, e.g.
+   `https://user:pw@example.com/files/report.pdf?token=abc#f` →
+   `https://<redacted>:<redacted>@example.com/files/report.pdf?<redacted>`.
+   This is in `redact_url` itself, so the file log, the Log tab, the CLI's
+   errors and diagnostics all agree.

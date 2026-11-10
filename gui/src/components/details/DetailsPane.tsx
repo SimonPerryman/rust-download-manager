@@ -118,7 +118,7 @@ export function DetailsPane({
           <OverviewTab d={d} work={work} onReveal={onReveal} spot={spot} onMove={onMove} />
         )}
         {tab === "speed" && <SpeedTab d={d} samples={samples} globalLimit={globalLimit} />}
-        {tab === "log" && <LogTab key={d.id} id={d.id} />}
+        {tab === "log" && <LogTab key={d.id} id={d.id} name={d.filename} />}
       </div>
     </section>
   );

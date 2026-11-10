@@ -8,23 +8,23 @@ import {
   logView,
   visibleLines,
 } from "../../lib/log";
+import * as api from "../../lib/api";
 import { loadLogDetailed, saveLogDetailed } from "../../lib/prefs";
 import type { LogLevel } from "../../lib/types";
+import { useCopied } from "../../lib/useCopied";
 import { useDownloadLog } from "../../lib/useDownloadLog";
 import { Check } from "../icons/Check";
 import { Copy } from "../icons/Copy";
-
-/** How long Copy says "Copied" before it goes back to its label. */
-const COPIED_MS = 1_500;
+import { Save } from "../icons/Save";
 
 /** Spoken before a line whose colour marks it, so the level isn't colour alone. */
 const LEVEL_WORD: Partial<Record<LogLevel, string>> = { error: "Error: ", warn: "Warning: " };
 
 // Log: the download's recent engine lines, oldest first, following new ones
-// while scrolled to the bottom. Concise by default; Detailed adds the
+// while scrolled to the bottom. Simple by default; Detailed adds the
 // per-request lines. Mounted only while the tab is open, which is what keeps
 // the polling to that time.
-export function LogTab({ id }: { id: number }) {
+export function LogTab({ id, name }: { id: number; name: string }) {
   const lines = useDownloadLog(id);
   const [detailed, setDetailed] = useState(() => loadLogDetailed());
   const shown = useMemo(() => (lines ? visibleLines(lines, detailed) : []), [lines, detailed]);
@@ -32,13 +32,12 @@ export function LogTab({ id }: { id: number }) {
   const stick = useRef(true);
   const hasList = shown.length > 0;
   // How many lines the last Copy put on the clipboard, while it says so.
-  const [copied, setCopied] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (copied == null) return;
-    const t = setTimeout(() => setCopied(null), COPIED_MS);
-    return () => clearTimeout(t);
-  }, [copied]);
+  const [copied, markCopied] = useCopied<number>();
+  // Whether Save… just wrote the file, and why the last save failed.
+  const [saved, markSaved] = useCopied<true>();
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // What the last Copy or Save tells a screen reader, while it says so.
+  const [said, markSaid] = useCopied<string>();
 
   useEffect(() => {
     const scroller = list.current?.parentElement;
@@ -68,46 +67,84 @@ export function LogTab({ id }: { id: number }) {
       </div>
     );
   }
-  const toggle = (on: boolean) => {
+  const choose = (on: boolean) => {
     setDetailed(on);
     saveLogDetailed(on);
   };
+  // Copy and Save take every buffered line, detail too, whatever the view.
   const copy = () => {
-    const n = shown.length;
+    const n = lines.length;
     void Promise.resolve()
-      .then(() => navigator.clipboard.writeText(copyText(shown)))
-      .then(() => setCopied(n))
+      .then(() => navigator.clipboard.writeText(copyText(lines)))
+      .then(() => {
+        markCopied(n);
+        markSaid(copiedAnnouncement(n));
+      })
       .catch(() => {});
+  };
+  const save = () => {
+    setSaveError(null);
+    api
+      .saveTextFile(`${name}.log`, copyText(lines))
+      .then((path) => {
+        if (path == null) return;
+        markSaved(true);
+        markSaid(`Saved to ${path}`);
+      })
+      .catch((e) => setSaveError(`Couldn't save the log: ${e}`));
   };
   return (
     <>
       <div className="log-bar">
-        {view === "list" && (
+        <div className="seg-sm" role="group" aria-label="Lines shown">
           <button
             type="button"
-            className={`btn btn-ghost btn-sm${copied != null ? " copied" : ""}`}
-            data-testid="log-copy"
-            title="Copy the lines shown"
-            onClick={copy}
+            data-testid="log-simple"
+            aria-pressed={!detailed}
+            onClick={() => choose(false)}
           >
-            {copied != null ? <Check size={14} strokeWidth={2.5} /> : <Copy size={14} />}
-            {copied != null ? "Copied" : "Copy"}
+            Simple
           </button>
-        )}
-        <span className="sr-only" role="status">
-          {copied != null ? copiedAnnouncement(copied) : ""}
-        </span>
-        {view === "list" && <span className="log-bar-sep" aria-hidden="true" />}
-        <label className="log-detail" title="Also show each request and lane hand-off">
-          <input
-            type="checkbox"
+          <button
+            type="button"
             data-testid="log-detailed"
-            checked={detailed}
-            onChange={(e) => toggle(e.target.checked)}
-          />
-          Detailed
-        </label>
+            aria-pressed={detailed}
+            title="Also show each request and lane hand-off"
+            onClick={() => choose(true)}
+          >
+            Detailed
+          </button>
+        </div>
+        <span className="flex-1" />
+        <button
+          type="button"
+          className={`btn btn-ghost btn-sm${copied != null ? " copied" : ""}`}
+          data-testid="log-copy"
+          title="Copy all lines, detailed ones too"
+          onClick={copy}
+        >
+          {copied != null ? <Check size={14} strokeWidth={2.5} /> : <Copy size={14} />}
+          {copied != null ? "Copied" : "Copy"}
+        </button>
+        <button
+          type="button"
+          className={`btn btn-ghost btn-sm${saved ? " copied" : ""}`}
+          data-testid="log-save"
+          title="Save the log as a file"
+          onClick={save}
+        >
+          {saved ? <Check size={14} strokeWidth={2.5} /> : <Save size={14} />}
+          {saved ? "Saved" : "Save…"}
+        </button>
+        <span className="sr-only" role="status">
+          {said ?? ""}
+        </span>
       </div>
+      {saveError && (
+        <p className="mb-2 text-sm text-danger-ink" role="alert" data-testid="log-save-error">
+          {saveError}
+        </p>
+      )}
       {view === "list" ? (
         // Focusable so the keyboard can scroll it: it holds no controls.
         <ol ref={list} className="log" data-testid="log" aria-label="Log lines" tabIndex={0}>
@@ -123,7 +160,7 @@ export function LogTab({ id }: { id: number }) {
         </ol>
       ) : (
         <p className="text-sm text-g600" data-testid="log-only-detail">
-          Only detailed lines so far. Turn on Detailed to see them.
+          Only detailed lines so far. Choose Detailed to see them.
         </p>
       )}
     </>

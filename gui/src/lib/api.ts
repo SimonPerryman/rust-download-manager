@@ -132,6 +132,26 @@ export const setAutoCheck = (on: boolean) => invoke<void>("set_auto_check", { on
 export const onUpdateProgress = (cb: (progress: UpdateProgress) => void): Promise<UnlistenFn> =>
   listen<UpdateProgress>("update-progress", (e) => cb(e.payload));
 
+/** Record an error the window caught in the app log (target `rdm::frontend`). */
+export const logFrontendError = (
+  message: string,
+  stack: string | null,
+  componentStack: string | null,
+  source: string,
+) => invoke<void>("log_frontend_error", { message, stack, componentStack, source });
+/** The folder holding rdm's log files, or null without a file log. */
+export const logsFolder = () => invoke<string | null>("logs_folder");
+/** Open the logs folder in the OS file manager. */
+export const openLogsFolder = () => invoke<void>("open_logs_folder");
+/** Open GitHub's bug report form in the browser. */
+export const openBugReport = () => invoke<void>("open_bug_report");
+/** The redacted troubleshooting report for a bug report; `extra` adds a caught error. */
+export const diagnostics = (extra?: string | null) =>
+  invoke<string>("diagnostics", { extra: extra ?? null });
+/** Save `text` to a file picked in a save dialog; resolves with its path, or null if cancelled. */
+export const saveTextFile = (defaultName: string, text: string) =>
+  invoke<string | null>("save_text_file", { defaultName, text });
+
 /** Subscribe to live snapshots pushed from the backend's watch channel. */
 export const onDownloadsChanged = (
   cb: (snapshots: DownloadSnapshot[]) => void,

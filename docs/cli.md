@@ -57,12 +57,16 @@ the version and the OS, e.g. `rdm 0.2.0 · Ubuntu 24.04 LTS (Linux 6.8.0) x86_64
 If rdm itself hits a bug (a panic), it prints the panic's message, then
 `rdm <version> hit a bug. Please report it at …/issues …`, and exits with
 code 101. A bug in a background step (such as the checksum check) adds a
-final `Error: failed to download …: internal error, please report it` line. To report it, open an issue on GitHub with:
+final `Error: failed to download …: internal error, please report it` line. To report it, open a
+[bug report](https://github.com/SimonPerryman/rust-download-manager/issues/new?template=bug_report.yml)
+on GitHub with:
 
 - the output of the same command rerun with `-v` (or with `RUST_LOG=debug`
   for every request's detail);
 - the version (`rdm --version`) and your OS.
 
 Check the output for anything private first: the log redacts the URLs it
-mentions, but the command line you typed and the file names are as you gave
-them. `RUST_LOG=debug` also shows the panic's backtrace.
+mentions (a login shows only as `<redacted>:<redacted>@`, or `<redacted>@`
+for a user name alone, and a query string as `?<redacted>`, but the site
+name and path stay), and the command line you typed and the file names are
+as you gave them. `RUST_LOG=debug` also shows the panic's backtrace.

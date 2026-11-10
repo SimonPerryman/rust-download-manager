@@ -39,6 +39,8 @@ export const config: WebdriverIO.Config = {
     }
     // open_download / reveal_download log here instead of launching an OS handler.
     process.env.RDM_OPEN_LOG = path.join(e2eRoot, "opened.log");
+    // The Log tab's Save… writes here instead of asking with a save dialog.
+    process.env.RDM_SAVE_PATH = path.join(e2eRoot, "saved.log");
     console.log(`E2E temp root: ${e2eRoot}`);
 
     // Automatic update checks answered "no", so only the updater spec ever
@@ -60,7 +62,7 @@ export const config: WebdriverIO.Config = {
     await startTauriDriver();
   },
 
-  // A failed run keeps its temp root (state.json, rdm.*.log, opened.log, downloads) to inspect.
+  // A failed run keeps its temp root (state.json, rdm.*.log, opened.log, saved.log, downloads) to inspect.
   onComplete: (exitCode: number) => {
     stopAll();
     if (exitCode === 0) rmSync(e2eRoot, { recursive: true, force: true });

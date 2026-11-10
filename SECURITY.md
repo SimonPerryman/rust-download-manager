@@ -17,8 +17,8 @@ A useful report includes:
 
 ## Supported versions
 
-There are no releases yet. Only the latest `main` gets security fixes;
-once releases exist, only the newest one will.
+Only the newest release gets security fixes; there are no fix releases
+for older versions, so update to the newest one.
 
 ## What to expect
 

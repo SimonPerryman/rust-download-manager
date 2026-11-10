@@ -20,8 +20,8 @@ use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::util::SubscriberInitExt;
 
 /// The log files' names: `rdm.YYYY-MM-DD.log` (UTC dates).
-const PREFIX: &str = "rdm";
-const SUFFIX: &str = "log";
+pub(crate) const PREFIX: &str = "rdm";
+pub(crate) const SUFFIX: &str = "log";
 
 /// Daily files kept.
 const KEPT_FILES: usize = 7;
@@ -55,6 +55,19 @@ static GUARD: OnceLock<Mutex<Option<WorkerGuard>>> = OnceLock::new();
 /// The log directory, once logging is installed (the panic hook needs it).
 static DIR: OnceLock<PathBuf> = OnceLock::new();
 
+/// The file log's level filter, as installed (for the diagnostics report).
+static LEVEL: OnceLock<String> = OnceLock::new();
+
+/// The log directory, once logging is installed.
+pub(crate) fn log_dir() -> Option<&'static Path> {
+    DIR.get().map(PathBuf::as_path)
+}
+
+/// The file log's level filter, e.g. `info`, once logging is installed.
+pub(crate) fn log_level() -> &'static str {
+    LEVEL.get().map(String::as_str).unwrap_or("unknown")
+}
+
 /// File log lines handed to the worker, and lines it has written: equal once
 /// the queue has drained.
 static SENT: AtomicU64 = AtomicU64::new(0);
@@ -68,7 +81,7 @@ pub(crate) fn install_logging<L>(dir: &Path, filter: tracing_subscriber::EnvFilt
 where
     L: tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync + 'static,
 {
-    let _ = DIR.set(dir.to_path_buf());
+    let _ = LEVEL.set(filter.to_string());
     let appender = Builder::new()
         .rotation(Rotation::DAILY)
         .filename_prefix(PREFIX)
@@ -77,6 +90,8 @@ where
         .build(dir);
     let (file_writer, file_error) = match appender {
         Ok(appender) => {
+            // Only with a file log: without one, nothing names a folder.
+            let _ = DIR.set(dir.to_path_buf());
             let file = FileWriter {
                 appender,
                 dir: dir.to_path_buf(),

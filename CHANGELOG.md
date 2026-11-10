@@ -24,6 +24,24 @@ desktop app share one version.
   seconds.
 - The CLI's `-v` output starts with the version and OS, and a panic ends with
   where to report the bug (exit code 101).
+- Settings → Troubleshooting (desktop app): **Open logs folder**, and **Copy
+  diagnostics**, which copies a report for a bug report (version, OS,
+  settings and the last 300 log lines, every URL redacted).
+- If the desktop app's window fails to draw, it shows "Something went
+  wrong" with Reload, Open logs folder and Copy diagnostics instead of a
+  blank window, and the error goes into the log, as does any other error
+  the window doesn't handle.
+- The Log tab's **Save…** saves a download's lines as a text file.
+- A bug report form on GitHub.
+
+### Changed
+
+- Redacted links in logs and error messages now show that a login was used,
+  as `<redacted>:<redacted>@` (or `<redacted>@` for a user name alone),
+  instead of dropping it; the password and user name stay hidden.
+- The Log tab's **Copy** copies every line rdm keeps for the download,
+  detail included, whichever view is showing, and **Detailed** is now a
+  **Simple | Detailed** switch.
 
 ### Changed
 

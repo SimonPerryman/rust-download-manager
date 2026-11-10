@@ -7,6 +7,7 @@
 //! crate contains none.
 
 mod commands_guard;
+mod diagnostics;
 mod logging;
 mod updater;
 
@@ -685,6 +686,12 @@ pub fn run() {
             open_update_notes,
             update_prefs,
             set_auto_check,
+            diagnostics::log_frontend_error,
+            diagnostics::logs_folder,
+            diagnostics::open_logs_folder,
+            diagnostics::open_bug_report,
+            diagnostics::diagnostics,
+            diagnostics::save_text_file,
             #[cfg(feature = "fault-injection")]
             commands_guard::test_panic,
             #[cfg(feature = "fault-injection")]

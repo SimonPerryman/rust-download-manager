@@ -15,7 +15,8 @@ see [Installing rdm](install.md#desktop-app); to build it, see
 - [Archive and tags](#archive-and-tags)
 - [Settings](#settings)
 - [Updates](#updates)
-- [State and logs](#state-and-logs)
+- [State](#state)
+- [Logs and troubleshooting](#logs-and-troubleshooting)
 
 ## Adding downloads
 
@@ -106,16 +107,18 @@ the partial file.
     Completed · 6.25 GB in 9m 59s (active 7m 14s) · avg 14.7 MB/s · peak 38.0 MB/s · 1 retry
     ```
 
-    Tick **Detailed** to also see each request (its byte range and the
-    server's answer) and each lane picking up or taking over work, such as
-    "Lane 2 finished piece 2, now on piece 5 of 8 (3.10 GB – 3.90 GB)" or
-    "Lane 3 took over the back half of Lane 1's piece 1 (400 MB – 780 MB) as
-    piece 6". The choice is remembered. rdm keeps a download's last 200
-    lines, plus its last 300 detailed ones.
+    Switch from **Simple** to **Detailed** to also see each request (its
+    byte range and the server's answer) and each lane picking up or taking
+    over work, such as "Lane 2 finished piece 2, now on piece 5 of 8
+    (3.10 GB – 3.90 GB)" or "Lane 3 took over the back half of Lane 1's
+    piece 1 (400 MB – 780 MB) as piece 6". The choice is remembered. rdm
+    keeps a download's last 200 lines, plus its last 300 detailed ones.
 
-    **Copy** puts the lines shown on the clipboard, one per line as
-    `HH:MM:SS  text`, with the detail only while Detailed is ticked; it says
-    "Copied" for a moment (and tells a screen reader how many lines).
+    **Copy** puts every line rdm keeps for the download on the clipboard,
+    the detailed ones too whichever view is showing, one per line as
+    `HH:MM:SS  text`; it says "Copied" for a moment (and tells a screen
+    reader how many lines). **Save…** writes the same text to a file you
+    pick, named after the download (`big.iso.log`), and says "Saved".
   - A finished download's lanes and log lines are kept only until the app
     closes; after a restart the pane shows the summary alone.
 
@@ -159,8 +162,9 @@ the partial file.
 under **Downloads** the number of concurrent downloads, the global speed
 limit, the max connections per download and whether Remove asks first, and
 under **Updates** this version, **Check for updates** and **Check for updates
-automatically** (see [Updates](#updates)). The status bar shows the total
-speed, and you can click the global limit there to change it.
+automatically** (see [Updates](#updates)), and, last, **Troubleshooting**
+(see [Logs and troubleshooting](#logs-and-troubleshooting)). The status bar
+shows the total speed, and you can click the global limit there to change it.
 
 ## Updates
 
@@ -204,7 +208,7 @@ The desktop app can update itself from the project's GitHub releases.
 Whether to check, and the version that last ran, are kept in
 `~/.rdm/updater.json`.
 
-## State and logs
+## State
 
 The download list and settings are stored in `~/.rdm/state.json`. A list saved
 by an older rdm opens as is; one saved by a newer rdm is refused rather than
@@ -212,21 +216,49 @@ opened and saved back without what this version doesn't understand: a dialog
 names its version, and rdm closes when you dismiss it, leaving the list
 untouched. rdm 0.1.0 predates that check, so going back to it opens the list,
 but its first save drops archive flags and tags. Tags edited into the file by
-hand are brought within the tag rules when it opens. The GUI also
-writes a daily log in `~/.rdm` (`rdm.YYYY-MM-DD.log`, the last 7 kept), with
-its level set by `RUST_LOG` (default `info`); the Log tab always shows
-informational lines and up (and, with **Detailed**, rdm's debug lines too),
-whatever `RUST_LOG` says. Each run's log starts with the version, OS,
-WebView, memory use and the settings that matter (no URLs, paths or tags),
-and every crash is recorded there with its details; see
-[When something goes wrong](how-it-works.md#when-something-goes-wrong). If
-an action hits a bug in rdm, it shows an error instead of closing the app.
-On Unix, `~/.rdm` is made owner-only (0700), since the state file holds
-full download URLs.
-
-Logged URLs and error messages drop any `user:password@` and fragment, and
-replace a query string with `?<redacted>`, so they're safer to paste into a
-bug report.
+hand are brought within the tag rules when it opens. On Unix, `~/.rdm` is
+made owner-only (0700), since the state file holds full download URLs.
 
 `RDM_HOME` relocates `~/.rdm`, and `RDM_DOWNLOAD_DIR` changes the Add dialog's
 default folder.
+
+## Logs and troubleshooting
+
+The GUI writes a daily log in `~/.rdm` (`rdm.YYYY-MM-DD.log`, the last 7
+kept), with its level set by `RUST_LOG` (default `info`); the Log tab always
+shows informational lines and up (and, with **Detailed**, rdm's debug lines
+too), whatever `RUST_LOG` says. Each run's log starts with the version, OS,
+WebView, memory use and the settings that matter (no URLs, paths or tags).
+Every crash is recorded there with its details, and so is any error the
+window itself hits; see
+[When something goes wrong](how-it-works.md#when-something-goes-wrong).
+
+Logged URLs and error messages hide a link's secrets but not where it
+points: a login shows only as `<redacted>:<redacted>@` (or `<redacted>@`
+for a user name alone), so you can still tell one was used, a query string
+becomes `?<redacted>`, and a fragment is dropped. Site names and file paths
+stay visible. Only `state.json` keeps download URLs in full.
+
+**Settings → Troubleshooting** has two buttons:
+
+- **Open logs folder** opens `~/.rdm` in your file manager (hover it to see
+  the path).
+- **Copy diagnostics** puts a report on the clipboard for a bug report: the
+  version, OS, WebView, memory use and settings lines, the log folder and
+  the last 300 lines of the log, with your home folder written as `~`
+  throughout. Every link in it is redacted again as above, so it has no
+  passwords or query strings, but it does show site names, file paths and
+  file names (and so any token a link carries in its path): read it before
+  you post it.
+
+If an action hits a bug in rdm, it shows an error instead of closing the
+app. If the window itself fails to draw, it shows **Something went wrong**
+instead of going blank. Your downloads keep running. **Reload** redraws the
+window, **Open logs folder** and **Copy diagnostics** work as above (the
+copied report includes the error), and **Show details** shows the error's
+text.
+
+To report a bug, open a
+[bug report](https://github.com/SimonPerryman/rust-download-manager/issues/new?template=bug_report.yml)
+on GitHub (the window's "new issue on GitHub" link opens it) and paste the
+diagnostics into it.

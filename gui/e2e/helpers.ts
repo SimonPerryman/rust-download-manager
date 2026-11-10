@@ -569,7 +569,37 @@ export async function stopThroughDialog(id: number, mode: "keep" | "delete"): Pr
   await waitForGone(STOP_DIALOG);
 }
 
-/** The lines `open_download` / `reveal_download` appended to `RDM_OPEN_LOG` (missing file = none). */
+/**
+ * Swaps the clipboard for one that records what is written, so a spec can
+ * check what Copy wrote (WebKitGTK's driver can't read the real one);
+ * `restoreClipboard` puts the real one back.
+ */
+export async function stubClipboard(): Promise<void> {
+  await browser.execute(() => {
+    const w = window as unknown as { copied: string[] };
+    w.copied = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (text: string) => void w.copied.push(text) },
+    });
+  });
+}
+
+export async function restoreClipboard(): Promise<void> {
+  await browser.execute(() => {
+    delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+  });
+}
+
+/** What the stubbed clipboard has been given so far, oldest first. */
+export async function clipboardWrites(): Promise<string[]> {
+  return browser.execute(() => (window as unknown as { copied: string[] }).copied.slice());
+}
+
+/**
+ * The lines `open_download`, `reveal_download`, `open_logs_folder` and
+ * `open_bug_report` appended to `RDM_OPEN_LOG` (missing file = none).
+ */
 export function openLog(): string[] {
   const log = process.env.RDM_OPEN_LOG;
   if (!log || !existsSync(log)) return [];

@@ -48,7 +48,7 @@ pub use manager::{AddOptions, DownloadSnapshot, Manager};
 pub use progress::{Progress, SpeedMeter};
 #[doc(hidden)]
 pub use ramp::Ramping;
-pub use redact::redact_url;
+pub use redact::{redact_url, redact_urls_in};
 pub use retry::RetryPolicy;
 pub use segment::Segment;
 pub(crate) use single::single_segment;
