@@ -19,6 +19,7 @@ command-line tool and a desktop app.
 - **Verified:** optional SHA-256 checksum checked before the file is saved.
 - **Safe names:** files stay in your folder and never overwrite another.
 - **See it work (GUI):** live connection lanes, a speed graph and a per-download log.
+- **Updates itself (GUI):** offers new versions and installs them when you choose.
 - **One engine:** the CLI and the desktop app share it.
 
 For the details behind each of these, see

@@ -46,6 +46,12 @@ progress. Running the same command again (or resuming in the GUI, even after a
 restart) continues where it stopped, re-fetching only the missing ranges, and
 only if the server's `ETag` or `Last-Modified` still matches.
 
+Quitting the GUI pauses what's running, keeping each partial file, and
+nothing starts again on its own at the next launch. Restarting the GUI into
+an update pauses downloads the same way and also marks the ones that were
+running or waiting, so after the restart **Resume all** resumes exactly
+those; resuming one by hand, or dismissing the offer, clears its mark.
+
 ## Retries and backoff
 
 Timeouts, dropped connections and 5xx/408/429 responses are retried with
