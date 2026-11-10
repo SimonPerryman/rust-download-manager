@@ -17,7 +17,7 @@ export function TroubleshootingSection() {
           {problem}
         </p>
       ) : (
-        <p className="ts-hint">Links in diagnostics have passwords and query strings removed.</p>
+        <p className="ts-hint">Diagnostics hide links, file names and folders.</p>
       )}
     </section>
   );

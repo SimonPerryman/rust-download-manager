@@ -26,7 +26,8 @@ desktop app share one version.
   where to report the bug (exit code 101).
 - Settings → Troubleshooting (desktop app): **Open logs folder**, and **Copy
   diagnostics**, which copies a report for a bug report (version, OS,
-  settings and the last 300 log lines, every URL redacted).
+  settings and the last 300 log lines). It hides links' sites and paths,
+  your downloads' file names and folders, and your home folder.
 - If the desktop app's window fails to draw, it shows "Something went
   wrong" with Reload, Open logs folder and Copy diagnostics instead of a
   blank window, and the error goes into the log, as does any other error

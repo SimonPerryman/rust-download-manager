@@ -109,6 +109,13 @@ fn hide_nested_logins(path: &str) -> Result<String, usize> {
 /// redacted already, such as a bug report's diagnostics. Text without URLs
 /// comes back unchanged, and so does an already-redacted URL.
 pub fn redact_urls_in(text: &str) -> String {
+    map_urls_in(text, redact_url)
+}
+
+/// `text` with every URL in it (`scheme://…`, found as [`redact_urls_in`]
+/// finds them) replaced by `map(url)`; the rest is kept. Lets a frontend
+/// hide more of a link than [`redact_url`] does.
+pub fn map_urls_in(text: &str, mut map: impl FnMut(&str) -> String) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(sep) = rest.find("://") {
@@ -119,7 +126,7 @@ pub fn redact_urls_in(text: &str) -> String {
         if start == sep {
             out.push_str(url); // "://" with no scheme
         } else {
-            out.push_str(&redact_url(url));
+            out.push_str(&map(url));
         }
         rest = &rest[start + len..];
     }

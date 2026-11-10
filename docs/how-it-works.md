@@ -116,5 +116,7 @@ display downloads, but don't fetch anything themselves.
   shows only as `<redacted>:<redacted>@` (or `<redacted>@`), a query string
   as `?<redacted>`, and a fragment is dropped, while the site name and path
   stay. The desktop app's Copy diagnostics only puts a report on your
-  clipboard, for you to read and paste into a bug report yourself; it
-  redacts every URL in it again.
+  clipboard, for you to read and paste into a bug report yourself, and
+  hides more: links keep only their scheme (sites and paths become
+  `<site-1>` and `<path>`), and your downloads' file names and folders
+  become `<file-1>.iso` and `<folder-1>`.

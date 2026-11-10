@@ -10,6 +10,10 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::{commands_guard, logging, startup_lines, test_seam, AppState, OPEN_LOG_ENV};
 
+mod anonymize;
+
+use anonymize::Known;
+
 /// Log lines in the diagnostics report.
 const TAIL_LINES: usize = 300;
 
@@ -105,7 +109,8 @@ pub(crate) fn open_bug_report(app: tauri::AppHandle) -> Result<(), String> {
 
 /// The text Copy diagnostics puts on the clipboard: the version, OS, WebView,
 /// memory and settings lines, the log folder, `extra` (the fallback screen's
-/// error) and the last log lines, with every URL redacted.
+/// error) and the last log lines, with links, download file names and
+/// folders hidden (see [`anonymize`]).
 /// Async, with the files read on the blocking pool, so a large log never
 /// holds up the window.
 #[tauri::command]
@@ -116,14 +121,9 @@ pub(crate) async fn diagnostics(
 ) -> Result<String, String> {
     commands_guard::contained("diagnostics", async move {
         let header = startup_lines(&state.manager, logging::log_level());
-        let home = app.path().home_dir().ok();
+        let known = known(&app, &state);
         tokio::task::spawn_blocking(move || {
-            report(
-                &header,
-                logging::log_dir(),
-                home.as_deref(),
-                extra.as_deref(),
-            )
+            report(&header, logging::log_dir(), extra.as_deref(), known)
         })
         .await
         .map_err(|e| e.to_string())
@@ -131,15 +131,30 @@ pub(crate) async fn diagnostics(
     .await
 }
 
-/// [`diagnostics`]' body, apart from the app. The home directory is written
-/// as `~` throughout (the log folder and paths in log lines), so the report
-/// doesn't carry the user's name.
-fn report(
-    header: &[String],
-    dir: Option<&Path>,
-    home: Option<&Path>,
-    extra: Option<&str>,
-) -> String {
+/// What the report hides: every download's file names, folders and site,
+/// the default download folder and the home folder.
+fn known(app: &tauri::AppHandle, state: &AppState) -> Known {
+    let mut known = Known {
+        home: app.path().home_dir().ok(),
+        ..Known::default()
+    };
+    known.folders.extend(crate::default_dir(app).ok());
+    for d in state.manager.snapshot() {
+        known.files.push(d.filename);
+        for path in std::iter::once(d.target).chain(d.final_path) {
+            known.folders.extend(path.parent().map(Path::to_path_buf));
+            known
+                .files
+                .extend(path.file_name().map(|n| n.to_string_lossy().into_owned()));
+        }
+        known.hosts.extend(anonymize::link_host(&d.url));
+    }
+    known
+}
+
+/// [`diagnostics`]' body, apart from the app. The log folder is shown under
+/// `~` when it's in the home folder, else as a numbered folder.
+fn report(header: &[String], dir: Option<&Path>, extra: Option<&str>, mut known: Known) -> String {
     let mut text = String::from("rdm diagnostics\n");
     for line in header {
         text.push_str(line);
@@ -165,50 +180,10 @@ fn report(
             }
         }
     }
-    let text = match home {
-        Some(home) => replace_home(&text, home, cfg!(windows)),
-        None => text,
-    };
-    rdm::redact_urls_in(&text)
-}
-
-/// `text` with every path under `home` (and `home` itself) starting `~`
-/// instead. Also matches `home` with `/` separators, and, when
-/// `ignore_case` (Windows paths), in any letter case.
-fn replace_home(text: &str, home: &Path, ignore_case: bool) -> String {
-    let home = home.display().to_string();
-    let home = home.trim_end_matches(['/', '\\']);
-    if home.len() < 2 {
-        return text.to_owned();
+    if let Some(dir) = dir.filter(|dir| !known.home.as_ref().is_some_and(|h| dir.starts_with(h))) {
+        known.folders.push(dir.to_path_buf());
     }
-    let fold = |s: &str| {
-        if ignore_case {
-            s.to_ascii_lowercase()
-        } else {
-            s.to_owned()
-        }
-    };
-    let mut out = text.to_owned();
-    for form in [home.to_owned(), home.replace('\\', "/")] {
-        let needle = fold(&form);
-        let mut result = String::with_capacity(out.len());
-        let haystack = fold(&out);
-        let mut last = 0;
-        for (at, _) in haystack.match_indices(&needle) {
-            let end = at + needle.len();
-            // Not a longer name that starts the same (`/home/al` in `/home/alice`).
-            let next = out[end..].chars().next();
-            if next.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '-') {
-                continue;
-            }
-            result.push_str(&out[last..at]);
-            result.push('~');
-            last = end;
-        }
-        result.push_str(&out[last..]);
-        out = result;
-    }
-    out
+    anonymize::anonymize(&text, &known, cfg!(windows))
 }
 
 /// The last `n` lines of the daily log files in `dir`, newest file last,
@@ -334,7 +309,7 @@ mod tests {
     use std::path::Path;
     use std::sync::{Arc, Mutex};
 
-    use super::{last_lines, log_frontend, log_tail, replace_home, report, suggested_name};
+    use super::{last_lines, log_frontend, log_tail, report, suggested_name, Known};
 
     fn write(path: &Path, lines: &[&str]) {
         let mut file = std::fs::File::create(path).unwrap();
@@ -343,7 +318,7 @@ mod tests {
         }
     }
 
-    /// The report redacts every URL from the log, and has the version line,
+    /// The report hides every link from the log, and has the version line,
     /// the folder and the log's last line.
     #[test]
     fn diagnostics_redact_and_end_with_the_log() {
@@ -370,16 +345,32 @@ mod tests {
         let text = report(
             &header,
             Some(dir.path()),
-            None,
             Some("Render error: TypeError at https://h/?k=SECRET2"),
+            Known::default(),
         );
-        for secret in ["SECRET1", "SECRET2", "hunter2", "alice", "NOTALOG"] {
+        for secret in [
+            "SECRET1",
+            "SECRET2",
+            "hunter2",
+            "alice",
+            "NOTALOG",
+            "files.example",
+            "b.zip",
+        ] {
             assert!(!text.contains(secret), "leaked:\n{text}");
         }
         assert!(text.starts_with("rdm diagnostics\nrdm 0.2.0 · "), "{text}");
         assert!(text.contains("?<redacted>"), "{text}");
         assert!(
-            text.contains("https://<redacted>:<redacted>@files.example/b.zip"),
+            text.contains("https://<redacted>:<redacted>@<site-3>/<path>"),
+            "{text}"
+        );
+        // The log folder isn't under home, so it's a numbered folder.
+        assert!(
+            text.contains(
+                "Logs: <folder-1>
+"
+            ),
             "{text}"
         );
         assert!(text.contains("Render error: TypeError"), "{text}");
@@ -399,49 +390,44 @@ mod tests {
         assert!(log_tail(&dir.path().join("missing"), 3).is_empty());
     }
 
-    #[test]
-    fn the_home_folder_is_shown_as_a_tilde() {
-        let home = Path::new("/home/someone");
-        assert_eq!(
-            replace_home(
-                "Logs: /home/someone/.rdm\nSaved to /home/someone/x.iso",
-                home,
-                false
-            ),
-            "Logs: ~/.rdm\nSaved to ~/x.iso"
-        );
-        // A longer name that starts the same, and other folders, stay.
-        assert_eq!(
-            replace_home("/home/someone2/a /srv/rdm", home, false),
-            "/home/someone2/a /srv/rdm"
-        );
-        // Windows: either separator, any case.
-        let home = Path::new(r"C:\Users\Someone");
-        assert_eq!(
-            replace_home(
-                r"Saved to c:\users\someone\Downloads\a and C:/Users/Someone/b",
-                home,
-                true
-            ),
-            r"Saved to ~\Downloads\a and ~/b"
-        );
-    }
-
-    /// Paths in log lines lose the home folder too, not just the Logs line.
+    /// Paths in log lines lose the home folder too, not just the Logs line,
+    /// and a known download's folder and file name are hidden.
     #[test]
     fn the_report_carries_no_home_folder() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path();
         let logs = home.join(".rdm");
         std::fs::create_dir(&logs).unwrap();
+        let downloads = home.join("Downloads");
         let saved = format!(
-            "Saved to {}",
-            home.join("Downloads").join("x.iso").display()
+            "Saved to {} and {}",
+            home.join("x.iso").display(),
+            downloads.join("y.iso").display()
         );
         write(&logs.join("rdm.2026-11-10.log"), &[&saved]);
-        let text = report(&[], Some(&logs), Some(home), None);
+        let known = Known {
+            files: vec!["y.iso".into()],
+            folders: vec![downloads],
+            home: Some(home.to_path_buf()),
+            ..Known::default()
+        };
+        let text = report(&[], Some(&logs), None, known);
         assert!(!text.contains(&home.display().to_string()), "{text}");
-        assert!(text.contains("Saved to ~"), "{text}");
+        assert!(!text.contains("y.iso"), "{text}");
+        let sep = std::path::MAIN_SEPARATOR;
+        assert!(
+            text.contains(&format!(
+                "Logs: ~{sep}.rdm
+"
+            )),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!(
+                "Saved to ~{sep}x.iso and <folder-1>{sep}<file-1>.iso"
+            )),
+            "{text}"
+        );
     }
 
     /// Only the tail is read, even from a file far larger than one block.

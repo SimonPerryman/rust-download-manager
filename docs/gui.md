@@ -245,11 +245,18 @@ stay visible. Only `state.json` keeps download URLs in full.
   the path).
 - **Copy diagnostics** puts a report on the clipboard for a bug report: the
   version, OS, WebView, memory use and settings lines, the log folder and
-  the last 300 lines of the log, with your home folder written as `~`
-  throughout. Every link in it is redacted again as above, so it has no
-  passwords or query strings, but it does show site names, file paths and
-  file names (and so any token a link carries in its path): read it before
-  you post it.
+  the last 300 lines of the log. It hides more than the log does, because
+  it's the text you post:
+  - a link keeps only its scheme and login marker, with its site and path
+    replaced: `https://<redacted>:<redacted>@<site-1>/<path>?<redacted>`
+    (the same site gets the same number throughout the report);
+  - your downloads' file names show as `<file-1>.iso`, keeping the
+    extension;
+  - download folders show as `<folder-1>`, and your home folder as `~`.
+
+  Other text in the log lines stays as it is, so still read the report
+  before you post it. If a developer needs more, the full log is in the logs
+  folder.
 
 If an action hits a bug in rdm, it shows an error instead of closing the
 app. If the window itself fails to draw, it shows **Something went wrong**

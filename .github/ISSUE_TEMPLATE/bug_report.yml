@@ -62,8 +62,9 @@ body:
         diagnostics and paste here (if the window says "Something went
         wrong", use the Copy diagnostics button there). Command line: run
         the command again with `-v` (or with `RUST_LOG=debug` set) and paste
-        the output. Links have their passwords and query strings removed,
-        but site names and paths stay: check the text for anything private,
-        such as site, file or folder names or a token in a link's path,
-        before posting.
+        the output. The desktop app's diagnostics hide links (all but the
+        scheme), your downloads' file names and folders, and your home
+        folder; the command line's output only removes a link's login and
+        query string. Check the text for anything private before posting.
+        If a developer asks for more, the full log is in the logs folder.
       render: text

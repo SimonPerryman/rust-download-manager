@@ -1,7 +1,7 @@
 // End-to-end: troubleshooting. The settings menu's Open logs folder opens the
 // log folder (through the `RDM_OPEN_LOG` seam) and Copy diagnostics puts a
 // report on the (stubbed) clipboard with the version line and the logs, a
-// download's secret query redacted. A render error (raised through the
+// download's site, path, query, file name and folder hidden. A render error (raised through the
 // window's test hook) brings up the fallback screen instead of a blank
 // window: the error waits behind Show details, its Copy diagnostics adds the
 // error, the app log gets an `rdm::frontend` ERROR line, and Reload brings the
@@ -92,9 +92,10 @@ describe("rdm GUI troubleshooting", () => {
     expect(openLog().at(-1)).toBe(`open ${home}`);
   });
 
-  it("copies diagnostics with the version line and no download secrets", async () => {
+  it("copies diagnostics with the version line and nothing private", async () => {
     await closeSettings();
-    const id = await addThroughDialog(`${baseUrl}/file?token=SECRET`);
+    const name = "quarterly-diag-report.bin";
+    const id = await addThroughDialog(`${baseUrl}/any/${name}?token=SECRET`);
     ids.push(id);
     await waitForStatus(id, "completed", 30_000);
     // The file log is written on its own thread; wait for the download's lines.
@@ -106,11 +107,25 @@ describe("rdm GUI troubleshooting", () => {
     const text = await copyDiagnostics(COPY_DIAGNOSTICS);
     expect(text).toMatch(/^rdm diagnostics\nrdm \d+\.\d+\.\d+.* · WebView .* · memory /);
     expect(text).toContain("Settings: ");
-    expect(text).toContain("?<redacted>");
-    expect(text).not.toContain("SECRET");
     expect(text).toMatch(/Last \d+ log lines:/);
+    // The download's lines are there, with its link, file name and folder hidden.
+    // (Numbered per report; earlier specs' downloads may come first.)
+    expect(text).toMatch(/http:\/\/<site-\d+>\/<path>\?<redacted>/);
+    expect(text).toMatch(/<file-\d+>\.bin/);
+    const host = new URL(baseUrl).host;
+    for (const original of [
+      "SECRET",
+      host,
+      "127.0.0.1",
+      "/any/",
+      "quarterly-diag-report",
+      process.env.RDM_DOWNLOAD_DIR!,
+      process.env.RDM_HOME!,
+    ]) {
+      expect(text).not.toContain(original);
+    }
     await expect($(`${MENU} .ts-hint`)).toHaveText(
-      "Links in diagnostics have passwords and query strings removed.",
+      "Diagnostics hide links, file names and folders.",
     );
   });
 

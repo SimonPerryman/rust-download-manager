@@ -327,6 +327,10 @@ bytes._
 - [x] **Diagnostics redact.** `diagnostics()` over a temp log dir whose log
   contains a signed URL and a `user:pass@` URL returns text with neither
   secret. It also contains the version line and the last line of the log.
+- [x] **Diagnostics hide more** (decision 9): unit tests over a signed
+  link, a login link, a path-secret link (`/file/bot123:ABC/x.pdf`), an IP
+  host, two links to one site sharing a number, a file name inside a log
+  message and a download folder; none of the originals survive.
 - [x] `log_frontend_error` writes one ERROR line with target
   `rdm::frontend`, the message and the stack.
 
@@ -351,10 +355,11 @@ bytes._
   `open <RDM_HOME>` (the log dir) to `RDM_OPEN_LOG`, checked with
   `openLog()`.
 - [x] **Copy diagnostics:**
-  - Add a fixture URL with `?token=SECRET`, then click Copy diagnostics
-    with the clipboard stubbed.
-  - The text has the version line and `?<redacted>`, and doesn't have
-    `SECRET`.
+  - Add a fixture URL with a distinctive file name and `?token=SECRET`,
+    then click Copy diagnostics with the clipboard stubbed.
+  - The text has the version line, `http://<site-N>/<path>?<redacted>`
+    and `<file-N>.bin`, and doesn't have `SECRET`, the fixture's host,
+    the path, the file name or the download and state folders.
   - The button's "Copied" confirmation is read with `waitForText`.
 - [x] **Fallback screen:** a fault-injection-only command (or a
   `browser.execute` throw inside a render through a test hook compiled
@@ -388,10 +393,8 @@ bytes._
    someone filing a bug needn't find a hidden switch first; it sits last
    in the menu and is styled quiet and secondary: a small muted heading,
    ghost buttons **Open logs folder** (its tooltip is the folder's path)
-   and **Copy diagnostics**, and the hint "Links in diagnostics have
-   passwords and query strings removed." (The mock-up's "Diagnostics
-   contain no download links." wasn't true, since redacted links keep
-   their host and path; see decision 7.)
+   and **Copy diagnostics**, and the hint "Diagnostics hide links, file
+   names and folders." (decision 9).
 5. **Crashes outside downloads:** any crash is logged: the panic hook logs
    every panic on every thread, and the locks are poison-tolerant. A
    command that panics is contained (gap 9 shows Tauri doesn't): the
@@ -423,3 +426,22 @@ bytes._
    bundle doesn't name it. `RDM_OPEN_LOG` (which predates M8) and
    `RDM_SAVE_PATH` are read only with the `fault-injection` feature, which
    the e2e build turns on and a release build can't (`compile_error!`).
+9. **Copy diagnostics hides more than the log:** it's the text that leaves
+   the machine, so anything that might be private is hidden by default; a
+   user can share more by hand from the log files. The log files, the Log
+   tab's Copy and Save… keep decision 7's form. In the report only:
+   - a link keeps its scheme and login marker, and its host (with any
+     port) and path become numbered placeholders, the same site keeping
+     its number throughout one report:
+     `https://user:pw@example.com/a/b/report.pdf?token=x` →
+     `https://<redacted>:<redacted>@<site-1>/<path>?<redacted>`. A known
+     download's site is hidden wherever else it appears too;
+   - each known download's file name becomes `<file-N>.<ext>`, keeping
+     the extension, the longest name first so names that overlap don't
+     leave a piece behind;
+   - the download folders (the default and each download's own) become
+     `<folder-N>`; home is `~`, and the log folder shows as `~/...` when
+     it's under home, else as a numbered folder.
+   It's a pure function in the GUI crate (`diagnostics/anonymize.rs`),
+   unit-tested, and the e2e checks that the fixture's host, path and file
+   name are missing from the copied text.
