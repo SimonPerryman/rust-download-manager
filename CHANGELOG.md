@@ -7,13 +7,16 @@ desktop app share one version.
 
 ## Unreleased
 
+## 0.2.0 - 2026-11-10
+
 ### Added
 
-- Archive (desktop app): **Archive finished** and a row's Archive move
-  finished downloads out of the working views into **Archived**, with Undo.
-  From Archived, Unarchive moves them back and Remove drops them for good
-  (the file stays on disk; a failed download's partial file is deleted),
-  after asking first unless you've told it not to.
+- Archive (desktop app): **Archive finished** (every completed and stopped
+  download) and a row's Archive move finished downloads out of the working
+  views into **Archived**, with Undo. From Archived, Unarchive moves them
+  back and Remove drops them for good (the file stays on disk; a failed
+  download's partial file is deleted), after asking first unless you've told
+  it not to.
 - Tags (desktop app): label downloads in the Add dialog, from Tags… in the
   menu or in the details pane, and filter by tag from the sidebar, with
   counts. In Archived, the tags listed are the archived downloads'.
@@ -25,7 +28,6 @@ desktop app share one version.
 
 - **Clear finished** is now **Archive finished**: rows go to Archived instead
   of being deleted, and removing a download for good happens from Archived.
-
 - The desktop app's download list (`state.json`) moves to a new format that
   can hold archived and tagged downloads. A list from 0.1.0 opens unchanged.
   A list saved by a newer rdm is now refused in a dialog naming its version,
