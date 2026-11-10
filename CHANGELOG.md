@@ -7,6 +7,12 @@ desktop app share one version.
 
 ## Unreleased
 
+### Changed
+
+- Settings (desktop app): **Ask before removing a download for good** moved
+  from Display to Downloads, and "Max concurrent downloads" is now
+  **Concurrent downloads**.
+
 ## 0.2.0 - 2026-11-10
 
 ### Added

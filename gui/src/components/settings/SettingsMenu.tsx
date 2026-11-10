@@ -24,8 +24,8 @@ type Props = {
   onConfirmRemove: (ask: boolean) => void;
 };
 
-// The toolbar's settings popover: the theme and Remove's confirmation (kept in
-// localStorage) and the engine-backed Downloads settings.
+// The toolbar's settings popover: the theme (kept in localStorage), the
+// engine-backed Downloads settings and Remove's confirmation.
 export function SettingsMenu({ prefs, onPrefs, onApplied, confirmRemove, onConfirmRemove }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -72,6 +72,9 @@ export function SettingsMenu({ prefs, onPrefs, onApplied, confirmRemove, onConfi
             value={prefs.theme}
             onChange={(theme) => onPrefs({ theme })}
           />
+          <div className="-mx-4 h-px bg-line" />
+          <SectionHeading>Downloads</SectionHeading>
+          <DownloadSettings onApplied={onApplied} />
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -81,9 +84,6 @@ export function SettingsMenu({ prefs, onPrefs, onApplied, confirmRemove, onConfi
             />
             Ask before removing a download for good
           </label>
-          <div className="-mx-4 h-px bg-line" />
-          <SectionHeading>Downloads</SectionHeading>
-          <DownloadSettings onApplied={onApplied} />
         </div>
       )}
     </div>

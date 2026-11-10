@@ -29,7 +29,7 @@ export const STOP_DIALOG = '[data-testid="stop-dialog"]';
 export const NOTIFICATION = '[data-testid="finish-notification"]';
 export const TOAST = '[data-testid="toast"]';
 export const UNDO_TOAST = '[data-testid="undo-toast"]';
-export const CONCURRENCY_INPUT = 'input[aria-label="Max concurrent downloads"]';
+export const CONCURRENCY_INPUT = 'input[aria-label="Concurrent downloads"]';
 
 export const rowSelector = (id: number) => `${ROW}[data-id="${id}"]`;
 export const rowById = (id: number) => $(rowSelector(id));

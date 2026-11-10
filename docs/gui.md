@@ -154,9 +154,9 @@ the partial file.
 
 ## Settings
 
-**Settings** (the sliders button) holds the theme, whether Remove asks first,
-the max number of concurrent downloads, the global speed limit and the max connections per
-download. The status bar shows the total speed, and you can click the global
+**Settings** (the sliders button) holds the theme under **Display**, and
+under **Downloads** the number of concurrent downloads, the global speed
+limit, the max connections per download and whether Remove asks first. The status bar shows the total speed, and you can click the global
 limit there to change it.
 
 ## State and logs
