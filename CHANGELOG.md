@@ -38,8 +38,9 @@ desktop app share one version.
   up to 3 lanes".
 - "Completed" replaces "Done" for a download that worked: the sidebar
   filter, the row's status, the details pane and the finish notification
-  ("Download complete"). "Finished" still means any ending, as in **Archive
-  finished**.
+  ("Download complete"), and the log's summary line ("Completed · 4.00 MB in
+  10s · …"), in the Log tab and the CLI's `-v` output. "Finished" still means
+  any ending, as in **Archive finished**.
 - When rdm closes a connection because more weren't helping, it closes the
   highest-numbered lane, so Lane 1 usually stays. If that lane is stuck, the
   next free one closes after 3 seconds instead.

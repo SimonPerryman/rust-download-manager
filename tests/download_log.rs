@@ -75,7 +75,7 @@ async fn each_download_keeps_its_own_lines() {
     assert_eq!(story.len(), 3, "{done_log:#?}");
     assert!(starts(story[0], "Started · "), "{done_log:#?}");
     assert!(starts(story[1], "Saved to "), "{done_log:#?}");
-    assert!(starts(story[2], "Done · "), "{done_log:#?}");
+    assert!(starts(story[2], "Completed · "), "{done_log:#?}");
     assert!(story.iter().all(|l| l.level == LogLevel::Info));
     assert!(story.iter().all(|l| l.fields.is_empty()), "{done_log:#?}");
     let before = story[0].at;
@@ -88,7 +88,7 @@ async fn each_download_keeps_its_own_lines() {
     assert_eq!(error.level, LogLevel::Error, "{failed_log:#?}");
     assert!(starts(error, "Failed"), "{error:?}");
     assert!(error.message.contains("HTTP 403"), "{error:?}");
-    assert!(!failed_log.iter().any(|l| starts(l, "Done")));
+    assert!(!failed_log.iter().any(|l| starts(l, "Completed")));
 }
 
 /// A download whose finished file fails its check logs the failure once, as
@@ -125,7 +125,7 @@ async fn a_failed_check_logs_one_error() {
         concise(&lines).last().unwrap().message,
         "Discarded the downloaded file"
     );
-    assert!(!lines.iter().any(|l| starts(l, "Done")));
+    assert!(!lines.iter().any(|l| starts(l, "Completed")));
 }
 
 /// An unknown id has no lines, and neither has a download restored from the
@@ -171,7 +171,7 @@ async fn the_layer_ignores_other_layers_filters() {
     let lines = mgr.download_log(id);
     let story = concise(&lines);
     assert!(starts(story[0], "Started · "), "{lines:#?}");
-    assert!(starts(story.last().unwrap(), "Done · "), "{lines:#?}");
+    assert!(starts(story.last().unwrap(), "Completed · "), "{lines:#?}");
     assert!(
         lines.iter().any(|l| l.level == LogLevel::Debug),
         "{lines:#?}"
@@ -269,7 +269,7 @@ async fn pause_resume_and_detail_through_the_manager() {
         "{lines:#?}"
     );
     assert!(
-        starts(story.last().unwrap(), "Done · 4.00 MB in "),
+        starts(story.last().unwrap(), "Completed · 4.00 MB in "),
         "{lines:#?}"
     );
     for line in &story {

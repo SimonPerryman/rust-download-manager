@@ -337,7 +337,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// download (cancel/pause).
 ///
 /// Each event worth telling the user is logged as one short line (`Started ·
-/// …`, `Paused`, `Done · …`). Running the same request again, e.g. after a
+/// …`, `Paused`, `Completed · …`). Running the same request again, e.g. after a
 /// pause, continues its finish summary: a request and its clones share it.
 // Error level so the identity survives any filter that still shows errors.
 #[tracing::instrument(name = "download", level = "error", skip_all, fields(url = %redact_url(&req.url)))]

@@ -124,7 +124,7 @@ impl Tally {
         t.baseline = 0;
     }
 
-    /// The finish line for a `bytes`-long file, e.g. `Done · 6.25 GB in 9m 59s
+    /// The finish line for a `bytes`-long file, e.g. `Completed · 6.25 GB in 9m 59s
     /// (active 7m 14s) · avg 14.7 MB/s · peak 38.0 MB/s · 2 retries`.
     pub(crate) fn done_line(&self, bytes: u64) -> String {
         self.done_line_at(bytes, Instant::now())
@@ -154,7 +154,7 @@ impl Tally {
             n => human::count(n, "retry", "retries"),
         };
         let mut line = format!(
-            "Done · {} in {took} · avg {} · peak {} · {retries}",
+            "Completed · {} in {took} · avg {} · peak {} · {retries}",
             human::bytes(bytes),
             human::speed(avg),
             human::speed(t.peak.max(avg)),
@@ -206,7 +206,7 @@ mod tests {
         let line = tally.done_line_at(60 * MIB, t0 + secs(70));
         assert_eq!(
             line,
-            "Done · 60.0 MB in 1m 10s (active 10s) · avg 6.00 MB/s · peak 6.00 MB/s · \
+            "Completed · 60.0 MB in 1m 10s (active 10s) · avg 6.00 MB/s · peak 6.00 MB/s · \
              2 retries · 1.00 MB re-downloaded"
         );
     }
@@ -220,7 +220,7 @@ mod tests {
         tally.begin_run_at(secs(20), t0);
         let line = tally.done_line_at(30 * MIB, t0 + secs(10));
         assert!(
-            line.starts_with("Done · 30.0 MB in 30s · avg 1.00 MB/s"),
+            line.starts_with("Completed · 30.0 MB in 30s · avg 1.00 MB/s"),
             "{line}"
         );
     }
@@ -237,7 +237,7 @@ mod tests {
         tally.begin_run_at(Duration::ZERO, t0 + secs(30 * 60 + 60));
         let line = tally.done_line_at(180 * MIB, t0 + secs(30 * 60 + 120));
         assert!(
-            line.starts_with("Done · 180.0 MB in 3m 0s · avg 1.00 MB/s"),
+            line.starts_with("Completed · 180.0 MB in 3m 0s · avg 1.00 MB/s"),
             "{line}"
         );
     }
@@ -289,7 +289,7 @@ mod tests {
         let line = tally.done_line_at(512, t0 + secs(1));
         assert_eq!(
             line,
-            "Done · 512 B in 1.0s · avg 512 B/s · peak 512 B/s · no retries"
+            "Completed · 512 B in 1.0s · avg 512 B/s · peak 512 B/s · no retries"
         );
     }
 

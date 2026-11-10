@@ -46,6 +46,6 @@ Retries and warnings print to stderr, one short line each, e.g.
 `Lane 2 lost connection — retrying (attempt 2)`. A failed download is reported once, as
 `Error: failed to download …`. `-v` adds informational events, one short line
 each, such as `Started · 4.00 MB · resumable · 4 pieces, up to 4 lanes` and
-`Done · 4.00 MB in 2.1s · avg 1.90 MB/s · peak 2.40 MB/s · no retries`.
+`Completed · 4.00 MB in 2.1s · avg 1.90 MB/s · peak 2.40 MB/s · no retries`.
 `RUST_LOG` (e.g. `RUST_LOG=debug`) overrides the log level; `debug` adds each
 request's byte range and the server's answer.

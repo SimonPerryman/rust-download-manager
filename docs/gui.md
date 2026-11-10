@@ -102,7 +102,7 @@ the partial file.
     Resumed at 3.10 GB
     Checksum verified ✓
     Saved to /home/me/Downloads/big.iso
-    Done · 6.25 GB in 9m 59s (active 7m 14s) · avg 14.7 MB/s · peak 38.0 MB/s · 1 retry
+    Completed · 6.25 GB in 9m 59s (active 7m 14s) · avg 14.7 MB/s · peak 38.0 MB/s · 1 retry
     ```
 
     Tick **Detailed** to also see each request (its byte range and the

@@ -1,7 +1,7 @@
 // End-to-end: the details pane's Log tab. A download that fails against
 // /seg-403 shows its engine lines, the error among them, in its Log tab; the
 // Detailed bar never covers a line, scrolled or not; the tab follows the
-// details pane to another download (a completed one ends on its Done
+// details pane to another download (a completed one ends on its Completed
 // summary), the Detailed toggle adds the per-request lines and takes them
 // away again, it says so when a download hasn't logged anything (one waiting
 // in the queue), keeps polling while it's open (a running download's pause
@@ -176,7 +176,7 @@ describe("rdm GUI log tab", () => {
     await openDetails(done);
     await expect(tab("log")).toHaveAttribute("aria-selected", "true");
     await waitForText(LOG, "Saved to ");
-    await waitForText(LOG, "Done · 97.6 KB in ");
+    await waitForText(LOG, "Completed · 97.6 KB in ");
     await waitForGone(`${LOG} li[data-level="error"]`, "the other download's error stayed");
   });
 
@@ -234,7 +234,7 @@ describe("rdm GUI log tab", () => {
       if (await $(DETAILED).isSelected()) await $(DETAILED).click();
     }
     await waitForGone(`${LOG} li[data-level="debug"]`, "the detail stayed after Detailed went off");
-    await waitForText(LOG, "Done · ");
+    await waitForText(LOG, "Completed · ");
   });
 
   it("copies the lines shown, as time and text, with or without the detail", async () => {
@@ -244,7 +244,7 @@ describe("rdm GUI log tab", () => {
       const lines = plain.text.split("\n");
       expect(lines.length).toBe(plain.shown);
       for (const l of lines) expect(l).toMatch(/^\d\d:\d\d:\d\d {2}\S/);
-      expect(plain.text).toContain("Done · ");
+      expect(plain.text).toContain("Completed · ");
       expect(plain.text).not.toContain("Requested the file");
       expect(plain.said).toBe(`Copied ${plain.shown} lines`);
 
@@ -273,7 +273,7 @@ describe("rdm GUI log tab", () => {
     await tab("overview").click();
     await waitForGone(LOG, "the log stayed after leaving its tab");
     await tab("log").click();
-    await waitForText(LOG, "Done · ");
+    await waitForText(LOG, "Completed · ");
   });
 
   it("says nothing is logged yet for a download that hasn't run", async () => {
