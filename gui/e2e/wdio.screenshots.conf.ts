@@ -4,7 +4,7 @@
 // docs/screenshots/. App state and downloads live under a short, neutral dir
 // (target/screenshots by default) because folder names show in the sidebar.
 
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { baseConfig, repoRoot, startFixture, startTauriDriver, stopAll } from "./launch";
 
@@ -32,6 +32,8 @@ export const config: WebdriverIO.Config = {
       mkdirSync(dir, { recursive: true });
       process.env[key] = dir;
     }
+    // No first-run update question, and no update check, in the shots.
+    writeFileSync(path.join(dirs.RDM_HOME, "updater.json"), JSON.stringify({ auto_check: false }));
     // Open logs here instead of launching an OS handler.
     process.env.RDM_OPEN_LOG = path.join(shotsRoot, "opened.log");
     process.env.RDM_SHOTS_OUT = path.join(repoRoot, "docs", "screenshots");

@@ -52,6 +52,7 @@ export interface EngineRow {
   finished_at: number | null;
   archived: boolean;
   tags: string[];
+  paused_for_update: boolean;
 }
 
 /** Waits until nothing matches `selector`. */
