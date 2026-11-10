@@ -7,7 +7,9 @@
 #   that creates the release can write to the repo;
 # * the plan job checks the tag against every version file before any build;
 # * the Homebrew formula is committed at the tap's root, not under Formula/;
-# * the custom jobs get no repository secrets.
+# * the custom jobs get no repository secrets;
+# * sign-gui-updates signs the GUI's updater bundles and writes latest.json,
+#   the only job that sees the update signing key.
 # guard-release-workflow.mjs (pnpm lint) enforces the trigger and permissions.
 #
 # CI that:
@@ -15,6 +17,7 @@
 # * checks for a Git Tag that looks like a release
 # * builds artifacts with dist (archives, installers, hashes), and the GUI
 #   bundles with tauri-action (release-gui.yml)
+# * signs the GUI's updater bundles and writes latest.json (sign-gui-updates)
 # * uploads those artifacts to temporary workflow zip
 # * on success, uploads the artifacts to a GitHub Release
 # * then smoke-tests the published assets (release-checks.yml)
@@ -169,6 +172,66 @@ jobs:
     with:
       plan: ${{ needs.plan.outputs.val }}
 
+  # Signs the in-app updater's bundles (built unsigned by release-gui.yml, so
+  # the key never reaches a build or its dependencies) and writes latest.json,
+  # failing the release unless every signature verifies against the public
+  # key in tauri.conf.json. The host job attaches latest.json with the rest.
+  sign-gui-updates:
+    needs:
+      - plan
+      - custom-release-gui
+    if: ${{ needs.plan.outputs.publishing == 'true' || fromJson(needs.plan.outputs.val).ci.github.pr_run_mode == 'upload' }}
+    runs-on: "ubuntu-24.04"
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          package_json_file: gui/package.json
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.2
+      # Only the Tauri CLI is needed, at the lockfile's version; no install
+      # scripts run next to the signing key.
+      - name: Install the Tauri CLI
+        working-directory: gui
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Fetch the GUI bundles
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: artifacts-gui-*
+          path: updater
+          merge-multiple: true
+      - name: Sign the updater bundles
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::the TAURI_SIGNING_PRIVATE_KEY secret is not set"
+            exit 1
+          fi
+          shopt -s nullglob
+          for f in updater/*-setup.exe updater/*.msi updater/*.app.tar.gz updater/*.AppImage; do
+            pnpm --dir gui exec tauri signer sign --app-version "${TAG#v}" "$PWD/$f"
+          done
+      - name: Write and verify latest.json
+        run: node gui/scripts/updater-manifest.mjs "$TAG" updater .
+      - name: Upload latest.json
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: artifacts-gui-updater
+          path: updater/latest.json
+          if-no-files-found: error
+
   # Build and package all the platform-agnostic(ish) things
   build-global-artifacts:
     needs:
@@ -222,9 +285,11 @@ jobs:
       - plan
       - build-local-artifacts
       - custom-release-gui
+      - sign-gui-updates
       - build-global-artifacts
-    # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') && (needs.custom-release-gui.result == 'skipped' || needs.custom-release-gui.result == 'success') }}
+    # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine),
+    # and the GUI updates were signed (skipped is not fine: a release needs latest.json)
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') && (needs.custom-release-gui.result == 'skipped' || needs.custom-release-gui.result == 'success') && needs.sign-gui-updates.result == 'success' }}
     # The one job that writes: it creates the release and uploads every asset.
     permissions:
       contents: write

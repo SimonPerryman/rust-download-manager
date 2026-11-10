@@ -2,7 +2,9 @@
 # custom job (`local-artifacts-jobs` in dist-workspace.toml). tauri-action
 # only builds here; the bundles are uploaded as `artifacts-gui-*` workflow
 # artifacts, which release.yml's host job attaches to the one release it
-# creates for the tag, next to the CLI's assets.
+# creates for the tag, next to the CLI's assets. The in-app updater's bundles
+# are signed later, by release.yml's sign-gui-updates job, so the update
+# signing key never reaches this build (or the dependencies it runs).
 
 name: Release GUI
 
@@ -107,8 +109,9 @@ jobs:
           tauriScript: pnpm tauri
           args: ${{ steps.args.outputs.args }}
 
-      # Only the installers users download; the .app folder (shipped inside
-      # the .dmg) and plain binaries stay out of the release.
+      # Only the installers users download; the bare .app folder (shipped
+      # inside the .dmg) and plain binaries stay out of the release. The
+      # updater's .app archive is added in the next step.
       - name: Collect the bundles
         shell: bash
         run: |
@@ -118,6 +121,25 @@ jobs:
             -exec cp {} gui-bundles/ \;
           ls -l gui-bundles
           [ -n "$(ls gui-bundles)" ]
+
+      # The updater's macOS bundle: the .app as a .tar.gz, named per
+      # architecture like the .dmg.
+      - name: Archive the macOS app for the updater
+        if: ${{ runner.os == 'macOS' }}
+        shell: bash
+        env:
+          TAG: ${{ fromJson(inputs.plan).announcement_tag }}
+          ARCH: ${{ matrix.target == 'aarch64-apple-darwin' && 'aarch64' || 'x64' }}
+        run: |
+          set -euo pipefail
+          app=$(find target -path '*/release/bundle/macos/rdm.app' -type d | head -n 1)
+          [ -n "$app" ]
+          archive="$PWD/gui-bundles/rdm_${TAG#v}_${ARCH}.app.tar.gz"
+          COPYFILE_DISABLE=1 tar -czf "$archive" -C "$(dirname "$app")" rdm.app
+          # The updater installs whatever sits under the archive's first
+          # path component, so everything must be inside rdm.app/.
+          tar -tzf "$archive" | awk -F/ '$1 != "rdm.app" { bad = 1; print "unexpected entry: " $0 } END { exit bad }'
+          ls -l "$archive"
 
       - name: Upload the bundles
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
