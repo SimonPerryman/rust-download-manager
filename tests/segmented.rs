@@ -170,14 +170,18 @@ async fn multi_segment_matches_single_connection() {
     assert_eq!(multi.bytes, payload.len() as u64);
 }
 
-/// AC (R3): multi-segment is measurably faster than one connection. The
-/// concurrency assertion is the deterministic one; the timing compares two
-/// runs of the same test, so both see the same timer inflation.
+/// AC (R3): multi-segment is faster than one connection. `/seg` paces every
+/// response at the same per-chunk delay, so while responses overlap a download
+/// lasts as long as its longest one: one connection streams the whole file,
+/// four stream a quarter each, all at once. Asserted on what the fixture saw,
+/// not on wall-clock time, which a slow runner's stalls (disk syncs,
+/// scheduling) can swamp: a 4x-shorter transfer once measured 1.0 s vs 1.65 s.
 #[tokio::test]
 async fn multi_segment_is_faster_than_single_connection() {
     let server = common::spawn_with(FixtureConfig {
         seg_len: MIB as usize,
-        seg_chunk_delay: Duration::from_millis(50),
+        seg_chunk_delay: Duration::from_millis(20),
+        seg_hold: true,
         ..FixtureConfig::default()
     })
     .await;
@@ -185,38 +189,46 @@ async fn multi_segment_is_faster_than_single_connection() {
     let dir = tempfile::tempdir().unwrap();
     let payload = server.seg_payload();
     let total = payload.len() as u64;
+    // A steal needs a segment with `2 * min` left; with `min` a quarter of the
+    // file none ever has, so each lane is exactly one response.
+    let min = total / 4;
 
+    // The single connection's response is the gate's first arrival; released
+    // up front, so it never waits on the test noticing it.
+    server.gate().release(0);
     let single_out = dir.path().join("single.bin");
-    let started = Instant::now();
-    download(
-        &DownloadRequest::to_path(server.url("/seg"), &single_out)
-            .with_connections(1)
-            .with_min_segment_size(128 * KIB),
-        &Control::new(),
-        |_| {},
-    )
-    .await
-    .unwrap();
-    let single_elapsed = started.elapsed();
+    let single_req = DownloadRequest::to_path(server.url("/seg"), &single_out)
+        .with_connections(1)
+        .with_min_segment_size(min);
+    let control = Control::new();
+    download(&single_req, &control, |_| {}).await.unwrap();
     assert_eq!(stats.max_in_flight(), 1);
+    assert_eq!(stats.requests(), 1, "one response carried the whole file");
 
     wait_idle(&stats).await;
     stats.reset();
     let multi_out = dir.path().join("multi.bin");
-    let started = Instant::now();
-    let multi = download(
-        &DownloadRequest::to_path(server.url("/seg"), &multi_out)
-            .with_connections(4)
-            .with_min_segment_size(128 * KIB)
-            .with_ramp(Ramping::Off),
-        &Control::new(),
-        |_| {},
-    )
-    .await
-    .unwrap();
-    let multi_elapsed = started.elapsed();
+    let multi_req = DownloadRequest::to_path(server.url("/seg"), &multi_out)
+        .with_connections(4)
+        .with_min_segment_size(min)
+        .with_ramp(Ramping::Off);
+    let (multi, opened) = tokio::join!(download(&multi_req, &control, |_| {}), async {
+        let opened = streaming(&stats, 4).await;
+        server.gate().release_all();
+        opened
+    },);
+    let multi = multi.unwrap();
     assert_eq!(multi.status, 206);
-    assert!(stats.max_in_flight() >= 2, "never ran in parallel");
+    assert!(opened, "four lanes never streamed at once");
+    assert_eq!(stats.max_in_flight(), 4);
+    // The first response carries segment 0 and the three ranged ones the rest:
+    // no lane streams more than a quarter of what the single connection did.
+    assert_eq!(stats.requests(), 4);
+    assert_eq!(stats.unranged(), 1);
+    assert_eq!(
+        stats.closed_ranges(),
+        [(min, 2 * min), (2 * min, 3 * min), (3 * min, total)]
+    );
 
     // Workers drop a response as soon as its segment is done, so little more
     // than the file itself is ever pulled off the wire.
@@ -228,12 +240,13 @@ async fn multi_segment_is_faster_than_single_connection() {
         stats.body_bytes()
     );
 
-    assert!(
-        multi_elapsed.as_secs_f64() < 0.6 * single_elapsed.as_secs_f64(),
-        "multi {multi_elapsed:?} vs single {single_elapsed:?}"
-    );
     assert_eq!(std::fs::read(&single_out).unwrap(), payload);
     assert_eq!(std::fs::read(&multi_out).unwrap(), payload);
+}
+
+/// Wait for `lanes` responses on the route to be streaming at once.
+async fn streaming(stats: &RouteStats, lanes: usize) -> bool {
+    wait_until(Duration::from_secs(10), || stats.in_flight() >= lanes).await
 }
 
 /// AC (R4, in-process): pause a multi-segment download mid-flight, then resume:

@@ -39,7 +39,9 @@
 //! Multi-segment routes (M3), all over [`seg_payload`] (4 MiB by default,
 //! streamed in 32 KiB chunks) with a strong ETag + `Last-Modified` and closed
 //! (`bytes=s-e`) or open (`bytes=s-`) `Range` support, unless stated:
-//! - `GET /seg`        — per-chunk delay [`FixtureConfig::seg_chunk_delay`].
+//! - `GET /seg`        — per-chunk delay [`FixtureConfig::seg_chunk_delay`];
+//!   with [`FixtureConfig::seg_hold`], every response holds after its first
+//!   chunk until released through [`TestServer::gate`].
 //! - `GET /seg/{len}/{*name}` — `/seg` cut to its first `len` bytes (at most
 //!   [`FixtureConfig::seg_len`]), under any file name.
 //! - `GET /seg-flaky`  — the first ranged request aborts mid-body.
@@ -238,6 +240,10 @@ pub struct FixtureConfig {
     pub seg_refusals: usize,
     /// `/seg-429`: the `Retry-After` seconds sent with a refusal, if any.
     pub seg_retry_after: Option<u64>,
+    /// `/seg`: hold every response after its first chunk until
+    /// [`TestServer::gate`] releases it, so a test can see every lane open
+    /// at once.
+    pub seg_hold: bool,
 }
 
 impl Default for FixtureConfig {
@@ -249,6 +255,7 @@ impl Default for FixtureConfig {
             seg_abort_after: 1,
             seg_refusals: 3,
             seg_retry_after: None,
+            seg_hold: false,
         }
     }
 }
@@ -1143,7 +1150,12 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg, data: Bytes) -
         _ => None,
     };
     let abort_alone = kind == Seg::FlakyTail;
-    let hold = (kind == Seg::CappedFlaky && !ranged).then(|| state.gate.enter());
+    let held = match kind {
+        Seg::CappedFlaky => !ranged,
+        Seg::Plain => state.cfg.seg_hold,
+        _ => false,
+    };
+    let hold = held.then(|| state.gate.enter());
 
     let mut builder = Response::builder()
         .status(status)
