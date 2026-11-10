@@ -116,7 +116,7 @@ describe("startsMerge", () => {
     expect(startsMerge(true, snap({ status: "completed", total: 400 }))).toBe(false);
   });
 
-  it("only merges into Done", () => {
+  it("only merges into Completed", () => {
     expect(startsMerge(true, snap({ status: "failed", segments: tiling(4), total: 400 }))).toBe(
       false,
     );

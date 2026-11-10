@@ -54,7 +54,7 @@ export function statePhrase(d: DownloadSnapshot): string {
     case "paused":
       return "Paused";
     case "completed":
-      return "Done";
+      return "Completed";
     case "failed":
       return "Failed";
     case "cancelled":

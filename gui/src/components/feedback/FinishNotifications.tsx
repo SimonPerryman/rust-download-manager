@@ -19,7 +19,7 @@ type Props = {
   onDismiss: (id: number) => void;
 };
 
-// The in-app "Download finished" cards, bottom right, newest last. Each goes
+// The in-app "Download complete" cards, bottom right, newest last. Each goes
 // after `NOTIFY_MS` unless the pointer or focus is on it.
 export function FinishNotifications({ notifications, onOpen, onReveal, onDismiss }: Props) {
   return (
@@ -86,7 +86,7 @@ function Card({
         <p className="text-xs text-g400">rdm, now</p>
         <p className="flex items-center gap-1 text-sm font-semibold">
           <Check size={14} className="text-success" />
-          Download finished
+          Download complete
         </p>
         <p className="truncate text-g600" title={d.filename}>
           {d.filename}

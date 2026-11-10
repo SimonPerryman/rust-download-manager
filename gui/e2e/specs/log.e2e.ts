@@ -1,7 +1,7 @@
 // End-to-end: the details pane's Log tab. A download that fails against
 // /seg-403 shows its engine lines, the error among them, in its Log tab; the
 // Detailed bar never covers a line, scrolled or not; the tab follows the
-// details pane to another download (a finished one ends on its Done
+// details pane to another download (a completed one ends on its Done
 // summary), the Detailed toggle adds the per-request lines and takes them
 // away again, it says so when a download hasn't logged anything (one waiting
 // in the queue), keeps polling while it's open (a running download's pause

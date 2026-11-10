@@ -76,6 +76,58 @@ async function waitForLaneRows(pane: string, n: number): Promise<void> {
   expect(await count(`${rowsSelector(pane, "lanes")} [data-testid="lane-now"]`)).toBe(n);
 }
 
+/** The rendered text of the first match of `selector`. */
+async function innerText(selector: string): Promise<string> {
+  return browser.execute(
+    (sel) => (document.querySelector(sel) as HTMLElement | null)?.innerText ?? "",
+    selector,
+  );
+}
+
+/** The accessible names of the pane's live lane rows, top to bottom. */
+async function rowNames(pane: string): Promise<string[]> {
+  return browser.execute(
+    (sel) =>
+      [...document.querySelectorAll(`${sel} [data-testid="lane-row"]:not(.leaving)`)].map(
+        (r) => r.getAttribute("aria-label") ?? "",
+      ),
+    rowsSelector(pane, "lanes"),
+  );
+}
+
+/**
+ * Points at lane `lane`'s row (a dispatched pointermove at its centre, which
+ * every driver delivers the same way) and checks the tooltip names it.
+ */
+async function expectTooltipNamesLane(pane: string, lane: number): Promise<void> {
+  const row = `${rowsSelector(pane, "lanes")} [data-testid="lane-row"][data-lane="${lane}"]`;
+  const at = await rectOf(row);
+  await browser.execute(
+    (sel, x, y) => {
+      const el = document.querySelector(sel)!;
+      const init = { bubbles: true, clientX: x, clientY: y, pointerType: "mouse" };
+      el.dispatchEvent(new PointerEvent("pointerover", init));
+      el.dispatchEvent(new PointerEvent("pointermove", init));
+    },
+    row,
+    at.x + at.width / 2,
+    at.y + at.height / 2,
+  );
+  await waitForText('[data-testid="lane-tip"]', `Lane ${lane} · piece `);
+  expect(await innerText('[data-testid="lane-tip"]')).toMatch(
+    new RegExp(`^Lane ${lane} · piece \\d+ · \\S+–\\S+ \\S+ · \\d+% downloaded$`),
+  );
+  // React's pointer-leave comes from a pointerout to somewhere outside.
+  await browser.execute((sel) => {
+    document
+      .querySelector(sel)!
+      .dispatchEvent(
+        new PointerEvent("pointerout", { bubbles: true, relatedTarget: document.body }),
+      );
+  }, row);
+  await waitForGone('[data-testid="lane-tip"]', "the lane tooltip stayed after the pointer left");
+}
+
 /**
  * Up to 16 lanes can be open, so the rows block stays four rows tall and
  * scrolls in place: with 12 more rows (copies of a live one, removed after)
@@ -186,7 +238,12 @@ describe("rdm GUI lanes and details pane", () => {
     expect(
       (await rectOf(`${rowsSelector(pane, "lanes")} [data-testid="lane-row"]`)).height,
     ).toBeGreaterThan(0);
-    await waitForText(headSelector(pane), "4 lanes · 4 of 4 pieces left");
+    await waitForText(headSelector(pane), "4 lanes");
+    expect(await innerText(headSelector(pane))).toBe("4 lanes");
+    // No label column: each row is named for screen readers instead.
+    expect(await rowNames(pane)).toEqual(["Lane 1", "Lane 2", "Lane 3", "Lane 4"]);
+    expect(await $(`${pane} .lane-label`).isExisting()).toBe(false);
+    await expectTooltipNamesLane(pane, 3);
     expect(await count(`${rowSelector(id)} ${CELL_LANE}`)).toBe(4);
     await expectBoundedRows(pane);
 
@@ -194,7 +251,8 @@ describe("rdm GUI lanes and details pane", () => {
     await clickRowAction(id, "Pause");
     await waitForStatus(id, "paused");
     await $(rowsSelector(pane, "single")).waitForExist({ timeoutMsg: "pause kept the lane rows" });
-    await waitForText(headSelector(pane), "Paused · 4 of 4 pieces left");
+    await waitForText(headSelector(pane), "Paused");
+    expect(await innerText(headSelector(pane))).toBe("Paused");
     await waitForGone(`${pane} [data-testid="lane-now"]`, "a paused lane still showed a piece");
 
     await clickRowAction(id, "Resume");
@@ -250,12 +308,10 @@ describe("rdm GUI lanes and details pane", () => {
     await $(done).waitForExist({ timeoutMsg: "the finished download kept its lane rows" });
     expect(await count(`${done} [data-testid="lane-row"]`)).toBe(1);
     expect(await count(`${pane} [data-testid="lane-now"]`)).toBe(0);
-    await waitForText(headSelector(pane), "Fetched in ");
-    const head = await browser.execute(
-      (sel) => (document.querySelector(sel) as HTMLElement).innerText,
-      headSelector(pane),
+    await waitForText(headSelector(pane), "Downloaded in ");
+    expect(await innerText(headSelector(pane))).toMatch(
+      /^Downloaded in \d+ pieces · (up to \d lanes|on 1 lane)$/,
     );
-    expect(head).toMatch(/^Fetched in \d+ pieces · (up to \d lanes|on 1 lane)$/);
     await closeDetails();
   });
 

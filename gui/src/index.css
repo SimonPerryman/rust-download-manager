@@ -137,6 +137,7 @@
     --lane-from: #a9b8f4;
     --lane-to: #2b4acb;
     --lane-track: #eceae4;
+    --lane-track-hover: #e2dfd7;
     --lane-muted: #9a958c;
     --lane-done: #1f8a5b;
     color-scheme: light;
@@ -190,6 +191,7 @@
     --lane-from: #34489e;
     --lane-to: #a9b8f7;
     --lane-track: #2c2a26;
+    --lane-track-hover: #36332e;
     --lane-muted: #6b675f;
     --lane-done: #3fa877;
     color-scheme: dark;
@@ -676,20 +678,18 @@
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  /* The rows and the scale reserve the same scrollbar gutter, and the scale
-     starts where the tracks do (past the label column), so its marks line up
-     with the bars whether or not the rows scroll. */
+  /* The rows and the scale reserve the same scrollbar gutter, so the scale's
+     marks line up with the bars whether or not the rows scroll. */
   .lane-rows,
   .lane-scale {
     scrollbar-gutter: stable;
     scrollbar-width: thin;
   }
   .lane-row {
-    display: grid;
-    grid-template-columns: 48px minmax(0, 1fr);
+    display: flex;
     align-items: center;
-    gap: 8px;
     height: var(--lane-row);
+    border-radius: 3px;
     overflow: hidden;
     animation: laneIn 0.6s ease-out;
   }
@@ -700,11 +700,17 @@
   .lane-row.single {
     animation: none;
   }
-  .lane-label {
-    @apply whitespace-nowrap text-xs;
-    color: var(--g400);
+  /* The row under the pointer lights up: rows have no labels, so this is
+     what says there's a tooltip to find. */
+  .lane-row.live:hover {
+    background: var(--hover);
+  }
+  .lane-row.live:hover .lane-track {
+    background: var(--lane-track-hover);
   }
   .lane-track {
+    flex: 1;
+    min-width: 0;
     position: relative;
     height: 6px;
     overflow: hidden;
@@ -754,18 +760,13 @@
   .lane-scale {
     @apply mt-1 flex justify-between text-xs tabular-nums;
     overflow: hidden;
-    padding-left: 56px;
     color: var(--g400);
   }
   .lane-tip {
-    @apply pointer-events-none fixed z-50 grid max-w-60 rounded-lg px-3 py-2 text-sm shadow-pop;
+    @apply pointer-events-none fixed z-50 whitespace-nowrap rounded-lg px-3 py-2 text-sm tabular-nums shadow-pop;
     background: var(--toast-bg);
     color: var(--toast-ink);
     line-height: 1.4;
-  }
-  .lane-tip span {
-    opacity: 0.8;
-    font-variant-numeric: tabular-nums;
   }
 
   /* ---------- details pane ---------- */

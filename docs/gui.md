@@ -11,7 +11,7 @@ see [Installing rdm](install.md#desktop-app); to build it, see
 - [Finding and selecting](#finding-and-selecting)
 - [The queue](#the-queue)
 - [Lanes and details](#lanes-and-details)
-- [Finished and failed downloads](#finished-and-failed-downloads)
+- [Completed and failed downloads](#completed-and-failed-downloads)
 - [Archive and tags](#archive-and-tags)
 - [Settings](#settings)
 - [State and logs](#state-and-logs)
@@ -43,7 +43,7 @@ Under **More options** you can give a SHA-256 checksum and a speed limit.
   Delete partial file and Archive (in Archived, Unarchive and Remove).
 - **Keyboard:** with the table focused, ↑/↓ move (Shift extends the
   selection), Home/End jump, Ctrl+A selects all, Space pauses or resumes,
-  Enter opens a finished file, Delete archives (in Archived, removes) and
+  Enter opens a completed file, Delete archives (in Archived, removes) and
   Escape clears the selection.
 - **Density:** the toolbar toggles compact 32 px rows (the default) and
   comfortable 48 px rows that also show each file's site.
@@ -66,21 +66,22 @@ the partial file.
 - **Details:** click a row to open the details pane under the table; it then
   follows the row you select (drag its top edge to resize).
   - **Overview** shows sizes, speed, time left, the lanes, the link, the
-    folder and the checksum. A finished download gets a summary such as
+    folder and the checksum. A completed download gets a summary such as
     "5.8 GB in 2 min 14 s, average 44 MB/s, checksum verified" and **Verify
     checksum**, which checks the file against a SHA-256 you paste.
-  - **The lanes** in Overview are one row per open connection, headed with
-    how many are open and how many pieces are left ("3 lanes · 5 of 8 pieces
-    left"). A row appears when rdm opens a lane and merges back up when it
-    closes. Each row shows only its own lane's work: the piece it is on now,
-    strong, and the pieces it finished earlier, soft, so no part of the file
-    is drawn twice. A closed lane's work moves to the top row (Lane 1's); if
-    it left a piece unfinished, the rest shows dashed until another lane
-    takes it. Past four lanes the rows scroll in place, so the pane keeps
-    its size. Hover a row for its piece and how far it has got. Paused or
-    stopped, the rows become one row of the work so far; once the download
-    completes, they give way to one finish bar and a line such as "Fetched
-    in 4 pieces · up to 3 lanes".
+  - **The lanes** in Overview are one bar per open connection, top to
+    bottom in lane order, headed with how many are open ("3 lanes"). A bar
+    appears when rdm opens a lane and merges back up when it closes. Each
+    shows only its own lane's work: the piece it is on now, strong, and the
+    pieces it finished earlier, soft, so no part of the file is drawn twice.
+    A closed lane's work moves to the top bar (Lane 1's); if it left a piece
+    unfinished, the rest shows dashed until another lane takes it. Past four
+    lanes the bars scroll in place, so the pane keeps its size. Hover a bar
+    for which lane it is, its piece, where that sits and how far it has got
+    ("Lane 3 · piece 5 · 19.1–23.8 MB · 40% downloaded"). Paused or stopped,
+    the bars become one bar of the work so far; once the download completes,
+    they give way to one finish bar and a line such as "Downloaded in 4
+    pieces · up to 3 lanes".
   - **Speed** graphs the last 60 seconds, with the speed limit as a dashed
     line.
   - **Log** tells the download's story in short lines, updating while the
@@ -119,21 +120,21 @@ the partial file.
 
 ![The details pane's Speed tab for a running download: speed now, average and peak, and a graph of the last minute, under a table whose rows draw their lanes](screenshots/details.png)
 
-## Finished and failed downloads
+## Completed and failed downloads
 
-- **Finished** downloads stay where they are, marked Done, with **Open** and
+- **Completed** downloads stay where they are, with **Open** and
   **Show in folder**, until you [archive](#archive-and-tags) them.
 - **Failed** downloads are pinned to the top with the reason in plain words and
   a **Retry** button.
 
 ## Archive and tags
 
-- **Archive** moves a finished download (Done, Failed or Stopped) out of the
-  working views into **Archived** in the sidebar, which counts them; nothing
-  is deleted, and it keeps its details and log. **Archive finished** in the
-  toolbar archives every Done and Stopped download at once, with **Undo** for
-  a few seconds. Each finished row also has an Archive button, and Delete
-  archives the selection.
+- **Archive** moves a finished download (Completed, Failed or Stopped) out
+  of the working views into **Archived** in the sidebar, which counts them;
+  nothing is deleted, and it keeps its details and log. **Archive finished**
+  in the toolbar archives every Completed and Stopped download at once, with
+  **Undo** for a few seconds. Each finished row also has an Archive button,
+  and Delete archives the selection.
 - **Archived** lists only archived downloads. Select some and choose
   **Unarchive** to move them back, or **Remove** to drop them from rdm for
   good: the downloaded file, and a partial file kept by Stop, stay on disk,

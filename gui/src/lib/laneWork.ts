@@ -236,40 +236,41 @@ export function rowViews(d: DownloadSnapshot, w: LaneWork, now: number): RowView
 
 /** The line over the rows, as a bold lead and a quieter rest. */
 export function rowsHead(d: DownloadSnapshot, w: LaneWork): { lead: string; rest: string } {
-  const n = d.segments.length;
   if (d.status === "completed") {
     // The engine counts every report; the GUI's own count only what it saw.
     const peak = Math.max(d.peak_lanes ?? 0, w.peak);
     const lanes = peak > 1 ? `up to ${peak} lanes` : peak === 1 ? "on 1 lane" : "";
-    return { lead: `Fetched in ${n} pieces`, rest: lanes };
+    return { lead: `Downloaded in ${d.segments.length} pieces`, rest: lanes };
   }
-  const left = `${d.segments.filter((s) => !finished(s)).length} of ${n} pieces left`;
   switch (d.status) {
     case "downloading": {
       const k = liveLanes(d).length;
-      return k > 0
-        ? { lead: `${k} lane${k === 1 ? "" : "s"}`, rest: left }
-        : { lead: "", rest: left };
+      return { lead: k > 0 ? `${k} lane${k === 1 ? "" : "s"}` : "", rest: "" };
     }
     case "paused":
-      return { lead: "Paused", rest: left };
+      return { lead: "Paused", rest: "" };
     case "queued":
-      return { lead: "Waiting", rest: left };
+      return { lead: "Waiting", rest: "" };
     default:
-      return { lead: "Stopped", rest: `${left}, ${formatBytes(d.downloaded)} kept` };
+      return { lead: "Stopped", rest: `${formatBytes(d.downloaded)} kept` };
   }
 }
 
-/** The hover tooltip for lane `lane`'s row, on segment `piece`. */
-export function rowTip(
-  d: DownloadSnapshot,
-  lane: number,
-  piece: number,
-): { title: string; lines: string[] } {
+/** Bytes `from`–`to` as one range, the unit said once when both share it: "19.1–23.8 MB". */
+export function byteRange(from: number, to: number): string {
+  const [a, aUnit] = splitUnit(formatBytes(from));
+  const [b, bUnit] = splitUnit(formatBytes(to));
+  return aUnit === bUnit ? `${a}–${b} ${bUnit}` : `${a} ${aUnit}–${b} ${bUnit}`;
+}
+
+const splitUnit = (text: string): [string, string] => {
+  const space = text.lastIndexOf(" ");
+  return [text.slice(0, space), text.slice(space + 1)];
+};
+
+/** The hover tooltip for lane `lane`'s row, on segment `piece`: "Lane 3 · piece 5 · 19.1–23.8 MB · 40% downloaded". */
+export function rowTip(d: DownloadSnapshot, lane: number, piece: number): string {
   const s = d.segments[piece];
   const pct = Math.floor((Math.min(s.done, pieceLen(s)) / Math.max(1, pieceLen(s))) * 100);
-  return {
-    title: `Lane ${lane} · piece ${piece + 1} of ${d.segments.length}`,
-    lines: [`${formatBytes(s.start)} to ${formatBytes(s.end)}`, `${pct}% fetched`],
-  };
+  return `Lane ${lane} · piece ${piece + 1} · ${byteRange(s.start, s.end)} · ${pct}% downloaded`;
 }

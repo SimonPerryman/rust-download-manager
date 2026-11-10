@@ -54,12 +54,14 @@ const place = (b: { left: number; width: number }) => ({
   width: `${b.width}%`,
 });
 
-// The pane's lane rows: one per live connection, each drawing only its own
-// work (the piece it's on now, strong; pieces it finished, soft), so no byte
-// is drawn twice. A lane that closes merges back up and its work moves to the
-// top row; with no lane live, one row holds the work so far. The DOM is the
-// e2e contract: `[data-testid="lane-row"][data-lane]`, under
-// `[data-testid="lane-rows"]` whose `data-state` is lanes, single or done.
+// The pane's lane rows: one per live connection, top to bottom in lane
+// order, each drawing only its own work (the piece it's on now, strong; pieces
+// it finished, soft), so no byte is drawn twice. Rows carry no labels: each is
+// named for screen readers ("Lane 3") and names itself in a hover tooltip. A
+// lane that closes merges back up and its work moves to the top row; with no
+// lane live, one row holds the work so far. The DOM is the e2e contract:
+// `[data-testid="lane-row"][data-lane]`, under `[data-testid="lane-rows"]`
+// whose `data-state` is lanes, single or done.
 export function LanesMap({ d, work }: { d: DownloadSnapshot; work: LaneWork }) {
   const [tip, setTip] = useState<Tip | null>(null);
   const done = d.status === "completed";
@@ -83,57 +85,68 @@ export function LanesMap({ d, work }: { d: DownloadSnapshot; work: LaneWork }) {
           {head.lead && head.rest && <span className="text-g600"> · </span>}
           {head.rest && <span className="text-g600">{head.rest}</span>}
         </span>
-        {state === "lanes" && (
-          <span className="text-right text-xs text-g400">Hover a lane for details.</span>
-        )}
       </div>
       <div
         data-testid="lane-rows"
         data-state={state}
         className={cls}
-        role="img"
-        aria-label={`${[head.lead, head.rest].filter(Boolean).join(", ")}, ${pct}% downloaded`}
+        role="list"
+        aria-label={[head.lead, head.rest, `${pct}% downloaded`].filter(Boolean).join(", ")}
         onPointerLeave={() => setTip(null)}
       >
         {done ? (
-          <div data-testid="lane-row" data-lane="" className="lane-row single">
-            <span className="lane-label" />
+          <div
+            data-testid="lane-row"
+            data-lane=""
+            className="lane-row single"
+            role="listitem"
+            aria-label="Complete"
+          >
             <div className="lane-track">
               <div className="lane-own" style={{ left: 0, width: "100%" }} />
             </div>
           </div>
         ) : (
-          shown.map((row) => (
-            <div
-              key={row.lane ?? "file"}
-              data-testid="lane-row"
-              data-lane={row.lane ?? ""}
-              className={`lane-row${row.lane == null ? " single" : ""}${row.leaving ? " leaving" : ""}`}
-              onPointerMove={
-                row.lane != null && !row.leaving
-                  ? (e) => setTip({ lane: row.lane as number, x: e.clientX, y: e.clientY })
-                  : undefined
-              }
-            >
-              <span className="lane-label">{row.lane != null ? `Lane ${row.lane}` : ""}</span>
-              <div className="lane-track">
-                {row.own.map((b) => (
-                  <div
-                    key={b.key}
-                    data-testid="lane-own"
-                    className={`lane-own${b.fresh ? " fresh" : ""}`}
-                    style={place(b)}
-                  />
-                ))}
-                {row.gaps.map((b) => (
-                  <div key={b.key} data-testid="lane-gap" className="lane-gap" style={place(b)} />
-                ))}
-                {row.now && (
-                  <div data-testid="lane-now" className="lane-now" style={place(row.now)} />
-                )}
+          shown.map((row) => {
+            const live = row.lane != null && !row.leaving;
+            return (
+              <div
+                key={row.lane ?? "file"}
+                data-testid="lane-row"
+                data-lane={row.lane ?? ""}
+                className={`lane-row${row.lane == null ? " single" : ""}${row.leaving ? " leaving" : ""}${live ? " live" : ""}`}
+                role="listitem"
+                aria-label={row.lane != null ? `Lane ${row.lane}` : `${pct}% downloaded`}
+                // The tooltip's detail, for screen readers too (it shows on hover only).
+                aria-description={
+                  live && row.piece != null ? rowTip(d, row.lane as number, row.piece) : undefined
+                }
+                aria-hidden={row.leaving ? true : undefined}
+                onPointerMove={
+                  live
+                    ? (e) => setTip({ lane: row.lane as number, x: e.clientX, y: e.clientY })
+                    : undefined
+                }
+              >
+                <div className="lane-track">
+                  {row.own.map((b) => (
+                    <div
+                      key={b.key}
+                      data-testid="lane-own"
+                      className={`lane-own${b.fresh ? " fresh" : ""}`}
+                      style={place(b)}
+                    />
+                  ))}
+                  {row.gaps.map((b) => (
+                    <div key={b.key} data-testid="lane-gap" className="lane-gap" style={place(b)} />
+                  ))}
+                  {row.now && (
+                    <div data-testid="lane-now" className="lane-now" style={place(row.now)} />
+                  )}
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
       <div className="lane-scale">
@@ -145,15 +158,13 @@ export function LanesMap({ d, work }: { d: DownloadSnapshot; work: LaneWork }) {
         <div
           className="lane-tip"
           role="tooltip"
+          data-testid="lane-tip"
           style={{
-            left: Math.min(tip.x + 12, window.innerWidth - 248),
-            top: tip.y + 16 + 72 > window.innerHeight ? tip.y - 72 : tip.y + 16,
+            left: Math.min(tip.x + 12, window.innerWidth - 380),
+            top: tip.y + 16 + 48 > window.innerHeight ? tip.y - 48 : tip.y + 16,
           }}
         >
-          <strong>{text.title}</strong>
-          {text.lines.map((l) => (
-            <span key={l}>{l}</span>
-          ))}
+          {text}
         </div>
       )}
     </div>

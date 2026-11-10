@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   advance,
   advanceAll,
+  byteRange,
   EMPTY_WORK,
   FOLD_MS,
   liveLanes,
@@ -340,22 +341,23 @@ describe("rowsHead", () => {
     [200, 400, 50],
   ];
 
-  it("counts live lanes and the pieces left", () => {
-    expect(rowsHead(at(pieces, [null, 1]), EMPTY_WORK)).toEqual({
-      lead: "1 lane",
-      rest: "1 of 2 pieces left",
-    });
+  it("counts the live lanes, and nothing else", () => {
+    expect(rowsHead(at(pieces, [null, 1]), EMPTY_WORK)).toEqual({ lead: "1 lane", rest: "" });
+    expect(rowsHead(at(pieces, [1, 2]), EMPTY_WORK).lead).toBe("2 lanes");
+    expect(rowsHead(at(pieces, [null, null]), EMPTY_WORK)).toEqual({ lead: "", rest: "" });
   });
 
-  it("says what's kept when stopped, and that it's paused", () => {
-    expect(rowsHead(at(pieces, [], "paused"), EMPTY_WORK).lead).toBe("Paused");
+  it("names the state when no lane is live, and what's kept when stopped", () => {
+    expect(rowsHead(at(pieces, [], "paused"), EMPTY_WORK)).toEqual({ lead: "Paused", rest: "" });
+    expect(rowsHead(at(pieces, [], "queued"), EMPTY_WORK)).toEqual({ lead: "Waiting", rest: "" });
     expect(rowsHead(at(pieces, [], "failed"), EMPTY_WORK)).toEqual({
       lead: "Stopped",
-      rest: "1 of 2 pieces left, 250 B kept",
+      rest: "250 B kept",
     });
+    expect(rowsHead(at(pieces, [], "cancelled"), EMPTY_WORK).lead).toBe("Stopped");
   });
 
-  it("sums up a finished download with the most lanes it used", () => {
+  it("sums up a completed download with the most lanes it used", () => {
     const done = at(
       [
         [0, 200, 200],
@@ -365,7 +367,7 @@ describe("rowsHead", () => {
       "completed",
     );
     expect(rowsHead(done, { ...EMPTY_WORK, peak: 3 })).toEqual({
-      lead: "Fetched in 2 pieces",
+      lead: "Downloaded in 2 pieces",
       rest: "up to 3 lanes",
     });
     expect(rowsHead(done, { ...EMPTY_WORK, peak: 1 }).rest).toBe("on 1 lane");
@@ -377,8 +379,17 @@ describe("rowsHead", () => {
   });
 });
 
+describe("byteRange", () => {
+  it("says a shared unit once", () => {
+    const MB = 1024 * 1024;
+    expect(byteRange(19.1 * MB, 23.8 * MB)).toBe("19.1–23.8 MB");
+    expect(byteRange(0, 2 * MB)).toBe("0 B–2.00 MB");
+    expect(byteRange(100, 400)).toBe("100–400 B");
+  });
+});
+
 describe("rowTip", () => {
-  it("names the lane, its piece and how far that piece has got", () => {
+  it("names the lane, its piece, where the piece sits and how far it has got", () => {
     const d = at(
       [
         [0, 200, 200],
@@ -386,9 +397,6 @@ describe("rowTip", () => {
       ],
       [null, 2],
     );
-    expect(rowTip(d, 2, 1)).toEqual({
-      title: "Lane 2 · piece 2 of 2",
-      lines: ["200 B to 400 B", "25% fetched"],
-    });
+    expect(rowTip(d, 2, 1)).toBe("Lane 2 · piece 2 · 200–400 B · 25% downloaded");
   });
 });

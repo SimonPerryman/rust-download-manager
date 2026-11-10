@@ -61,7 +61,7 @@ describe("progressView", () => {
     expect(progressView(snap({ status: "queued" }))).toMatchObject({ text: "Waiting" });
     expect(progressView(snap({ status: "paused" }))).toMatchObject({ text: "Paused" });
     expect(progressView(snap({ status: "completed" }))).toMatchObject({
-      text: "Done",
+      text: "Completed",
       tone: "done",
     });
     expect(progressView(snap({ status: "failed" }))).toMatchObject({

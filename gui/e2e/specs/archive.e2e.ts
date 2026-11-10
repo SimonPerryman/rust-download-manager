@@ -1,4 +1,4 @@
-// End-to-end: the archive. Archive finished moves Done and Stopped rows out of
+// End-to-end: the archive. Archive finished moves Completed and Stopped rows out of
 // the working views into Archived at once, behind an undo toast whose Undo
 // brings them back; an archived row shows only under Archived, and Unarchive
 // returns it. Remove, offered only in Archived, drops the record and leaves
@@ -127,7 +127,7 @@ describe("rdm GUI archive", () => {
     await selectFilter("all");
     await rowById(id).waitForExist({ timeoutMsg: `download ${id} didn't return to All` });
     await selectFilter("done");
-    await rowById(id).waitForExist({ timeoutMsg: `download ${id} didn't return to Done` });
+    await rowById(id).waitForExist({ timeoutMsg: `download ${id} didn't return to Completed` });
     await selectFilter("all");
   });
 
