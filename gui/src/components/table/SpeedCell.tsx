@@ -1,28 +1,53 @@
 import { formatSpeed } from "../../lib/format";
+import { limitView, type LimitView } from "../../lib/rowView";
 import { LIMIT_SHOWN, type LimitEditor } from "../../lib/useLimitEditor";
 import type { DownloadSnapshot } from "../../lib/types";
-import { Gauge } from "../icons/Gauge";
 
-// Live speed while downloading. A row with its own limit shows a gauge button
-// instead (the limit itself until it streams, then the live speed), which opens
-// the editor; it's hidden while editing so a blur can't commit and reopen.
+// Live speed while downloading. A row with its own limit reads the speed against
+// it ("49.8 / 50 KB/s"), or the limit alone while waiting or paused ("≤ 50 KB/s"),
+// as a button that opens the editor; it's hidden while editing so a blur can't
+// commit and reopen.
 export function SpeedCell({ d, editor }: { d: DownloadSnapshot; editor: LimitEditor }) {
   const downloading = d.status === "downloading";
   const live = downloading && d.bytes_per_sec > 0 ? formatSpeed(d.bytes_per_sec) : "";
   if (editor.draft != null || d.limit == null || !LIMIT_SHOWN.includes(d.status)) return live;
+  const v = limitView(d, d.limit);
   return (
     <button
       data-testid="row-limit"
-      title="Change speed limit"
-      aria-label={
-        downloading ? `Limited to ${formatSpeed(d.limit)}. Change speed limit` : undefined
-      }
+      data-state={v.state}
+      title={v.label}
+      aria-label={v.label}
       onMouseDown={(e) => e.preventDefault()}
       onClick={editor.open}
-      className="inline-flex max-w-full items-center gap-1 rounded-sm px-1 tabular-nums hover:bg-hover hover:text-ink"
+      className="lim-btn"
     >
-      <Gauge size={14} className="shrink-0 text-warn" />
-      {downloading ? live : formatSpeed(d.limit)}
+      {v.state === "capped" ? (
+        <span className="text-g600">
+          ≤ <Limit v={v} />
+        </span>
+      ) : v.state === "waiting" ? (
+        <span className="lim">
+          – / <Limit v={v} />
+        </span>
+      ) : (
+        <>
+          {v.speed}{" "}
+          <span className="lim">
+            / <Limit v={v} />
+          </span>
+        </>
+      )}
     </button>
+  );
+}
+
+// Both forms are rendered; styles/narrow.css swaps in the short one under 760px.
+function Limit({ v }: { v: LimitView }) {
+  return (
+    <>
+      <span className="lim-full">{v.limit}</span>
+      <span className="lim-short">{v.short}</span>
+    </>
   );
 }

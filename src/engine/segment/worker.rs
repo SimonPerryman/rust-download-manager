@@ -1,5 +1,7 @@
 //! A worker: one lane claiming pieces and streaming each into the `.part`.
 
+use std::sync::atomic::Ordering;
+
 use reqwest::header;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::watch;
@@ -227,6 +229,7 @@ async fn fetch_segment(
                 _ = shared.control.throttle(n as usize, Some(&shared.waited)) => false,
                 _ = stop.wait_for(|stopped| *stopped) => true,
             };
+            shared.paced.fetch_add(n, Ordering::Relaxed);
             // Retire point: only after the chunk is written and `done`
             // advanced, so the handed-back segment resumes exactly there.
             let outcome = if stopped {

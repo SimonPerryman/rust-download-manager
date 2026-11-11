@@ -115,11 +115,14 @@ fn assert_progress_coherent(seen: &[Progress], len: u64) {
     assert_eq!(seen.last().unwrap().downloaded, len);
 }
 
-/// A sidecar temp file as a hard kill mid-save would leave it.
+/// A sidecar temp file as a hard kill mid-save would leave it: hidden, beside
+/// the sidecar. (tests/manager.rs sweeps the older visible name.)
 fn stale_temp(target: &Path) -> std::path::PathBuf {
-    let mut name = state::sidecar_path(target).into_os_string();
+    let sidecar = state::sidecar_path(target);
+    let mut name = std::ffi::OsString::from(".");
+    name.push(sidecar.file_name().unwrap());
     name.push(".4242.7.tmp");
-    name.into()
+    sidecar.with_file_name(name)
 }
 
 fn assert_no_partial_state(target: &Path) {
@@ -1382,8 +1385,8 @@ async fn pause_is_noticed_while_all_workers_wait_on_the_network() {
 /// waiting out the debt first.
 #[tokio::test]
 async fn sibling_failure_interrupts_a_throttled_worker() {
-    // A 1 KiB/s cap: past the 64 KiB burst, even one more small chunk is
-    // seconds of debt for the probe's worker.
+    // A 1 KiB/s cap with nothing banked: even one small chunk is seconds of
+    // debt for the probe's worker.
     const RATE: u64 = KIB;
     let server = common::spawn().await;
     let dir = tempfile::tempdir().unwrap();

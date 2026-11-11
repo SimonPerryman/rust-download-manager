@@ -101,6 +101,14 @@ impl Control {
         }
     }
 
+    /// Called as a stream starts: drop the credit every limiter banked while
+    /// idle (a pause, a retry's backoff), so the stream starts at the rate.
+    pub(crate) fn restart_limiters(&self) {
+        for limiter in &self.inner.limiters {
+            limiter.restart();
+        }
+    }
+
     /// Awaited after each chunk is written: charge it to every limiter, then
     /// wait until the most indebted one is repaid. Returns early on
     /// pause/cancel (the debt stays owed). Time spent waiting is added to
@@ -217,6 +225,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn throttle_debits_each_limiter_exactly_once() {
         let (control, limiters) = limited(&[MIB, 2 * MIB]);
+        tokio::time::advance(Duration::from_secs(1)).await; // banks a burst each
         control.throttle(10 * KIB as usize, None).await;
         for l in &limiters {
             assert_eq!(l.balance(), (l.burst() - 10 * KIB) as f64);
@@ -225,13 +234,13 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn throttle_waits_for_the_slowest_limiter_not_the_sum() {
-        // 768 KiB: 0.5 s of debt at 1 MiB/s (burst 256 KiB), 1.25 s at
-        // 512 KiB/s (burst 128 KiB). Paying in turn would take 1.75 s.
+        // 768 KiB: 0.75 s of debt at 1 MiB/s, 1.5 s at 512 KiB/s. Paying in
+        // turn would take 2.25 s.
         let (control, _limiters) = limited(&[MIB, 512 * KIB]);
         let start = Instant::now();
         control.throttle(768 * KIB as usize, None).await;
         let waited = (Instant::now() - start).as_secs_f64();
-        assert!((1.25..1.26).contains(&waited), "waited {waited}s");
+        assert!((1.5..1.51).contains(&waited), "waited {waited}s");
     }
 
     #[tokio::test(start_paused = true)]
@@ -278,11 +287,11 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn throttle_accrues_the_time_it_waits() {
-        // 768 KiB at 1 MiB/s with a 256 KiB burst: 0.5 s of debt.
+        // 768 KiB at 1 MiB/s, nothing banked: 0.75 s of debt.
         let (control, _limiters) = limited(&[MIB]);
         let waited = AtomicU64::new(0);
         control.throttle(768 * KIB as usize, Some(&waited)).await;
-        assert_eq!(ms(&waited), 500);
+        assert_eq!(ms(&waited), 750);
 
         // Unthrottled chunks add nothing.
         let free = AtomicU64::new(0);
@@ -302,7 +311,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(120)).await;
         assert_eq!(ms(&waited), 100);
         task.await.unwrap();
-        assert_eq!(ms(&waited), 500, "the rest lands in the next observation");
+        assert_eq!(ms(&waited), 750, "the rest lands in the next observation");
     }
 
     #[tokio::test(start_paused = true)]

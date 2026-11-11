@@ -47,6 +47,12 @@ progress. Running the same command again (or resuming in the GUI, even after a
 restart) continues where it stopped, re-fetching only the missing ranges, and
 only if the server's `ETag` or `Last-Modified` still matches.
 
+Each save of the sidecar writes a hidden temporary file beside it,
+`.<file>.rdm.<pid>.<n>.tmp` (also marked hidden on Windows), then renames it
+over the sidecar, so a crash mid-save never leaves a half-written sidecar. A
+temporary file left by a crash is deleted when the download next starts,
+finishes, or has its partial file thrown away.
+
 Quitting the GUI pauses what's running, keeping each partial file, and
 nothing starts again on its own at the next launch. Restarting the GUI into
 an update pauses downloads the same way and also marks the ones that were
@@ -79,6 +85,10 @@ new one is saved as `name (1).ext`.
 - **Speed limits:** `--limit-rate` on the CLI; in the GUI, a global limit and
   an optional per-download limit, both changeable while a download runs. A
   download's limit is shared across all of its connections.
+- **From the first byte:** a download that starts or resumes runs at its
+  limit straight away, with no initial burst. Its speed is measured over the
+  last 5 seconds from bytes that have passed the limit's wait, so it reads
+  close to the limit, even when data arrives less often than that.
 
 ## Engine and frontends
 

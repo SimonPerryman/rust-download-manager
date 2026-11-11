@@ -16,9 +16,10 @@ const LIMIT: u64 = 512 * KIB;
 
 /// Download `/seg` (1 MiB) with `connections` under a 512 KiB/s limit and
 /// check the time taken (ramping off, so every connection runs from the
-/// start). With debt, the last chunk's wait ends only once the
-/// balance is back to zero, so `elapsed ≥ (size − burst) / rate` however the
-/// bytes were split across connections; slow CI can only lengthen it.
+/// start). With debt, the last chunk's wait ends only once the balance is
+/// back to zero, and at most one burst can bank while a connection idles, so
+/// `elapsed ≥ (size − burst) / rate` however the bytes were split across
+/// connections; slow CI can only lengthen it.
 async fn assert_limited(connections: u8) {
     let server = common::spawn_with(FixtureConfig {
         seg_len: MIB as usize,
@@ -71,9 +72,9 @@ async fn rate_limit_holds_across_parallel_connections() {
 /// own throttle sleeping past it between reads doesn't fail the download.
 #[tokio::test(flavor = "multi_thread")]
 async fn throttle_sleeps_longer_than_read_timeout_still_complete() {
-    // The burst passes 64 KiB; the 12 KiB left at 4 KiB/s sleeps ~3 s.
+    // Nothing is banked at the start, so 12 KiB at 4 KiB/s sleeps ~3 s.
     let server = common::spawn_with(FixtureConfig {
-        seg_len: 76 * KIB as usize,
+        seg_len: 12 * KIB as usize,
         ..FixtureConfig::default()
     })
     .await;
@@ -110,4 +111,98 @@ async fn throttle_sleeps_longer_than_read_timeout_still_complete() {
 #[tokio::test]
 async fn rate_limit_holds_on_a_single_connection() {
     assert_limited(1).await;
+}
+
+/// Download `/seg` under the 512 KiB/s limit and return every speed reading.
+async fn readings(connections: u8) -> Vec<f64> {
+    let server = common::spawn_with(FixtureConfig {
+        seg_len: MIB as usize,
+        ..FixtureConfig::default()
+    })
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("read.bin");
+    let control = Control::new().with_limiters([Arc::new(RateLimiter::new(Some(LIMIT)))]);
+    let mut seen = Vec::new();
+    download(
+        &DownloadRequest::to_path(server.url("/seg"), &out)
+            .with_connections(connections)
+            .with_min_segment_size(256 * KIB)
+            .with_ramp(Ramping::Off),
+        &control,
+        |p| seen.push(p.bytes_per_sec),
+    )
+    .await
+    .unwrap();
+    seen
+}
+
+/// A limited download's speed reads close to the limit from its first
+/// reading on: no zero once bytes flow, and no overshoot from a burst or from
+/// connections' chunks written ahead of their throttle wait. One-sided: a slow
+/// runner only lowers the reading.
+async fn assert_reads_the_limit(connections: u8) {
+    let seen = readings(connections).await;
+    let ceiling = LIMIT as f64 * 1.25;
+    // The first report comes before any byte, so it has nothing to measure.
+    for (i, &bps) in seen.iter().enumerate().skip(1) {
+        assert!(
+            bps > 0.0 && bps <= ceiling,
+            "reading {i} of {} on {connections} connection(s) was {bps:.0} B/s against a {LIMIT} B/s limit",
+            seen.len()
+        );
+    }
+}
+
+#[tokio::test]
+async fn speed_reads_the_limit_on_a_single_connection() {
+    assert_reads_the_limit(1).await;
+}
+
+#[tokio::test]
+async fn speed_reads_the_limit_across_parallel_connections() {
+    assert_reads_the_limit(4).await;
+}
+
+/// A resumed download reads the limit too: the credit its limiter banked
+/// while paused doesn't pass as a burst. One-sided, like the above.
+#[tokio::test]
+async fn speed_reads_the_limit_after_a_resume() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_len: MIB as usize,
+        ..FixtureConfig::default()
+    })
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("resumed.bin");
+    let control = Control::new().with_limiters([Arc::new(RateLimiter::new(Some(LIMIT)))]);
+    let request = DownloadRequest::to_path(server.url("/seg"), &out)
+        .with_connections(4)
+        .with_min_segment_size(256 * KIB)
+        .with_ramp(Ramping::Off);
+
+    let paused = download(&request, &control, |p| {
+        if p.downloaded >= MIB / 4 {
+            control.pause();
+        }
+    })
+    .await;
+    assert!(matches!(paused, Err(rdm::Error::Paused)), "{paused:?}");
+    // Long enough to bank a whole burst, were idle credit kept.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    control.resume();
+
+    let mut seen = Vec::new();
+    download(&request, &control, |p| seen.push(p.bytes_per_sec))
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+    let ceiling = LIMIT as f64 * 1.25;
+    for (i, &bps) in seen.iter().enumerate().skip(1) {
+        assert!(
+            bps > 0.0 && bps <= ceiling,
+            "reading {i} of {} after the resume was {bps:.0} B/s against a {LIMIT} B/s limit",
+            seen.len()
+        );
+    }
 }

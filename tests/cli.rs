@@ -339,11 +339,12 @@ async fn cli_limit_rate_validates_and_downloads() {
     assert_eq!(std::fs::read(&out).unwrap(), common::payload());
 }
 
-/// `--limit-rate` actually throttles: past the limiter's burst, the payload
-/// can't arrive faster than the rate (one-sided; slow CI only lengthens it).
+/// `--limit-rate` actually throttles: beyond the one burst a limiter can bank
+/// while a connection idles, the payload can't arrive faster than the rate
+/// (one-sided; slow CI only lengthens it).
 #[tokio::test]
 async fn cli_limit_rate_throttles_the_download() {
-    const RATE: u64 = 16 * 1024;
+    const RATE: u64 = 48 * 1024;
     let server = common::spawn().await;
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("throttled.bin");
@@ -357,7 +358,7 @@ async fn cli_limit_rate_throttles_the_download() {
         .arg("-o")
         .arg(&out)
         .arg("--limit-rate")
-        .arg("16K")
+        .arg("48K")
         .status()
         .await
         .expect("spawn rdm");

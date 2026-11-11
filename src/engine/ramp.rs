@@ -92,8 +92,8 @@ impl Ramp {
     /// Judge one window and say how the pool should change.
     pub fn observe(&mut self, w: Window) -> Decision {
         // A pool change means some connection spent part of the window on
-        // setup (incl. the first window's request latency and the limiter's
-        // free burst): under-measuring it would make the next step over-ramp.
+        // setup (incl. the first window's request latency): under-measuring
+        // it would make the next step over-ramp.
         if self.settled
             || w.pool_changed
             || w.waited_fraction >= FREEZE_FRACTION

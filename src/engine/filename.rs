@@ -15,7 +15,8 @@ const FALLBACK_NAME: &str = "download";
 
 /// Longest derived name, in UTF-8 bytes. Filesystems cap a name at 255 (bytes
 /// on Linux, UTF-16 units on NTFS); the headroom fits a ` (n)` dedup suffix
-/// plus the engine's `.rdm.<pid>.<n>.tmp` temp suffix without overflowing.
+/// plus the engine's sidecar temp name around it (`.<name>.rdm.<pid>.<n>.tmp`)
+/// without overflowing.
 pub const MAX_NAME_BYTES: usize = 200;
 
 /// Longest tail (dot included) kept as an extension when truncating.

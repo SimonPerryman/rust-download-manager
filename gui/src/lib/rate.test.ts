@@ -5,9 +5,11 @@ import {
   ZERO_RATE,
   composeRate,
   exceeds,
+  limitText,
   rateDraft,
   sameRate,
   sanitizeAmount,
+  speedIn,
 } from "./rate";
 
 const KIB = 1024;
@@ -89,5 +91,24 @@ describe("exceeds", () => {
     expect(exceeds({ amount: "2", unit: "M" }, 2 * MIB)).toBe(false);
     expect(exceeds({ amount: "5", unit: "M" }, null)).toBe(false);
     expect(exceeds(NO_LIMIT, 2 * MIB)).toBe(false);
+  });
+});
+
+describe("limitText", () => {
+  it("reads like the editor's amount and unit, in full or short", () => {
+    expect(limitText(50 * KIB)).toBe("50 KB/s");
+    expect(limitText(50 * KIB, true)).toBe("50K");
+    expect(limitText(1.5 * MIB)).toBe("1.5 MB/s");
+    expect(limitText(1.5 * MIB, true)).toBe("1.5M");
+  });
+});
+
+describe("speedIn", () => {
+  it("is a bare number in the limit's unit, with fewer decimals as it grows", () => {
+    expect(speedIn(49.8 * KIB, "K")).toBe("49.8");
+    expect(speedIn(980, "K")).toBe("0.96");
+    expect(speedIn(512.4 * KIB, "K")).toBe("512");
+    expect(speedIn(1.5 * MIB, "M")).toBe("1.50");
+    expect(speedIn(5, "K")).toBe("<0.01");
   });
 });

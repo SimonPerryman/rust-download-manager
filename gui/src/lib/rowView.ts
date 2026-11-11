@@ -1,7 +1,8 @@
 // What each table row shows for its snapshot: the progress cell, the size and
 // the actions. Pure presentation; the engine's status decides everything.
 
-import { formatBytes } from "./format";
+import { formatBytes, formatSpeed } from "./format";
+import { limitText, rateDraft, speedIn } from "./rate";
 import type { DownloadSnapshot } from "./types";
 
 /** The Progress cell: a bar with its percentage, or a quiet word for rows that aren't moving. */
@@ -35,6 +36,45 @@ export function progressView(d: DownloadSnapshot): ProgressView {
       if (!d.partial_kept || pct == null) return { kind: "text", text: "Stopped", tone: "stopped" };
       return { kind: "bar", pct, text: `${Math.floor(pct)}%`, muted: true };
   }
+}
+
+/**
+ * The Speed cell of a row with its own limit: the reading against the limit while it
+ * streams ("49.8 / 50 KB/s"), or the limit alone while it waits or is paused ("≤ 50 KB/s").
+ */
+export interface LimitView {
+  /** live: streaming with a reading; waiting: streaming, no reading yet; capped: paused or queued. */
+  state: "live" | "waiting" | "capped";
+  /** The reading as a number in the limit's unit ("49.8"); "–" with none. */
+  speed: string;
+  /** "50 KB/s" */
+  limit: string;
+  /** "50K", for a narrow column. */
+  short: string;
+  /** The accessible name and tooltip. */
+  label: string;
+}
+
+export function limitView(d: DownloadSnapshot, limit: number): LimitView {
+  const text = limitText(limit);
+  const short = limitText(limit, true);
+  const action = "Change speed limit";
+  if (d.status !== "downloading") {
+    return {
+      state: "capped",
+      speed: "–",
+      limit: text,
+      short,
+      label: `Limited to ${text}. ${action}`,
+    };
+  }
+  if (d.bytes_per_sec <= 0) {
+    const label = `No speed yet, limited to ${text}. ${action}`;
+    return { state: "waiting", speed: "–", limit: text, short, label };
+  }
+  const speed = speedIn(d.bytes_per_sec, rateDraft(limit).unit);
+  const label = `${formatSpeed(d.bytes_per_sec)}, limited to ${text}. ${action}`;
+  return { state: "live", speed, limit: text, short, label };
 }
 
 /** The Size column: the file's size, blank until the server says. */

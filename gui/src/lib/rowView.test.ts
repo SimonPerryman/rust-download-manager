@@ -4,6 +4,7 @@ import {
   isRemovable,
   isResumable,
   isStoppable,
+  limitView,
   continues,
   toResume,
   pauseAllMode,
@@ -187,5 +188,35 @@ describe("continues", () => {
     expect(continues(snap({ status: "cancelled", partial_kept: true }))).toBe(true);
     expect(continues(snap({ status: "cancelled" }))).toBe(false);
     expect(continues(snap({ status: "completed" }))).toBe(false);
+  });
+});
+
+describe("limitView", () => {
+  const LIMIT = 50 * 1024;
+
+  it("reads a streaming row's speed against its limit", () => {
+    const v = limitView(snap({ status: "downloading", bytes_per_sec: 49.8 * 1024 }), LIMIT);
+    expect(v).toEqual({
+      state: "live",
+      speed: "49.8",
+      limit: "50 KB/s",
+      short: "50K",
+      label: "49.8 KB/s, limited to 50 KB/s. Change speed limit",
+    });
+  });
+
+  it("shows a dash against the limit before the first reading", () => {
+    const v = limitView(snap({ status: "downloading", bytes_per_sec: 0 }), LIMIT);
+    expect(v.state).toBe("waiting");
+    expect(v.speed).toBe("–");
+    expect(v.label).toBe("No speed yet, limited to 50 KB/s. Change speed limit");
+  });
+
+  it("shows the limit alone while paused or waiting", () => {
+    for (const status of ["paused", "queued"] as const) {
+      const v = limitView(snap({ status, bytes_per_sec: 0 }), LIMIT);
+      expect(v.state).toBe("capped");
+      expect(v.label).toBe("Limited to 50 KB/s. Change speed limit");
+    }
   });
 });

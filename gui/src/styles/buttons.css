@@ -74,6 +74,10 @@
   .icon-btn-sm {
     @apply h-6 w-6 rounded-sm;
   }
+  /* Something is set (a row's own speed limit): stays tinted on hover, gives way to pressed. */
+  .icon-btn.is-set {
+    color: var(--warn);
+  }
   .icon-btn[aria-pressed="true"] {
     background: var(--primary-soft);
     color: var(--primary-ink);

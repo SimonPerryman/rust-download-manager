@@ -242,7 +242,7 @@ async fn remove_drops_entry_and_partial() {
     let id = mgr.add(server.url("/slow"), dir.path(), None, None);
     let snap = wait_for(&mgr, id, T, |s| s.downloaded > 0).await.unwrap();
     let target = snap.target;
-    // As if an earlier run was killed mid-checkpoint.
+    // As if an earlier (older-format) run was killed mid-checkpoint.
     let mut stale_temp = state::sidecar_path(&target).into_os_string();
     stale_temp.push(".4242.7.tmp");
     std::fs::write(&stale_temp, b"{}").unwrap();
@@ -769,7 +769,8 @@ async fn lowering_the_cap_never_preempts() {
 
 /// M4 AC: a global limit caps the aggregate throughput of concurrent
 /// downloads. With debt, the last wait ends only once the shared balance is
-/// repaid, so `elapsed >= (total - burst) / rate`; slow CI only lengthens it.
+/// repaid, and at most one burst banks while connections idle, so
+/// `elapsed >= (total - burst) / rate`; slow CI only lengthens it.
 #[tokio::test]
 async fn global_limit_caps_aggregate_throughput() {
     const SEG_LEN: usize = 512 * 1024;

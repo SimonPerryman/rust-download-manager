@@ -65,14 +65,21 @@
       line-height: 16px;
       background: var(--sidebar);
     }
+    /* Each fits its widest common text: "1023.9 MB", "512 / 512K", "5 h 49 min". */
     .c-size {
-      width: 72px;
+      width: 92px;
     }
     .c-speed {
-      width: 88px;
+      width: 92px;
     }
     .c-left {
-      width: 76px;
+      width: 92px;
+    }
+    .lim-full {
+      display: none;
+    }
+    .lim-short {
+      display: inline;
     }
     .c-act {
       width: 112px;

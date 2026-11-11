@@ -139,6 +139,9 @@ struct Shared<'a> {
     pool: Pool,
     /// Nanoseconds workers have spent waiting on rate limits.
     waited: AtomicU64,
+    /// Bytes written and past their throttle wait: what the speed reading
+    /// counts, since a written chunk still waiting would read as a burst.
+    paced: AtomicU64,
     tally: &'a Tally,
     /// Each lane's failures since it last got a response; non-zero means its
     /// next response is a reconnect.
@@ -173,6 +176,7 @@ pub(crate) async fn run(
 ) -> Result<u64, Failure> {
     let total = job.state.total.unwrap_or(0);
     let segments = job.state.segments.clone().unwrap_or_default();
+    let already: u64 = segments.iter().map(|s| s.done).sum();
     let mut owner = vec![None; segments.len()];
     if job.first.is_some() {
         // The first response serves segment 0, on the first lane.
@@ -205,11 +209,13 @@ pub(crate) async fn run(
         stop,
         pool: Pool::new(ramp.target(), job.shed_grace),
         waited: AtomicU64::new(0),
+        paced: AtomicU64::new(already),
         tally: job.tally,
         lane_failures: Mutex::new([0; LANES]),
     };
 
     let mut meter = SpeedMeter::new();
+    job.control.restart_limiters();
     let started = Instant::now();
     let report = |meter: &mut SpeedMeter, on_progress: &mut dyn FnMut(Progress)| {
         // One lock, so the readout and the segments always agree.
@@ -221,7 +227,8 @@ pub(crate) async fn run(
                 table.lanes(),
             )
         };
-        let bytes_per_sec = meter.observe(started.elapsed(), downloaded);
+        let paced = shared.paced.load(Ordering::Relaxed);
+        let bytes_per_sec = meter.observe(started.elapsed(), paced);
         on_progress(Progress {
             downloaded,
             total: Some(total),

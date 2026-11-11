@@ -172,19 +172,15 @@ impl DownloadState {
     fn write_atomically(&self, path: &Path, owned_only: bool) -> Result<bool> {
         let json = serde_json::to_vec_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        // Unique per writer, so overlapping saves never share a temp file.
-        let unique = format!(
-            "{}.{}.tmp",
-            std::process::id(),
-            TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
-        );
-        let tmp = append_ext(path, &unique);
+        let tmp = temp_path(path);
         let written = (|| -> std::io::Result<bool> {
             {
-                let mut f = std::fs::File::create(&tmp)?;
+                let mut f = hidden::create(&tmp)?;
                 f.write_all(&json)?;
                 f.flush()?;
                 f.sync_all()?;
+                // The rename keeps the temp's attributes; the sidecar stays visible.
+                hidden::unhide(&f)?;
             }
             // Re-checked right before the rename: a stale checkpoint must not
             // replace a newer download's sidecar (or resurrect a removed one).
@@ -223,8 +219,91 @@ pub fn downloaded_bytes(target: &Path) -> Option<u64> {
     }
 }
 
+/// Where a save of `path` writes before renaming over it: a dot-name beside it,
+/// `.<name>.<pid>.<n>.tmp`, unique per writer so overlapping saves never share
+/// one. The leading dot hides it in macOS and Linux file managers.
+fn temp_path(path: &Path) -> PathBuf {
+    let mut name = std::ffi::OsString::from(".");
+    name.push(path.file_name().unwrap_or_default());
+    name.push(format!(
+        ".{}.{}.tmp",
+        std::process::id(),
+        TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    path.with_file_name(name)
+}
+
+/// Creating a temp file with Windows' hidden attribute, which a dot-name
+/// doesn't give there, and clearing it again before the rename.
+#[cfg(windows)]
+mod hidden {
+    use std::fs::File;
+    use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+    use std::os::windows::io::AsRawHandle;
+    use std::path::Path;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        FileBasicInfo, SetFileInformationByHandle, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL,
+        FILE_BASIC_INFO,
+    };
+
+    pub(super) fn create(path: &Path) -> std::io::Result<File> {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .attributes(FILE_ATTRIBUTE_HIDDEN)
+            .open(path)
+    }
+
+    /// Through the open handle rather than the path, which a raw Win32 call
+    /// couldn't reach past 260 characters.
+    pub(super) fn unhide(file: &File) -> std::io::Result<()> {
+        let attributes = file.metadata()?.file_attributes() & !FILE_ATTRIBUTE_HIDDEN;
+        let info = FILE_BASIC_INFO {
+            // 0 means "unchanged" for every field, so clearing every
+            // attribute needs FILE_ATTRIBUTE_NORMAL.
+            FileAttributes: if attributes == 0 {
+                FILE_ATTRIBUTE_NORMAL
+            } else {
+                attributes
+            },
+            ..FILE_BASIC_INFO::default()
+        };
+        // SAFETY: the handle is open (borrowed from `file`) with write access,
+        // and `info` is a FILE_BASIC_INFO of the size passed.
+        let ok = unsafe {
+            SetFileInformationByHandle(
+                file.as_raw_handle(),
+                FileBasicInfo,
+                (&raw const info).cast(),
+                size_of::<FILE_BASIC_INFO>() as u32,
+            )
+        };
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+mod hidden {
+    use std::fs::File;
+    use std::path::Path;
+
+    pub(super) fn create(path: &Path) -> std::io::Result<File> {
+        File::create(path)
+    }
+
+    pub(super) fn unhide(_file: &File) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Best-effort removal of temp files a hard kill left mid-save beside
-/// `sidecar` (`<sidecar>.<pid>.<n>.tmp`); nothing else is touched.
+/// `sidecar`: `.<sidecar>.<pid>.<n>.tmp`, or the older visible
+/// `<sidecar>.<pid>.<n>.tmp`; nothing else is touched.
 pub fn remove_stale_temps(sidecar: &Path) {
     let (Some(dir), Some(name)) = (sidecar.parent(), sidecar.file_name()) else {
         return;
@@ -243,6 +322,7 @@ pub fn remove_stale_temps(sidecar: &Path) {
         let file_name = file_name.to_string_lossy();
         let is_stale_temp = file_name
             .strip_prefix(&prefix)
+            .or_else(|| file_name.strip_prefix('.')?.strip_prefix(&prefix))
             .and_then(|rest| rest.strip_suffix(".tmp"))
             .and_then(|rest| rest.split_once('.'))
             .is_some_and(|(pid, n)| is_digits(pid) && is_digits(n));
@@ -516,14 +596,25 @@ mod tests {
     fn remove_stale_temps_only_touches_this_sidecars_temps() {
         let dir = tempfile::tempdir().unwrap();
         let sidecar = dir.path().join("x.bin.rdm");
-        let stale = ["x.bin.rdm.123.0.tmp", "x.bin.rdm.9.42.tmp"];
+        // Hidden (current) and visible (older rdm) temp names alike.
+        let stale = [
+            ".x.bin.rdm.123.0.tmp",
+            ".x.bin.rdm.9.42.tmp",
+            "x.bin.rdm.123.0.tmp",
+            "x.bin.rdm.9.42.tmp",
+        ];
         let kept = [
             "x.bin.rdm",
             "x.bin.rdm.tmp",
+            ".x.bin.rdm.tmp",
             "x.bin.rdm.a.1.tmp",
+            ".x.bin.rdm.a.1.tmp",
             "x.bin.rdm.1.2.3.tmp",
+            "..x.bin.rdm.1.2.tmp",
             "other.bin.rdm.1.2.tmp",
+            ".other.bin.rdm.1.2.tmp",
             "xx.bin.rdm.1.2.tmp",
+            ".xx.bin.rdm.1.2.tmp",
             "x.bin.part",
         ];
         for name in stale.iter().chain(&kept) {
@@ -536,6 +627,62 @@ mod tests {
         for name in kept {
             assert!(dir.path().join(name).exists(), "{name} wrongly swept");
         }
+    }
+
+    #[test]
+    fn the_temp_file_is_a_dot_name_beside_the_sidecar() {
+        let sidecar = Path::new("dir").join("x.bin.rdm");
+        let tmp = temp_path(&sidecar);
+        assert_eq!(tmp.parent(), sidecar.parent());
+        let name = tmp.file_name().unwrap().to_str().unwrap();
+        let rest = name
+            .strip_prefix(".x.bin.rdm.")
+            .and_then(|r| r.strip_suffix(".tmp"))
+            .unwrap_or_else(|| panic!("unexpected temp name {name}"));
+        let (pid, n) = rest.split_once('.').unwrap();
+        assert_eq!(pid, std::process::id().to_string());
+        assert!(is_digits(n), "{name}");
+        assert_ne!(temp_path(&sidecar), tmp, "each save gets its own");
+    }
+
+    /// The temp file is hidden while it's written, and the sidecar it becomes
+    /// is not, even on a path longer than Windows' 260-character limit.
+    #[test]
+    fn the_temp_file_is_hidden_until_it_becomes_the_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path().join(".x.bin.rdm.1.2.tmp");
+        let file = hidden::create(&tmp).unwrap();
+        #[cfg(windows)]
+        assert!(is_hidden(&tmp), "temp not hidden");
+        hidden::unhide(&file).unwrap();
+        drop(file);
+        #[cfg(windows)]
+        assert!(!is_hidden(&tmp), "temp still hidden");
+
+        let deep = dir.path().join("d".repeat(100));
+        std::fs::create_dir(&deep).unwrap();
+        for sidecar in [
+            dir.path().join("x.bin.rdm"),
+            deep.join(format!("{}.bin.rdm", "x".repeat(200))),
+        ] {
+            DownloadState::new("u", "t", None, None, None)
+                .save(&sidecar)
+                .unwrap();
+            #[cfg(windows)]
+            assert!(!is_hidden(&sidecar), "sidecar hidden");
+            assert!(!sidecar
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with('.'));
+        }
+    }
+
+    #[cfg(windows)]
+    fn is_hidden(path: &Path) -> bool {
+        use std::os::windows::fs::MetadataExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_HIDDEN;
+        std::fs::metadata(path).unwrap().file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0
     }
 
     #[test]
