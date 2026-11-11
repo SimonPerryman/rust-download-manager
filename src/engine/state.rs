@@ -261,8 +261,8 @@ mod hidden {
     pub(super) fn unhide(file: &File) -> std::io::Result<()> {
         let attributes = file.metadata()?.file_attributes() & !FILE_ATTRIBUTE_HIDDEN;
         let info = FILE_BASIC_INFO {
-            // Zero leaves each time, and the attributes, unchanged; so no
-            // attribute left must be said as "normal".
+            // 0 means "unchanged" for every field, so clearing every
+            // attribute needs FILE_ATTRIBUTE_NORMAL.
             FileAttributes: if attributes == 0 {
                 FILE_ATTRIBUTE_NORMAL
             } else {
