@@ -35,7 +35,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M6 | Releases & install | done | [[milestone-06-releases-install]] |
 | M7 | Archive & tags | done | [[milestone-07-archive-tags]] |
 | M8 | Diagnostics — finding the bug when rdm crashes | done | [[milestone-08-diagnostics]] |
-| M9 | In-app updater | in-progress | [[milestone-09-in-app-updater]] |
+| M9 | In-app updater | done | [[milestone-09-in-app-updater]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 

@@ -1,7 +1,7 @@
 ---
 id: M9
 title: In-app updater
-status: in-progress
+status: done
 depends-on: [M6]
 tags: [gui, ci, testing]
 ---
@@ -295,9 +295,9 @@ and apply here without being restated._
 - [x] The signature check fails on bundles signed with a different key or
   for another version, and accepts a signature made by `tauri signer sign`
   (`gui/scripts/updater-manifest.test.mjs`, in `pnpm test`).
-- [ ] Pushing the first rc tag attaches `latest.json` with a verified entry
+- [x] Pushing the first rc tag attaches `latest.json` with a verified entry
   for every updatable bundle, and `release-checks` passes.
-- [ ] **End to end (owner, on real tags):** an installed rc build is
+- [x] **End to end (owner, on real tags):** an installed rc build is
   offered the next rc, Restart now updates it and a download that was
   running comes back paused with the Resume all notice; Install when I
   quit updates it at the next quit.
