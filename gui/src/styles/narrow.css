@@ -88,6 +88,24 @@
     .sel-label {
       display: none;
     }
+    /* The total speed fits the rail's 40px: the unit under the number, no caption. */
+    .spark {
+      padding: 16px 0 0;
+      text-align: center;
+    }
+    .spark-speed {
+      font-size: 12px;
+      line-height: 16px;
+    }
+    .spark-unit {
+      display: block;
+      font-size: 10px;
+      font-weight: 400;
+      color: var(--g400);
+    }
+    .spark-caption {
+      display: none;
+    }
   }
   @media (max-width: 679px) {
     .sb-counts {
