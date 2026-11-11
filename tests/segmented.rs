@@ -1385,8 +1385,8 @@ async fn pause_is_noticed_while_all_workers_wait_on_the_network() {
 /// waiting out the debt first.
 #[tokio::test]
 async fn sibling_failure_interrupts_a_throttled_worker() {
-    // A 1 KiB/s cap: past the 64 KiB burst, even one more small chunk is
-    // seconds of debt for the probe's worker.
+    // A 1 KiB/s cap with nothing banked: even one small chunk is seconds of
+    // debt for the probe's worker.
     const RATE: u64 = KIB;
     let server = common::spawn().await;
     let dir = tempfile::tempdir().unwrap();

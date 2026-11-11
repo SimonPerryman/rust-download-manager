@@ -179,9 +179,9 @@ impl DownloadState {
                 f.write_all(&json)?;
                 f.flush()?;
                 f.sync_all()?;
+                // The rename keeps the temp's attributes; the sidecar stays visible.
+                hidden::unhide(&f)?;
             }
-            // The rename keeps the temp's attributes; the sidecar stays visible.
-            hidden::unhide(&tmp)?;
             // Re-checked right before the rename: a stale checkpoint must not
             // replace a newer download's sidecar (or resurrect a removed one).
             if owned_only && !self.owns(path) {
@@ -237,15 +237,17 @@ fn temp_path(path: &Path) -> PathBuf {
 /// doesn't give there, and clearing it again before the rename.
 #[cfg(windows)]
 mod hidden {
-    use std::os::windows::ffi::OsStrExt;
+    use std::fs::File;
     use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+    use std::os::windows::io::AsRawHandle;
     use std::path::Path;
 
     use windows_sys::Win32::Storage::FileSystem::{
-        SetFileAttributesW, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL,
+        FileBasicInfo, SetFileInformationByHandle, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NORMAL,
+        FILE_BASIC_INFO,
     };
 
-    pub(super) fn create(path: &Path) -> std::io::Result<std::fs::File> {
+    pub(super) fn create(path: &Path) -> std::io::Result<File> {
         std::fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -254,17 +256,31 @@ mod hidden {
             .open(path)
     }
 
-    pub(super) fn unhide(path: &Path) -> std::io::Result<()> {
-        let attributes = std::fs::metadata(path)?.file_attributes() & !FILE_ATTRIBUTE_HIDDEN;
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
-        // No attribute left means "normal", which must be said explicitly.
-        let attributes = if attributes == 0 {
-            FILE_ATTRIBUTE_NORMAL
-        } else {
-            attributes
+    /// Through the open handle rather than the path, which a raw Win32 call
+    /// couldn't reach past 260 characters.
+    pub(super) fn unhide(file: &File) -> std::io::Result<()> {
+        let attributes = file.metadata()?.file_attributes() & !FILE_ATTRIBUTE_HIDDEN;
+        let info = FILE_BASIC_INFO {
+            // Zero leaves each time, and the attributes, unchanged; so no
+            // attribute left must be said as "normal".
+            FileAttributes: if attributes == 0 {
+                FILE_ATTRIBUTE_NORMAL
+            } else {
+                attributes
+            },
+            ..FILE_BASIC_INFO::default()
         };
-        // SAFETY: `wide` is a NUL-terminated UTF-16 path that outlives the call.
-        if unsafe { SetFileAttributesW(wide.as_ptr(), attributes) } == 0 {
+        // SAFETY: the handle is open (borrowed from `file`) with write access,
+        // and `info` is a FILE_BASIC_INFO of the size passed.
+        let ok = unsafe {
+            SetFileInformationByHandle(
+                file.as_raw_handle(),
+                FileBasicInfo,
+                (&raw const info).cast(),
+                size_of::<FILE_BASIC_INFO>() as u32,
+            )
+        };
+        if ok == 0 {
             return Err(std::io::Error::last_os_error());
         }
         Ok(())
@@ -273,13 +289,14 @@ mod hidden {
 
 #[cfg(not(windows))]
 mod hidden {
+    use std::fs::File;
     use std::path::Path;
 
-    pub(super) fn create(path: &Path) -> std::io::Result<std::fs::File> {
-        std::fs::File::create(path)
+    pub(super) fn create(path: &Path) -> std::io::Result<File> {
+        File::create(path)
     }
 
-    pub(super) fn unhide(_path: &Path) -> std::io::Result<()> {
+    pub(super) fn unhide(_file: &File) -> std::io::Result<()> {
         Ok(())
     }
 }
@@ -629,29 +646,36 @@ mod tests {
     }
 
     /// The temp file is hidden while it's written, and the sidecar it becomes
-    /// is not.
+    /// is not, even on a path longer than Windows' 260-character limit.
     #[test]
     fn the_temp_file_is_hidden_until_it_becomes_the_sidecar() {
         let dir = tempfile::tempdir().unwrap();
         let tmp = dir.path().join(".x.bin.rdm.1.2.tmp");
-        drop(hidden::create(&tmp).unwrap());
+        let file = hidden::create(&tmp).unwrap();
         #[cfg(windows)]
         assert!(is_hidden(&tmp), "temp not hidden");
-        hidden::unhide(&tmp).unwrap();
+        hidden::unhide(&file).unwrap();
+        drop(file);
         #[cfg(windows)]
         assert!(!is_hidden(&tmp), "temp still hidden");
 
-        let sidecar = dir.path().join("x.bin.rdm");
-        DownloadState::new("u", "t", None, None, None)
-            .save(&sidecar)
-            .unwrap();
-        #[cfg(windows)]
-        assert!(!is_hidden(&sidecar), "sidecar hidden");
-        assert!(!sidecar
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .starts_with('.'));
+        let deep = dir.path().join("d".repeat(100));
+        std::fs::create_dir(&deep).unwrap();
+        for sidecar in [
+            dir.path().join("x.bin.rdm"),
+            deep.join(format!("{}.bin.rdm", "x".repeat(200))),
+        ] {
+            DownloadState::new("u", "t", None, None, None)
+                .save(&sidecar)
+                .unwrap();
+            #[cfg(windows)]
+            assert!(!is_hidden(&sidecar), "sidecar hidden");
+            assert!(!sidecar
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with('.'));
+        }
     }
 
     #[cfg(windows)]

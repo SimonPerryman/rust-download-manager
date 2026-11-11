@@ -36,9 +36,9 @@ pub struct Progress {
 ///
 /// Records `(elapsed, cumulative_bytes)` samples and reports the average rate
 /// over the most recent `window`. Averaging over a window (rather than since
-/// the start) keeps the reading responsive to speed changes. The newest sample
-/// from before the window is kept as its start, so samples further apart than
-/// the window (a slow throttled stream) still give a reading.
+/// the start) keeps the reading responsive to speed changes. The last two
+/// samples are always kept, so samples further apart than the window (a slow
+/// throttled stream) still give a reading.
 pub struct SpeedMeter {
     window: Duration,
     samples: VecDeque<(Duration, u64)>,
@@ -62,7 +62,9 @@ impl SpeedMeter {
     /// started, and return the current speed estimate in bytes/sec.
     pub fn observe(&mut self, elapsed: Duration, downloaded: u64) -> f64 {
         self.samples.push_back((elapsed, downloaded));
-        while self.samples.len() > 2 && elapsed.saturating_sub(self.samples[1].0) >= self.window {
+        // Older than the window goes, but two samples always stay: after a
+        // gap the previous one is all there is to measure from.
+        while self.samples.len() > 2 && elapsed.saturating_sub(self.samples[0].0) > self.window {
             self.samples.pop_front();
         }
         self.speed()
@@ -138,6 +140,18 @@ mod tests {
         assert!((bps - 2000.0).abs() < 1e-9, "got {bps}");
         let bps = m.observe(Duration::from_secs(16), 32_000);
         assert!((bps - 2000.0).abs() < 1e-9, "got {bps}");
+    }
+
+    #[test]
+    fn the_reading_recovers_on_the_next_chunk_after_a_stall() {
+        let mut m = SpeedMeter::new();
+        for s in 0..=4 {
+            m.observe(Duration::from_secs(s), s * 1_000_000);
+        }
+        // A 30 s stall, then two chunks a tenth of a second apart at 1 MB/s.
+        m.observe(Duration::from_secs(34), 5_000_000);
+        let bps = m.observe(Duration::from_millis(34_100), 5_100_000);
+        assert!((bps - 1_000_000.0).abs() < 1e-3, "got {bps}");
     }
 
     #[test]
