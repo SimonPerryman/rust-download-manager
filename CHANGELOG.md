@@ -44,9 +44,6 @@ desktop app share one version.
 - The Log tab's **Copy** copies every line rdm keeps for the download,
   detail included, whichever view is showing, and **Detailed** is now a
   **Simple | Detailed** switch.
-
-### Changed
-
 - Settings (desktop app): **Ask before removing a download for good** moved
   from Display to Downloads, and "Max concurrent downloads" is now
   **Concurrent downloads**.
