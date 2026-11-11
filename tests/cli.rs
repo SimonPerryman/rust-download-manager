@@ -63,16 +63,24 @@ async fn cli_fails_on_missing() {
 /// This is the signature resume-after-restart proof.
 #[tokio::test]
 async fn kill_mid_download_then_restart_is_byte_identical() {
-    let server = common::spawn().await;
+    // The fixture holds `/slow` after a few chunks, so the first run is
+    // guaranteed to be mid-download when it is killed: pacing alone can't
+    // promise that, as a stalled client drains the buffered body all at once.
+    const HELD_CHUNKS: usize = 4;
+    let server = common::spawn_with(FixtureConfig {
+        slow_hold_after: Some(HELD_CHUNKS),
+        ..FixtureConfig::default()
+    })
+    .await;
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("resumed.bin");
     let part = state::part_path(&out);
 
-    let total = common::payload().len() as u64;
+    let held = (HELD_CHUNKS * common::STREAM_CHUNK) as u64;
     let exe = env!("CARGO_BIN_EXE_rdm");
 
-    // First run: download the slow stream, then hard-kill it once the `.part`
-    // is partway there — simulating a crash. No reliance on fixed sleeps.
+    // First run: download until the server holds, then hard-kill it —
+    // simulating a crash. No reliance on fixed sleeps.
     let mut child = Command::new(exe)
         .arg(server.url("/slow"))
         .arg("-o")
@@ -81,23 +89,11 @@ async fn kill_mid_download_then_restart_is_byte_identical() {
         .spawn()
         .expect("spawn rdm");
 
-    let reached_partial = {
-        let deadline = Instant::now() + Duration::from_secs(15);
-        let mut ok = false;
-        while Instant::now() < deadline {
-            if let Ok(meta) = std::fs::metadata(&part) {
-                if meta.len() > 0 && meta.len() < total {
-                    ok = true;
-                    break;
-                }
-            }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-        ok
-    };
     assert!(
-        reached_partial,
-        "`.part` never reached a partial size to kill at"
+        wait_until(Duration::from_secs(15), || std::fs::metadata(&part)
+            .is_ok_and(|m| m.len() == held))
+        .await,
+        "`.part` never reached the held size to kill at"
     );
 
     child.kill().await.expect("hard-kill the first run");
@@ -107,6 +103,7 @@ async fn kill_mid_download_then_restart_is_byte_identical() {
         "a crash must leave the `.part` behind to resume"
     );
     assert!(!out.exists(), "the target must not exist after a crash");
+    server.gate().release_all();
 
     // Second run: identical command resumes and completes.
     let status = Command::new(exe)
