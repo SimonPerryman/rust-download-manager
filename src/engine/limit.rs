@@ -48,14 +48,14 @@ fn normalise(rate: Option<u64>) -> Option<u64> {
 }
 
 impl RateLimiter {
-    /// A limiter capped at `rate` bytes/s, starting with a full burst;
-    /// `None` (or `Some(0)`) is unlimited.
+    /// A limiter capped at `rate` bytes/s, starting with nothing banked so
+    /// the first bytes already pass at the rate; `None` (or `Some(0)`) is
+    /// unlimited.
     pub fn new(rate: Option<u64>) -> Self {
-        let rate = normalise(rate);
         Self {
             state: Mutex::new(Bucket {
-                rate,
-                tokens: rate.map_or(0.0, |r| burst_for(r) as f64),
+                rate: normalise(rate),
+                tokens: 0.0,
                 last: Instant::now(),
             }),
         }
@@ -82,10 +82,19 @@ impl RateLimiter {
         bucket.tokens = match (bucket.rate, rate) {
             (_, None) => bucket.tokens,
             // Traffic while unlimited never accrued debt; start afresh.
-            (None, Some(new)) => burst_for(new) as f64,
+            (None, Some(_)) => 0.0,
             (Some(_), Some(new)) => bucket.tokens.min(burst_for(new) as f64),
         };
         bucket.rate = rate;
+    }
+
+    /// Forfeit credit banked while idle, keeping any debt, so a stream that
+    /// starts (or resumes) now runs at the rate from its first byte instead
+    /// of with a burst its speed reading would show as an overshoot.
+    pub fn restart(&self) {
+        let mut bucket = lock(&self.state);
+        bucket.refill(Instant::now());
+        bucket.tokens = bucket.tokens.min(0.0);
     }
 
     /// Debit `n` bytes and return when the balance is back to zero, or `None`
@@ -174,6 +183,7 @@ mod tests {
     async fn debt_deadline_is_the_time_to_repay_it() {
         let limiter = RateLimiter::new(Some(MIB));
         let burst = limiter.burst();
+        tokio::time::advance(Duration::from_secs(1)).await; // banks one burst
         let start = Instant::now();
         assert_eq!(limiter.charge(burst), None, "a full burst passes freely");
         let deadline = limiter.charge(MIB / 2).expect("in debt");
@@ -211,20 +221,19 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn limiting_after_unlimited_traffic_starts_at_a_full_burst() {
+    async fn limiting_after_unlimited_traffic_starts_afresh() {
         let limiter = RateLimiter::new(None);
         limiter.charge(100 * MIB);
-        let rate = MIB;
-        limiter.set_rate(Some(rate));
-        let burst = limiter.burst();
-        let deadline = limiter.charge(2 * burst).expect("past the burst");
+        limiter.set_rate(Some(MIB));
+        let deadline = limiter.charge(MIB / 4).expect("nothing banked");
         let wait = secs(deadline - Instant::now());
-        assert!(wait <= burst as f64 / rate as f64 + 1e-6, "waited {wait}s");
+        assert!((wait - 0.25).abs() < 1e-6, "waited {wait}s, not just for this chunk");
     }
 
     #[tokio::test(start_paused = true)]
     async fn rate_change_settles_the_old_refill_first() {
         let limiter = RateLimiter::new(Some(MIB));
+        tokio::time::advance(Duration::from_secs(1)).await; // banks one burst
         limiter.charge(limiter.burst() + MIB / 2); // 512 KiB of debt
         tokio::time::advance(Duration::from_millis(250)).await; // repays 256 KiB at 1 MiB/s
         limiter.set_rate(Some(2 * MIB));
@@ -236,7 +245,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn lowering_the_rate_clamps_banked_tokens() {
-        let limiter = RateLimiter::new(Some(4 * MIB)); // 1 MiB banked
+        let limiter = RateLimiter::new(Some(4 * MIB));
+        tokio::time::advance(Duration::from_secs(1)).await; // 1 MiB banked
         limiter.set_rate(Some(MIB)); // burst now 256 KiB
         assert_eq!(limiter.balance(), (256 * KIB) as f64);
         assert!(limiter.charge(256 * KIB + 1).is_some());
@@ -250,6 +260,53 @@ mod tests {
         assert_eq!(limiter.charge(0), None);
         limiter.set_rate(Some(0));
         assert_eq!(limiter.rate(), None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_fresh_limiter_starts_with_nothing_banked() {
+        let limiter = RateLimiter::new(Some(50 * KIB));
+        let deadline = limiter.charge(16 * KIB).expect("the first chunk waits");
+        assert!((secs(deadline - Instant::now()) - 0.32).abs() < 1e-6);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn restart_forfeits_idle_credit_but_keeps_debt() {
+        let limiter = RateLimiter::new(Some(MIB));
+        tokio::time::advance(Duration::from_secs(10)).await;
+        limiter.restart();
+        assert!(limiter.charge(KIB).is_some(), "idle credit was kept");
+
+        limiter.charge(MIB / 4);
+        let owed = limiter.balance();
+        limiter.restart();
+        assert_eq!(limiter.balance(), owed, "debt was forgiven");
+    }
+
+    /// The meter, fed the way the chunk loop feeds it (after each chunk's
+    /// throttle wait), reads the limit from its first reading on, at a rate
+    /// whose chunks arrive faster than the meter's window and one whose
+    /// chunks arrive slower.
+    #[tokio::test(start_paused = true)]
+    async fn a_throttled_stream_reads_its_limit_from_the_start() {
+        use crate::engine::{Control, SpeedMeter};
+        use std::sync::Arc;
+
+        const CHUNK: u64 = 16 * KIB;
+        for rate in [50 * KIB, 2 * KIB] {
+            let control =
+                Control::new().with_limiters([Arc::new(RateLimiter::new(Some(rate)))]);
+            let mut meter = SpeedMeter::new();
+            let start = Instant::now();
+            assert_eq!(meter.observe(Duration::ZERO, 0), 0.0, "no reading yet");
+            let mut downloaded = 0;
+            for chunk in 1..=40 {
+                downloaded += CHUNK;
+                control.throttle(CHUNK as usize, None).await;
+                let bps = meter.observe(start.elapsed(), downloaded);
+                let off = (bps - rate as f64).abs() / rate as f64;
+                assert!(off < 0.01, "{rate} B/s limit read {bps} at chunk {chunk}");
+            }
+        }
     }
 
     #[test]

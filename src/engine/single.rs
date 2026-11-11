@@ -187,11 +187,12 @@ pub(super) async fn stream_to_part(
     let mut downloaded = start_offset;
     let mut meter = SpeedMeter::new();
     let start = Instant::now();
+    control.restart_limiters();
 
     on_progress(Progress {
         downloaded,
         total,
-        bytes_per_sec: 0.0,
+        bytes_per_sec: meter.observe(Duration::ZERO, downloaded),
         eta: None,
         connections: 1,
         segments: single_segment(downloaded, total),
