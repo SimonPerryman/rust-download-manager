@@ -7,6 +7,8 @@ desktop app share one version.
 
 ## Unreleased
 
+## 0.3.0 - 2026-11-11
+
 ### Added
 
 - In-app updates (desktop app): a one-time question asks whether to check
