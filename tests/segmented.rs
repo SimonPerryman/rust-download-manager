@@ -115,11 +115,14 @@ fn assert_progress_coherent(seen: &[Progress], len: u64) {
     assert_eq!(seen.last().unwrap().downloaded, len);
 }
 
-/// A sidecar temp file as a hard kill mid-save would leave it.
+/// A sidecar temp file as a hard kill mid-save would leave it: hidden, beside
+/// the sidecar. (tests/manager.rs sweeps the older visible name.)
 fn stale_temp(target: &Path) -> std::path::PathBuf {
-    let mut name = state::sidecar_path(target).into_os_string();
+    let sidecar = state::sidecar_path(target);
+    let mut name = std::ffi::OsString::from(".");
+    name.push(sidecar.file_name().unwrap());
     name.push(".4242.7.tmp");
-    name.into()
+    sidecar.with_file_name(name)
 }
 
 fn assert_no_partial_state(target: &Path) {

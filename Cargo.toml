@@ -63,9 +63,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # OS version and process memory for the startup line and diagnostics
-# (src/platform.rs); both crates are already in the tree.
+# (src/platform.rs), and the hidden attribute on the sidecar's temp file
+# (src/engine/state.rs); both crates are already in the tree.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win32_System_SystemInformation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Wdk_System_SystemServices", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"
