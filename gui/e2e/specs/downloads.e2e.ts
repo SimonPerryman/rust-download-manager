@@ -13,6 +13,7 @@ import {
   baseUrl,
   clickRowAction,
   downloadDir,
+  invoke,
   removeAll,
   rowSelector,
   selectFilter,
@@ -20,6 +21,7 @@ import {
   waitForGone,
   waitForPartBytes,
   waitForStatus,
+  waitForText,
 } from "../helpers";
 
 /** The fixture's deterministic payload (mirrors `payload()` in tests/common). */
@@ -168,6 +170,51 @@ describe("rdm GUI", () => {
     await clickRowAction(id, "Pause");
     await waitForStatus(id, "paused");
     await expectFits();
+    await removeAll([id]);
+  });
+
+  // /huge trickles ~50 KB/s, so it shows hours left ("5 h 49 min"). Under 760px the
+  // columns shrink and the limit takes its short form ("50.0 / 512K").
+  it("fits the size, time left and a limited speed in a narrow window", async () => {
+    const id = await addThroughDialog(`${baseUrl}/huge`);
+    ids.push(id);
+    await waitForStatus(id, "downloading");
+    await invoke("set_limit", { id, limit: "512K" });
+    const row = rowSelector(id);
+    // innerText, not getText(): the cells ellipsise, and WebKitGTK's driver reads that as "".
+    const overflow = () =>
+      browser.execute((row) => {
+        const out: Record<string, string> = {};
+        for (const sel of ["td.c-size", "td.c-left", '[data-testid="row-limit"]']) {
+          const el = document.querySelector(`${row} ${sel}`) as HTMLElement | null;
+          if (!el || el.innerText === "" || el.scrollWidth > el.clientWidth) {
+            out[sel] = el ? `"${el.innerText}" ${el.scrollWidth}px in ${el.clientWidth}px` : "none";
+          }
+        }
+        return out;
+      }, row);
+    const expectAllFit = async () => {
+      await browser
+        .waitUntil(async () => Object.keys(await overflow()).length === 0, {
+          timeoutMsg: "a cell overflowed or stayed blank",
+        })
+        .catch(async (e) => {
+          throw new Error(`${e}: ${JSON.stringify(await overflow())}`, { cause: e });
+        });
+    };
+
+    await waitForText(`${row} td.c-left`, " h ");
+    await waitForText(`${row} [data-testid="row-limit"]`, "/ 512 KB/s");
+    await expectAllFit();
+
+    const { width, height } = await browser.getWindowSize();
+    try {
+      await browser.setWindowSize(700, height);
+      await waitForText(`${row} [data-testid="row-limit"]`, "/ 512K");
+      await expectAllFit();
+    } finally {
+      await browser.setWindowSize(width, height);
+    }
     await removeAll([id]);
   });
 

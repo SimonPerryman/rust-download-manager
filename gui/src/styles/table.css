@@ -77,11 +77,13 @@
   .c-prog {
     width: 148px;
   }
+  /* Fits a limited row's "512 / 512 KB/s". */
   .c-speed {
-    width: 104px;
+    width: 120px;
   }
+  /* Fits "12 h 59 min". */
   .c-left {
-    width: 84px;
+    width: 96px;
   }
   .c-conn {
     width: 96px;
@@ -95,6 +97,28 @@
   .dl td.c-act {
     position: relative;
     overflow: visible;
+  }
+  /* A limited row's speed, which opens its limit editor. The negative margin keeps the
+     text on the column's edge and lets the hover tint into the cell's padding. */
+  .lim-btn {
+    display: inline-block;
+    max-width: calc(100% + 8px);
+    margin: 0 -4px;
+    padding: 0 4px;
+    border-radius: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+  }
+  .lim-btn:hover {
+    background: var(--hover);
+  }
+  .lim {
+    font-size: 12px;
+    color: var(--g400);
+  }
+  .lim-short {
+    display: none;
   }
   .row {
     cursor: default;

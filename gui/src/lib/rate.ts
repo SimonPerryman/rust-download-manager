@@ -71,3 +71,16 @@ export function exceeds(d: RateDraft, capBytesPerSec: number | null): boolean {
   if (capBytesPerSec == null || d.amount === "") return false;
   return Number(d.amount) * UNIT_BYTES[d.unit] > capBytesPerSec;
 }
+
+/** A set limit as the table shows it: "50 KB/s", or "50K" (the form typed in the editor) when narrow. */
+export function limitText(bytesPerSec: number, short = false): string {
+  const { amount, unit } = rateDraft(bytesPerSec);
+  return short ? `${amount}${unit}` : `${amount} ${unit}B/s`;
+}
+
+/** A speed as a bare number in `unit`, to read against a limit set in it: "49.8", "0.96", "512". */
+export function speedIn(bytesPerSec: number, unit: RateUnit): string {
+  const value = bytesPerSec / UNIT_BYTES[unit];
+  if (value < 0.01) return "<0.01";
+  return value.toFixed(value < 10 ? 2 : value < 100 ? 1 : 0);
+}

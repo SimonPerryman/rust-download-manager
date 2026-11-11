@@ -47,6 +47,13 @@ desktop app share one version.
 - Settings (desktop app): **Ask before removing a download for good** moved
   from Display to Downloads, and "Max concurrent downloads" is now
   **Concurrent downloads**.
+- A download with its own speed limit (desktop app) reads its speed against
+  the limit in the Speed column, such as "49.8 / 50 KB/s" ("≤ 50 KB/s" while
+  paused or waiting), instead of showing a gauge icon there. The row's speed
+  limit button turns orange while a limit is set.
+- The sidecar's temporary save file is now hidden (`.<file>.rdm.<pid>.<n>.tmp`,
+  also marked hidden on Windows), so it no longer flickers in file managers
+  beside the download.
 
 ### Fixed
 
@@ -59,6 +66,12 @@ desktop app share one version.
   lines when the app closes.
 - The desktop app's log file no longer has terminal colour codes around a
   download's fields (seen on Linux).
+- A speed-limited download's speed no longer reads blank or 0 when it
+  starts, resumes or receives data in slow bursts, and no longer overshoots
+  its limit early on: the limit applies from the first byte, with no initial
+  burst, and the speed is measured after the limit's wait.
+- Time left ("1 h 13 min") and, in a narrow window, the size ("346.2 MB") are
+  no longer cut off.
 
 ## 0.2.0 - 2026-11-10
 

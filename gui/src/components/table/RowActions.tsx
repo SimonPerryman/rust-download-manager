@@ -1,4 +1,5 @@
 import { archiveTitle, removeTitle } from "../../lib/copy";
+import { limitText } from "../../lib/rate";
 import { rowActions, type RowAction, type RowActionKey } from "../../lib/rowView";
 import type { DownloadSnapshot } from "../../lib/types";
 import type { LimitEditor } from "../../lib/useLimitEditor";
@@ -65,6 +66,12 @@ export function RowActions({ d, lingering, editor, handlers }: Props) {
         return handlers.deletePartial(d);
     }
   };
+  const titleOf = (a: RowAction) => {
+    if (a.key === "remove") return removeTitle(d);
+    if (a.key === "archive") return archiveTitle;
+    if (a.key === "limit" && d.limit != null) return `${a.label}: ${limitText(d.limit)}`;
+    return a.label;
+  };
   return (
     <div className="flex items-center justify-end gap-1">
       {editor.draft != null ? <RowLimitEditor editor={editor} /> : null}
@@ -72,8 +79,9 @@ export function RowActions({ d, lingering, editor, handlers }: Props) {
         <ActionButton
           key={a.key}
           action={a}
-          title={a.key === "remove" ? removeTitle(d) : a.key === "archive" ? archiveTitle : a.label}
+          title={titleOf(a)}
           editor={a.key === "limit" ? editor : undefined}
+          set={a.key === "limit" && d.limit != null}
           onClick={() => run(a.key)}
         />
       ))}
@@ -85,12 +93,15 @@ function ActionButton({
   action,
   title,
   editor,
+  set = false,
   onClick,
 }: {
   action: RowAction;
   title: string;
   /** Only for the gauge: it keeps focus off itself so an open editor isn't blurred. */
   editor?: LimitEditor;
+  /** Tinted while what it changes is set (the gauge, while the row has a limit). */
+  set?: boolean;
   onClick: () => void;
 }) {
   const Icon = ICON[action.key];
@@ -103,7 +114,7 @@ function ActionButton({
         aria-pressed={editor ? editor.draft != null : undefined}
         onMouseDown={editor ? (e) => e.preventDefault() : undefined}
         onClick={onClick}
-        className="icon-btn icon-btn-sm"
+        className={`icon-btn icon-btn-sm${set ? " is-set" : ""}`}
       >
         <Icon size={14} />
       </button>

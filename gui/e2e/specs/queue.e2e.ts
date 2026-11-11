@@ -33,6 +33,7 @@ import {
   waitForAttr,
   waitForGone,
   waitForStatus,
+  waitForText,
 } from "../helpers";
 
 const GLOBAL_LIMIT_INPUT = 'input[aria-label="Global speed limit"]';
@@ -134,9 +135,12 @@ describe("rdm GUI download queue", () => {
   it("shows a queued download's limit and pauses it without touching the runner", async () => {
     const limited = await add(`${baseUrl}/crawl`, { amount: "64", unit: "K" });
     await expect(rowById(limited)).toHaveAttribute("data-status", "queued");
-    await expect(rowById(limited).$('[data-testid="row-limit"]')).toHaveText("64.0 KB/s", {
-      containing: true,
-    });
+    // waitForText: the speed cell ellipsises, which WebKitGTK's driver reads as "".
+    await waitForText(`${rowSelector(limited)} [data-testid="row-limit"]`, "≤ 64 KB/s");
+    await expect(rowById(limited).$('button[aria-label="Speed limit"]')).toHaveAttribute(
+      "title",
+      "Speed limit: 64 KB/s",
+    );
 
     await clickRowAction(limited, "Pause");
     await waitForStatus(limited, "paused");
@@ -232,11 +236,13 @@ describe("rdm GUI download queue", () => {
     await expect(row).toHaveText("The global limit is 16.0 KB/s", { containing: true });
     await browser.keys(Key.Enter);
     await expect(row).toHaveAttribute("data-limit", String(48 * 1024));
-    // A downloading row's limit button shows the live speed; the limit is in its name.
+    // A downloading row reads its speed against the limit, and the gauge is tinted.
+    await waitForText(`${rowSelector(own)} [data-testid="row-limit"]`, "/ 48 KB/s");
     await expect(row.$('[data-testid="row-limit"]')).toHaveAttribute(
       "aria-label",
-      "Limited to 48.0 KB/s. Change speed limit",
+      expect.stringContaining("limited to 48 KB/s. Change speed limit"),
     );
+    await expect(row.$('button[aria-label="Speed limit"]')).toHaveElementClass("is-set");
     await expect(row).toHaveAttribute("data-status", "downloading");
 
     // Reject: zero is refused in place and nothing is applied; Escape drops the edit.
@@ -258,6 +264,7 @@ describe("rdm GUI download queue", () => {
     await browser.keys(Key.Enter);
     await expect(row).toHaveAttribute("data-limit", "");
     await expect(row.$('[data-testid="row-limit"]')).not.toBeExisting();
+    await expect(row.$('button[aria-label="Speed limit"]')).not.toHaveElementClass("is-set");
     await expect(row).toHaveAttribute("data-status", "downloading");
     await setGlobalLimit("");
   });
@@ -292,7 +299,7 @@ describe("rdm GUI download queue", () => {
     await expect(row).toHaveAttribute("data-limit", String(32 * 1024));
     await expect(row.$('[data-testid="row-limit"]')).toHaveAttribute(
       "aria-label",
-      "Limited to 32.0 KB/s. Change speed limit",
+      expect.stringContaining("limited to 32 KB/s. Change speed limit"),
     );
   });
 

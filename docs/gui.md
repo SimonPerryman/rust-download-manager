@@ -61,6 +61,19 @@ down** from its menu or the details pane.
 You can pause, resume or stop any download, and choose whether a stop keeps
 the partial file.
 
+## Speed limits
+
+The gauge button in a row sets or changes that download's own speed limit
+(clicking its speed does the same); the status bar and Settings hold the
+global limit for all downloads. While a download has its own limit, the gauge
+turns orange and the Speed column reads the speed against the limit:
+
+- **Downloading:** `49.8 / 50 KB/s`, the live speed with the limit in grey,
+  or `– / 50 KB/s` until the first reading.
+- **Paused or waiting:** `≤ 50 KB/s`.
+- In a window narrower than about 760 px the limit shortens to the form you
+  type in the editor: `49.8 / 50K`.
+
 ## Lanes and details
 
 - **Lanes:** a multi-connection download draws one line per piece of the file
