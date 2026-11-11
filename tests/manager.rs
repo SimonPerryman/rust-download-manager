@@ -769,7 +769,8 @@ async fn lowering_the_cap_never_preempts() {
 
 /// M4 AC: a global limit caps the aggregate throughput of concurrent
 /// downloads. With debt, the last wait ends only once the shared balance is
-/// repaid, so `elapsed >= (total - burst) / rate`; slow CI only lengthens it.
+/// repaid, and at most one burst banks while connections idle, so
+/// `elapsed >= (total - burst) / rate`; slow CI only lengthens it.
 #[tokio::test]
 async fn global_limit_caps_aggregate_throughput() {
     const SEG_LEN: usize = 512 * 1024;

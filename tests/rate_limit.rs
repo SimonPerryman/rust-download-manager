@@ -16,9 +16,10 @@ const LIMIT: u64 = 512 * KIB;
 
 /// Download `/seg` (1 MiB) with `connections` under a 512 KiB/s limit and
 /// check the time taken (ramping off, so every connection runs from the
-/// start). With debt, the last chunk's wait ends only once the
-/// balance is back to zero, so `elapsed ≥ (size − burst) / rate` however the
-/// bytes were split across connections; slow CI can only lengthen it.
+/// start). With debt, the last chunk's wait ends only once the balance is
+/// back to zero, and at most one burst can bank while a connection idles, so
+/// `elapsed ≥ (size − burst) / rate` however the bytes were split across
+/// connections; slow CI can only lengthen it.
 async fn assert_limited(connections: u8) {
     let server = common::spawn_with(FixtureConfig {
         seg_len: MIB as usize,
