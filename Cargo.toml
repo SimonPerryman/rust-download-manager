@@ -6,7 +6,7 @@ resolver = "2"
 # One version for the CLI and the GUI: a tag vX.Y.Z releases both. The release
 # workflow's version check holds gui/package.json and CHANGELOG.md to it.
 [workspace.package]
-version = "0.3.0-rc.2"
+version = "0.3.0-rc.3"
 repository = "https://github.com/SimonPerryman/rust-download-manager"
 homepage = "https://github.com/SimonPerryman/rust-download-manager"
 
