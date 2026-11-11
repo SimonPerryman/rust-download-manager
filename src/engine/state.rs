@@ -647,7 +647,11 @@ mod tests {
             .unwrap();
         #[cfg(windows)]
         assert!(!is_hidden(&sidecar), "sidecar hidden");
-        assert!(!sidecar.file_name().unwrap().to_string_lossy().starts_with('.'));
+        assert!(!sidecar
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with('.'));
     }
 
     #[cfg(windows)]

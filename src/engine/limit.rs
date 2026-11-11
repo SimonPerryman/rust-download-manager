@@ -227,7 +227,10 @@ mod tests {
         limiter.set_rate(Some(MIB));
         let deadline = limiter.charge(MIB / 4).expect("nothing banked");
         let wait = secs(deadline - Instant::now());
-        assert!((wait - 0.25).abs() < 1e-6, "waited {wait}s, not just for this chunk");
+        assert!(
+            (wait - 0.25).abs() < 1e-6,
+            "waited {wait}s, not just for this chunk"
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -293,8 +296,7 @@ mod tests {
 
         const CHUNK: u64 = 16 * KIB;
         for rate in [50 * KIB, 2 * KIB] {
-            let control =
-                Control::new().with_limiters([Arc::new(RateLimiter::new(Some(rate)))]);
+            let control = Control::new().with_limiters([Arc::new(RateLimiter::new(Some(rate)))]);
             let mut meter = SpeedMeter::new();
             let start = Instant::now();
             assert_eq!(meter.observe(Duration::ZERO, 0), 0.0, "no reading yet");
