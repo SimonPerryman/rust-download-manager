@@ -41,7 +41,7 @@ impl ProxyServer {
 
 /// An HTTP forward proxy: absolute-form requests are rewritten to
 /// origin-form and relayed; `CONNECT` is tunnelled. A request for the proxy
-/// itself (`GET /seen`) answers how many requests it has relayed, so an
+/// itself (`GET /seen`) answers how many connections it has relayed, so an
 /// out-of-process client (the GUI's E2E suite) can tell it was used.
 pub async fn spawn_http_proxy() -> ProxyServer {
     spawn(|client, seen| async move {

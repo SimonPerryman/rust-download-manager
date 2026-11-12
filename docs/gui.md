@@ -189,11 +189,17 @@ proxy. The URL is checked when you press Enter or leave the field; an
 invalid one shows an error under the field and isn't saved. A change applies
 to downloads started or resumed after it, not to ones already running.
 
-Once saved, the field shows the password as `••••••`. Edit the rest of the
-URL and leave the dots to keep the saved password, or type a new one. Logs
-and Copy diagnostics never show the password (diagnostics name only the kind
-of proxy, e.g. `proxy socks5h`), and only `state.json` keeps it. The proxy
-environment variables (`HTTP_PROXY`, `ALL_PROXY`) are ignored.
+Once saved, the field shows the password as `••••••`. Leave the dots to keep
+the saved password; it's kept only while the scheme, host, port and user
+name stay the same, so the password never goes to a proxy you didn't enter
+it for. To change any of those, type the password again. Logs and Copy
+diagnostics never show the password (diagnostics name only the kind of
+proxy, e.g. `proxy socks5h`), and only `state.json` keeps it.
+
+Downloads use only this setting: the `HTTP_PROXY`, `HTTPS_PROXY` and
+`ALL_PROXY` environment variables and the system's proxy settings (such as
+Windows' Internet Options) don't apply to them. The in-app updater still
+follows the system's proxy settings.
 
 ## Updates
 

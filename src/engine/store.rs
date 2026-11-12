@@ -20,6 +20,8 @@ use crate::engine::{segment, Error, Proxy, Result, DEFAULT_CONNECTIONS};
 /// [`DownloadRecord::archived`] and [`DownloadRecord::tags`].
 /// [`DownloadRecord::paused_for_update`] needed no bump: an older build
 /// dropping it only loses the offer to resume those downloads together.
+/// Nor did [`Settings::proxy`]: an older build has no proxy support to keep
+/// it for, and a bump would lock it out of the whole list instead.
 pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 /// Lifecycle status of a managed download.

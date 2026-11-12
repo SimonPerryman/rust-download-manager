@@ -21,7 +21,8 @@ desktop app share one version.
 - The `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` environment variables no
   longer apply to downloads; only an explicit proxy does. In the desktop
   app, the system's proxy settings (such as Windows' Internet Options) no
-  longer apply to downloads either.
+  longer apply to downloads either: set the proxy under Settings →
+  Downloads instead.
 
 ## 0.3.0 - 2026-11-11
 

@@ -1,23 +1,29 @@
 // End-to-end: the Proxy setting. A proxy set in the Settings popover routes
 // the next download through the fixture's test proxy, and the field shows it
-// back with the password masked; an invalid URL is refused in place and
-// changes nothing. Shares the app state dir with the other specs (see
+// back with the password masked, as Copy diagnostics leaves its login out; an
+// invalid URL is refused in place and changes nothing. Shares the app state dir with the other specs (see
 // wdio.conf.ts), so it clears the proxy and removes its downloads when done.
 
-import { $, expect } from "@wdio/globals";
+import { $, browser, expect } from "@wdio/globals";
 import {
   addThroughDialog,
   baseUrl,
+  clipboardWrites,
+  dismissOverlays,
   invoke,
+  rectOf,
   removeAll,
+  restoreClipboard,
   retype,
   selectFilter,
   settingsButton,
+  stubClipboard,
   waitForGone,
   waitForStatus,
 } from "../helpers";
 
 const PROXY_INPUT = 'input[aria-label="Proxy"]';
+const MENU = '[role="dialog"][aria-label="Settings"]';
 const proxyUrl = process.env.RDM_E2E_PROXY_URL!;
 // The fixture proxy takes any login; this one is only there to be masked.
 const withLogin = proxyUrl.replace("://", "://e2e:hunter2@");
@@ -45,10 +51,12 @@ describe("rdm GUI proxy setting", () => {
 
   before(async () => {
     await selectFilter("all");
+    await stubClipboard();
   });
 
   after(async () => {
     try {
+      await restoreClipboard();
       if ((await settingsButton().getAttribute("aria-expanded")) !== "true") {
         await settingsButton().click();
       }
@@ -73,6 +81,26 @@ describe("rdm GUI proxy setting", () => {
     ids.push(id);
     await waitForStatus(id, "completed");
     expect(await proxied()).toBeGreaterThan(before);
+  });
+
+  it("copies diagnostics without the proxy's login, from a popover that fits the window", async () => {
+    // A finish notification sits above the popover and could cover its buttons.
+    await dismissOverlays();
+    await openProxyField();
+    const menu = await rectOf(MENU);
+    const windowHeight = await browser.execute(() => window.innerHeight);
+    expect(menu.y + menu.height).toBeLessThanOrEqual(windowHeight);
+
+    const copied = (await clipboardWrites()).length;
+    await $(`${MENU} [data-testid="copy-diagnostics"]`).click();
+    await browser.waitUntil(async () => (await clipboardWrites()).length > copied, {
+      timeoutMsg: "Copy diagnostics never wrote to the clipboard",
+    });
+    const report = (await clipboardWrites()).at(-1)!;
+    expect(report).toContain("proxy http ");
+    expect(report).not.toContain("hunter2");
+    expect(report).not.toContain("e2e:");
+    await closeSettings();
   });
 
   it("refuses an invalid proxy in place and keeps the saved one", async () => {
