@@ -95,6 +95,7 @@ pub struct DownloadRequest {
     pub min_segment_size: u64,
     ramp: Ramping,
     shed_grace: Duration,
+    reprobe_interval: Duration,
     read_timeout: Duration,
     tally: Arc<Tally>,
     active_before: Duration,
@@ -157,6 +158,7 @@ impl DownloadRequest {
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
             ramp: Ramping::default(),
             shed_grace: segment::SHED_GRACE,
+            reprobe_interval: ramp::REPROBE_INTERVAL,
             read_timeout: READ_TIMEOUT,
             tally: Arc::default(),
             active_before: Duration::ZERO,
@@ -177,6 +179,7 @@ impl DownloadRequest {
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
             ramp: Ramping::default(),
             shed_grace: segment::SHED_GRACE,
+            reprobe_interval: ramp::REPROBE_INTERVAL,
             read_timeout: READ_TIMEOUT,
             tally: Arc::default(),
             active_before: Duration::ZERO,
@@ -229,6 +232,14 @@ impl DownloadRequest {
     #[doc(hidden)]
     pub fn with_shed_grace(mut self, grace: Duration) -> Self {
         self.shed_grace = grace;
+        self
+    }
+
+    /// Override how long a settled ramp waits before trialling one more
+    /// connection (test seam; frontends never call this).
+    #[doc(hidden)]
+    pub fn with_reprobe_interval(mut self, interval: Duration) -> Self {
+        self.reprobe_interval = interval;
         self
     }
 

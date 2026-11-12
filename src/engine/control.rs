@@ -101,6 +101,12 @@ impl Control {
         }
     }
 
+    /// The pace the download is held to: its slowest limiter's rate, `None`
+    /// when unlimited.
+    pub(crate) fn rate_limit(&self) -> Option<u64> {
+        self.inner.limiters.iter().filter_map(|l| l.rate()).min()
+    }
+
     /// Called as a stream starts: drop the credit every limiter banked while
     /// idle (a pause, a retry's backoff), so the stream starts at the rate.
     pub(crate) fn restart_limiters(&self) {
@@ -211,6 +217,17 @@ mod tests {
         let c = Control::new();
         let _clone = c.clone();
         let _ = c.with_limiters([Arc::new(RateLimiter::new(Some(MIB)))]);
+    }
+
+    #[test]
+    fn rate_limit_is_the_slowest_limiter_live() {
+        assert_eq!(Control::new().rate_limit(), None);
+        let (control, limiters) = limited(&[2 * MIB, MIB]);
+        assert_eq!(control.rate_limit(), Some(MIB));
+        limiters[1].set_rate(None);
+        assert_eq!(control.rate_limit(), Some(2 * MIB));
+        limiters[0].set_rate(None);
+        assert_eq!(control.rate_limit(), None);
     }
 
     #[tokio::test(start_paused = true)]

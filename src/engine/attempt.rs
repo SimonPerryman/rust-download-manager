@@ -251,6 +251,7 @@ async fn attempt_once(
                 read_timeout: req.read_timeout,
                 ramp: req.ramp,
                 shed_grace: req.shed_grace,
+                reprobe_interval: req.reprobe_interval,
                 first: Some(resp),
                 tally: &req.tally,
             };
@@ -306,6 +307,7 @@ async fn resume_segmented(
         read_timeout: req.read_timeout,
         ramp: req.ramp,
         shed_grace: req.shed_grace,
+        reprobe_interval: req.reprobe_interval,
         first: None,
         tally: &req.tally,
     };

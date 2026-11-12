@@ -39,7 +39,7 @@ use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
 
 use crate::engine::lock::lock;
-use crate::engine::ramp::{Decision, Ramp, Ramping, Window};
+use crate::engine::ramp::{limit_raised, Decision, Ramp, Ramping, Window};
 use crate::engine::tally::Tally;
 use crate::engine::{
     human, is_transient, progress, Control, DownloadState, Error, Flow, Progress, SpeedMeter,
@@ -118,6 +118,7 @@ pub(crate) struct Job<'a> {
     pub read_timeout: Duration,
     pub ramp: Ramping,
     pub shed_grace: Duration,
+    pub reprobe_interval: Duration,
     pub first: Option<reqwest::Response>,
     pub tally: &'a Tally,
 }
@@ -186,7 +187,11 @@ pub(crate) async fn run(
         .unwrap_or(MAX_CONNECTIONS)
         .clamp(1, MAX_CONNECTIONS);
     let (mut ramp, window) = match job.ramp {
-        Ramping::Window(w) => (Ramp::new(ceiling), Some(w.max(Duration::from_millis(1)))),
+        Ramping::Window(w) => {
+            let w = w.max(Duration::from_millis(1));
+            let ramp = Ramp::new(ceiling).reprobing_every(job.reprobe_interval, w);
+            (ramp, Some(w))
+        }
         Ramping::Off => (Ramp::fixed(ceiling), None),
     };
     let (stop, _) = watch::channel(false);
@@ -254,6 +259,7 @@ pub(crate) async fn run(
         tokio::time::interval_at(tokio::time::Instant::now() + ramp_period, ramp_period);
     ramp_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut window_start = (Instant::now(), shared.downloaded(), 0u64);
+    let mut speed_limit = job.control.rate_limit();
 
     let mut control_tick = tokio::time::interval(CONTROL_POLL_INTERVAL);
     control_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -374,7 +380,15 @@ pub(crate) async fn run(
                     waited_fraction: waited.saturating_sub(waited_then) as f64 / 1e9 / (secs * live),
                     pool_changed: shared.pool.take_changed(),
                 };
-                let decision = ramp.observe(measured);
+                // A window under the old limit says nothing about the new
+                // one, so a raise trials a connection straight away.
+                let limit = job.control.rate_limit();
+                let raised = limit_raised(std::mem::replace(&mut speed_limit, limit), limit);
+                let decision = if raised && ramp.reprobe() {
+                    Decision::Add
+                } else {
+                    ramp.observe(measured)
+                };
                 shared.pool.set_target(capped(ramp.target(), cap));
                 tracing::trace!(?measured, ?decision, target = ramp.target(), "ramp window");
                 match decision {
