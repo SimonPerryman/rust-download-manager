@@ -50,7 +50,7 @@
         "autoMerge": false
       }
     ],
-    "maxInFlight": 1,
+    "maxInFlight": 2,
     "reviewCap": 3,
     "reviewers": [],
     "worktreeDir": ".factory/worktrees",
