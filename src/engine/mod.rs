@@ -27,6 +27,7 @@ pub mod integrity;
 pub mod limit;
 mod lock;
 pub mod manager;
+mod mark_of_the_web;
 pub mod progress;
 mod ramp;
 mod redact;

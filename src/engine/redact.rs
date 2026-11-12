@@ -11,33 +11,48 @@ const REDACTED: &str = "<redacted>";
 /// fragment is dropped. The scheme, host and path stay. Unparsable input
 /// yields `<invalid url>`.
 pub fn redact_url(url: &str) -> String {
+    scrub(url, true).unwrap_or_else(|| "<invalid url>".to_string())
+}
+
+/// `url` with its login, query and fragment removed outright rather than
+/// marked, for where it's recorded as a file's origin (Mark-of-the-Web). The
+/// same rule as [`redact_url`], nested links included. `None` if unparsable.
+#[cfg(any(windows, test))]
+pub(super) fn strip_url_secrets(url: &str) -> Option<String> {
+    scrub(url, false)
+}
+
+/// [`redact_url`]'s work: with `mark`, each removed secret leaves
+/// `<redacted>` behind; without, it's simply gone.
+fn scrub(url: &str, mark: bool) -> Option<String> {
     // A link inside this one (an archive's copy of another URL) keeps `:` and
     // `@` in the path, so hide its login too: first in the raw text, since
     // once parsed a `?` or `#` in its password would start this URL's query
     // or fragment and split the login in two.
     let raw = match url.find("://") {
-        Some(sep) if url[sep + 3..].contains("://") => match hide_nested_logins(&url[sep + 3..]) {
-            Ok(rest) => format!("{}{rest}", &url[..sep + 3]),
-            // A `?` or `#` before the nested `@` may be this URL's query or
-            // fragment rather than a password: keep only what comes before
-            // that link's login, and say the rest was redacted. (No deeper:
-            // the cut text holds no such link.)
-            Err(cut) => {
-                let mut out = redact_url(&url[..sep + 3 + cut]);
-                if !out.ends_with(REDACTED) {
-                    out.push('?');
-                    out.push_str(REDACTED);
+        Some(sep) if url[sep + 3..].contains("://") => {
+            match hide_nested_logins(&url[sep + 3..], mark) {
+                Ok(rest) => format!("{}{rest}", &url[..sep + 3]),
+                // A `?` or `#` before the nested `@` may be this URL's query or
+                // fragment rather than a password: keep only what comes before
+                // that link's login, and say the rest was redacted. (No deeper:
+                // the cut text holds no such link.)
+                Err(cut) => {
+                    let mut out = scrub(&url[..sep + 3 + cut], mark)?;
+                    if mark && !out.ends_with(REDACTED) {
+                        out.push('?');
+                        out.push_str(REDACTED);
+                    }
+                    return Some(out);
                 }
-                return out;
             }
-        },
+        }
         _ => url.to_owned(),
     };
-    let Ok(mut parsed) = url::Url::parse(&raw) else {
-        return "<invalid url>".to_string();
-    };
+    let mut parsed = url::Url::parse(&raw).ok()?;
     let had_query = parsed.query().is_some();
     let login = match (parsed.username().is_empty(), parsed.password().is_some()) {
+        _ if !mark => String::new(),
         (_, true) => format!("{REDACTED}:{REDACTED}@"),
         (false, false) => format!("{REDACTED}@"),
         (true, false) => String::new(),
@@ -53,7 +68,7 @@ pub fn redact_url(url: &str) -> String {
     let path_start = out.len() - parsed.path().len();
     if out[path_start..].contains("://") {
         // A parsed path has no `?` or `#`, so this never cuts.
-        if let Ok(path) = hide_nested_logins(&out[path_start..]) {
+        if let Ok(path) = hide_nested_logins(&out[path_start..], mark) {
             out.truncate(path_start);
             out.push_str(&path);
         }
@@ -62,21 +77,22 @@ pub fn redact_url(url: &str) -> String {
     if let Some(sep) = out.find("://").filter(|_| !login.is_empty()) {
         out.insert_str(sep + 3, &login);
     }
-    if had_query {
+    if mark && had_query {
         out.push('?');
         out.push_str(REDACTED);
     }
-    out
+    Some(out)
 }
 
 /// `path` (the part of a URL after its own `://`) with the login of every
-/// link inside it replaced as [`redact_url`] does: the text after each
-/// `://`, up to the next `/`, loses everything before its last `@`. A flat
+/// link inside it replaced as [`redact_url`] does (or dropped, without
+/// `mark`): the text after each `://`, up to the next `/`, loses everything
+/// before its last `@`. A flat
 /// scan rather than a parse, so any characters a login holds are covered and
 /// no depth of nesting can recurse. `Err` holds where such a link starts
 /// when its login text has a `?` or `#`, which may instead be the outer
 /// URL's query or fragment.
-fn hide_nested_logins(path: &str) -> Result<String, usize> {
+fn hide_nested_logins(path: &str, mark: bool) -> Result<String, usize> {
     let mut out = String::with_capacity(path.len());
     let mut rest = path;
     while let Some(sep) = rest.find("://") {
@@ -89,7 +105,9 @@ fn hide_nested_logins(path: &str) -> Result<String, usize> {
                 return Err(path.len() - after.len());
             }
             Some(at) => {
-                let login = if authority[..at].contains(':') {
+                let login = if !mark {
+                    String::new()
+                } else if authority[..at].contains(':') {
                     format!("{REDACTED}:{REDACTED}@")
                 } else {
                     format!("{REDACTED}@")
@@ -208,7 +226,7 @@ fn url_len(text: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{redact_url, redact_urls_in};
+    use super::{redact_url, redact_urls_in, strip_url_secrets};
 
     /// Every URL in a text is redacted, wherever it sits; the rest is kept.
     #[test]
@@ -468,5 +486,24 @@ mod tests {
         assert_eq!(redact_url(""), "<invalid url>");
         assert_eq!(redact_url("not a url ?token=SECRET"), "<invalid url>");
         assert_eq!(redact_url("http://[::1/x?token=SECRET"), "<invalid url>");
+        assert_eq!(redact_url("http://[::1/https://u:p?w@h/"), "<invalid url>");
+    }
+
+    /// Stripping removes the same secrets redaction hides, leaving no marker.
+    #[test]
+    fn stripping_removes_logins_queries_and_fragments() {
+        for (url, want) in [
+            ("https://u:pw@h/f.zip?t=S#x", "https://h/f.zip"),
+            ("https://u@h/f.zip", "https://h/f.zip"),
+            ("http://h:8080/a/b", "http://h:8080/a/b"),
+            (
+                "https://web.archive.org/web/2020/https://u:pw@h/f?t=S",
+                "https://web.archive.org/web/2020/https://h/f",
+            ),
+            ("https://a/https://u:p?secretw@h/", "https://a/https://"),
+        ] {
+            assert_eq!(strip_url_secrets(url).as_deref(), Some(want), "{url}");
+        }
+        assert_eq!(strip_url_secrets("not a url"), None);
     }
 }
