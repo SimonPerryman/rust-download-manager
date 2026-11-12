@@ -9,6 +9,7 @@
 mod commands_guard;
 mod diagnostics;
 mod logging;
+mod proxy_setting;
 mod updater;
 
 use std::path::PathBuf;
@@ -90,24 +91,50 @@ fn parse_limit(limit: Option<String>) -> Result<Option<u64>, String> {
     }
 }
 
+/// The engine's manager-wide settings as the window sees them: a custom
+/// proxy's password masked ([`proxy_setting::shown`]).
+#[derive(serde::Serialize)]
+struct SettingsView {
+    max_concurrent: usize,
+    global_limit: Option<u64>,
+    max_connections: u8,
+    proxy: proxy_setting::ProxyChoice,
+}
+
+impl From<Settings> for SettingsView {
+    fn from(s: Settings) -> Self {
+        Self {
+            max_concurrent: s.max_concurrent,
+            global_limit: s.global_limit,
+            max_connections: s.max_connections,
+            proxy: proxy_setting::shown(&s.proxy),
+        }
+    }
+}
+
 /// The engine's current manager-wide settings.
 #[tauri::command]
-fn get_settings(state: State<'_, AppState>) -> Settings {
-    state.manager.settings()
+fn get_settings(state: State<'_, AppState>) -> SettingsView {
+    state.manager.settings().into()
 }
 
 /// Update some of the manager-wide settings: an absent field is left as is,
 /// so concurrent edits of different fields can't clobber each other.
-/// `global_limit` is a rate string (blank = unlimited), validated before
-/// anything is applied. Returns the settings as the engine clamped them.
+/// `global_limit` is a rate string (blank = unlimited) and `proxy` the
+/// chosen mode (a custom URL is checked; see [`proxy_setting::resolve`]),
+/// both validated before anything is applied. Returns the settings as the engine clamped them.
 #[tauri::command]
 fn set_settings(
     state: State<'_, AppState>,
     max_concurrent: Option<usize>,
     global_limit: Option<String>,
     max_connections: Option<u8>,
-) -> Result<Settings, String> {
+    proxy: Option<proxy_setting::ProxyChoice>,
+) -> Result<SettingsView, String> {
     let global_limit = global_limit.map(|l| parse_limit(Some(l))).transpose()?;
+    let proxy = proxy
+        .map(|p| proxy_setting::resolve(p, &state.manager.settings().proxy))
+        .transpose()?;
     if let Some(n) = max_concurrent {
         state.manager.set_max_concurrent(n);
     }
@@ -117,7 +144,10 @@ fn set_settings(
     if let Some(n) = max_connections {
         state.manager.set_max_connections(n);
     }
-    Ok(state.manager.settings())
+    if let Some(proxy) = proxy {
+        state.manager.set_proxy(proxy);
+    }
+    Ok(state.manager.settings().into())
 }
 
 /// Cap one download's speed; `limit` is a rate string (blank or absent =
@@ -487,6 +517,11 @@ fn startup_lines(manager: &Manager, level: &str) -> Vec<String> {
         .global_limit
         .map(|rate| format!("{rate} B/s"))
         .unwrap_or_else(|| "none".to_owned());
+    // Only the kind of proxy: a custom one's host and login identify the user.
+    let proxy = match &settings.proxy {
+        rdm::ProxyMode::Custom(p) => p.as_str().split(':').next().unwrap_or_default(),
+        mode => mode.as_str(),
+    };
     vec![
         format!(
             "rdm {} · {} · WebView {webview} · log level {level} · memory {memory}",
@@ -494,7 +529,7 @@ fn startup_lines(manager: &Manager, level: &str) -> Vec<String> {
             rdm::platform::os_description(),
         ),
         format!(
-            "Settings: {} connections · {} at a time · speed limit {limit} · data dir {} · downloads: {}",
+            "Settings: {} connections · {} at a time · speed limit {limit} · proxy {proxy} · data dir {} · downloads: {}",
             settings.max_connections,
             settings.max_concurrent,
             if env_dir(HOME_ENV).is_some() { "overridden" } else { "default" },
@@ -915,6 +950,33 @@ mod tests {
 
     /// The startup lines name the build and the settings, and nothing that
     /// could identify what was downloaded: no URL, path or tag.
+    /// A fresh install and a settings file from before the Proxy setting
+    /// both show Use system proxy.
+    #[test]
+    fn the_proxy_setting_defaults_to_the_system_proxy() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let shown = |path: &std::path::Path| {
+            let store = rdm::JsonStore::new(path);
+            let mgr = rdm::Manager::load(Box::new(store), runtime.handle().clone()).unwrap();
+            serde_json::to_value(super::SettingsView::from(mgr.settings())).unwrap()["proxy"]
+                .clone()
+        };
+        let system = serde_json::json!({ "mode": "system" });
+
+        assert_eq!(shown(&path), system);
+        std::fs::write(
+            &path,
+            r#"{"version":2,"downloads":[],"settings":{"max_concurrent":2,"max_connections":8}}"#,
+        )
+        .unwrap();
+        assert_eq!(shown(&path), system);
+    }
+
     #[test]
     fn startup_lines_leave_out_urls_paths_and_tags() {
         let dir = std::env::temp_dir().join(format!("rdm-gui-startup-{}", std::process::id()));
@@ -927,6 +989,13 @@ mod tests {
         let store = rdm::JsonStore::new(dir.join("state.json"));
         let mgr = rdm::Manager::load(Box::new(store), runtime.handle().clone()).unwrap();
         assert!(super::startup_lines(&mgr, "info")[1].ends_with("downloads: none"));
+        assert!(super::startup_lines(&mgr, "info")[1].contains("proxy system"));
+        mgr.set_proxy(rdm::ProxyMode::None);
+        assert!(super::startup_lines(&mgr, "info")[1].contains("proxy none"));
+        let custom: rdm::Proxy = "socks5h://proxyuser:PROXYPW7@proxy.private.example:1080"
+            .parse()
+            .unwrap();
+        mgr.set_proxy(custom.into());
 
         let options = rdm::AddOptions {
             tags: vec!["secret-tag".to_owned()],
@@ -946,6 +1015,7 @@ mod tests {
             "{lines}"
         );
         assert!(lines.contains("log level info"), "{lines}");
+        assert!(lines.contains("proxy socks5h"), "{lines}");
         // Queued or already downloading: one download, counted by status.
         assert!(lines.contains("downloads: 1 "), "{lines}");
         for private in [
@@ -954,6 +1024,9 @@ mod tests {
             "SECRET",
             "secret-tag",
             "rdm-gui-startup",
+            "proxyuser",
+            "PROXYPW7",
+            "proxy.private.example",
         ] {
             assert!(!lines.contains(private), "{private} in {lines}");
         }

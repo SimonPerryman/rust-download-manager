@@ -288,6 +288,7 @@ export default function App() {
           resolved={resolved}
           onPrefs={updatePrefs}
           onSettingsApplied={applySettings}
+          onSettingsUnsaved={notify}
           selection={
             selectedRows.length >= 2
               ? { count: selectedRows.length, actions: selectionActions(selectedRows, inArchive) }

@@ -89,6 +89,38 @@ impl From<Proxy> for ProxyMode {
     }
 }
 
+impl ProxyMode {
+    /// As saved: `system`, `none`, or the custom proxy's full URL, login
+    /// included (a URL always has a `:`, so they can't be confused).
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::System => "system",
+            Self::None => "none",
+            Self::Custom(proxy) => proxy.as_str(),
+        }
+    }
+}
+
+impl FromStr for ProxyMode {
+    type Err = String;
+
+    /// Read what [`ProxyMode::as_str`] wrote; the error never repeats the input.
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "system" => Ok(Self::System),
+            "none" => Ok(Self::None),
+            url => url.parse().map(Self::Custom),
+        }
+    }
+}
+
+/// Saved as [`ProxyMode::as_str`].
+impl serde::Serialize for ProxyMode {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
 impl fmt::Display for Proxy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&redact_url(self.0.as_str()))
@@ -145,6 +177,18 @@ mod tests {
         assert_eq!(proxy.as_str(), "socks5://[::1]:9050");
         let proxy: Proxy = "http://proxy.example".parse().unwrap();
         assert_eq!(proxy.as_str(), "http://proxy.example/");
+    }
+
+    #[test]
+    fn a_mode_reads_back_what_it_saves() {
+        for mode in [
+            ProxyMode::System,
+            ProxyMode::None,
+            ProxyMode::Custom("socks5h://u:p@127.0.0.1:1080".parse().unwrap()),
+        ] {
+            assert_eq!(mode.as_str().parse::<ProxyMode>(), Ok(mode.clone()));
+        }
+        assert!("System".parse::<ProxyMode>().is_err());
     }
 
     #[test]

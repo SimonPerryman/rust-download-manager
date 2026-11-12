@@ -13,6 +13,11 @@ desktop app share one version.
   (`socks5h://` for DNS through the proxy), with an optional `user:pass@`.
   The proxy's login is redacted from all output. `--no-proxy` connects
   directly instead.
+- A Proxy setting (desktop app) under Settings → Downloads: Use system
+  proxy (the default), No proxy, or Custom proxy with a URL that's checked
+  when saved and shown with its password masked. A change applies from each
+  download's next start or resume. Copy diagnostics names only the kind of
+  proxy.
 - On Windows, finished downloads are marked as downloaded from the internet
   (Mark-of-the-Web), as a browser marks its downloads, so SmartScreen,
   Office Protected View and antivirus check them too. The mark records the

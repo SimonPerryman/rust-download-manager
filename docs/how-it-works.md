@@ -115,8 +115,10 @@ each connection of a segmented download included, goes the same way:
 - **Custom:** an HTTP, HTTPS or SOCKS5 proxy you give (`socks5h` to have
   the proxy resolve host names too), for every host.
 
-Logs and error messages show a custom proxy with its login redacted, like
-any URL's.
+The CLI picks the mode with `--proxy` and `--no-proxy`, the desktop app
+with its Proxy setting, where a change applies from each download's next
+start or resume. Logs and error messages show a custom proxy with its login
+redacted, like any URL's.
 
 ## Engine and frontends
 
