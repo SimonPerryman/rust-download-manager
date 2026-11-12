@@ -1,7 +1,8 @@
 // End-to-end: the Proxy setting. A proxy set in the Settings popover routes
 // the next download through the fixture's test proxy, and the field shows it
 // back with the password masked, as Copy diagnostics leaves its login out; an
-// invalid URL is refused in place and changes nothing. Shares the app state dir with the other specs (see
+// invalid URL is refused in place (or, left by closing the popover, in a
+// toast) and changes nothing. Shares the app state dir with the other specs (see
 // wdio.conf.ts), so it clears the proxy and removes its downloads when done.
 
 import { $, browser, expect } from "@wdio/globals";
@@ -18,6 +19,7 @@ import {
   selectFilter,
   settingsButton,
   stubClipboard,
+  TOAST,
   waitForGone,
   waitForStatus,
 } from "../helpers";
@@ -57,11 +59,12 @@ describe("rdm GUI proxy setting", () => {
   after(async () => {
     try {
       await restoreClipboard();
-      if ((await settingsButton().getAttribute("aria-expanded")) !== "true") {
-        await settingsButton().click();
+      if ((await settingsButton().getAttribute("aria-expanded")) === "true") {
+        await closeSettings();
       }
-      await retype($(PROXY_INPUT), "");
-      await closeSettings();
+      // Straight to the engine, so no later spec downloads through the proxy.
+      await invoke("set_settings", { proxy: "" });
+      expect((await invoke<{ proxy: string | null }>("get_settings")).proxy).toBeNull();
     } finally {
       await removeAll(ids);
     }
@@ -114,5 +117,15 @@ describe("rdm GUI proxy setting", () => {
 
     const saved = await invoke<{ proxy: string | null }>("get_settings");
     expect(saved.proxy).toBe(withLogin.replace("hunter2", "••••••"));
+  });
+
+  it("says so in a toast when an invalid proxy is left by closing the popover", async () => {
+    await retype(await openProxyField(), "not a proxy", { enter: false });
+    await closeSettings();
+
+    await expect($(TOAST)).toHaveText("Proxy not saved", { containing: true });
+    const saved = await invoke<{ proxy: string | null }>("get_settings");
+    expect(saved.proxy).toBe(withLogin.replace("hunter2", "••••••"));
+    await dismissOverlays();
   });
 });

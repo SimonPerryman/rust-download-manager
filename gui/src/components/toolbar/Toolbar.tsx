@@ -43,6 +43,8 @@ type Props = {
   resolved: "light" | "dark";
   onPrefs: (patch: Partial<Prefs>) => void;
   onSettingsApplied: (applied: Settings, fields: SettingsField[]) => void;
+  /** Why a setting edit was refused after the popover closed (a toast). */
+  onSettingsUnsaved: (message: string) => void;
   /** Whether Remove asks first (a Settings toggle). */
   confirmRemove: boolean;
   onConfirmRemove: (ask: boolean) => void;
@@ -149,6 +151,7 @@ export function Toolbar(p: Props) {
           prefs={p.prefs}
           onPrefs={p.onPrefs}
           onApplied={p.onSettingsApplied}
+          onUnsaved={p.onSettingsUnsaved}
           confirmRemove={p.confirmRemove}
           onConfirmRemove={p.onConfirmRemove}
           updates={p.updates}

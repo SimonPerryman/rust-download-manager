@@ -21,6 +21,8 @@ type Props = {
   onPrefs: (patch: Partial<Prefs>) => void;
   /** A `set_settings` result from the Downloads section, for the status bar to follow. */
   onApplied: (applied: Settings, fields: SettingsField[]) => void;
+  /** Why a Downloads edit was refused once the popover had closed. */
+  onUnsaved: (message: string) => void;
   /** Whether Remove (from the archive) asks first. */
   confirmRemove: boolean;
   onConfirmRemove: (ask: boolean) => void;
@@ -34,6 +36,7 @@ export function SettingsMenu({
   prefs,
   onPrefs,
   onApplied,
+  onUnsaved,
   confirmRemove,
   onConfirmRemove,
   updates,
@@ -85,7 +88,7 @@ export function SettingsMenu({
           />
           <div className="-mx-4 h-px bg-line" />
           <SectionHeading>Downloads</SectionHeading>
-          <DownloadSettings onApplied={onApplied} />
+          <DownloadSettings onApplied={onApplied} onUnsaved={onUnsaved} />
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"

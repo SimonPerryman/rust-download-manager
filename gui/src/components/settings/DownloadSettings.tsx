@@ -21,10 +21,14 @@ const INPUT_CLASS =
 // read from the engine each time it mounts (the popover opens) and written
 // back on blur/Enter; the engine clamps and the field shows what it applied.
 // `onApplied` passes each result on, so the status bar's limit follows.
+// A proxy edit refused after the popover has closed goes to `onUnsaved` (a
+// toast) instead: unnoticed, downloads would go somewhere the user didn't pick.
 export function DownloadSettings({
   onApplied,
+  onUnsaved,
 }: {
   onApplied: (applied: Settings, fields: Field[]) => void;
+  onUnsaved: (message: string) => void;
 }) {
   const [saved, setSaved] = useState<Settings | null>(null);
   const [drafts, setDrafts] = useState<Drafts>({
@@ -34,6 +38,7 @@ export function DownloadSettings({
     proxy: "",
   });
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
+  const mounted = useRef(true);
 
   useEffect(() => {
     api
@@ -65,24 +70,27 @@ export function DownloadSettings({
       setErrors((e) => ({ ...e, [field]: undefined }));
       onApplied(applied, [field]);
     } catch (e) {
-      setErrors((prev) => ({ ...prev, [field]: String(e) }));
+      if (mounted.current) setErrors((prev) => ({ ...prev, [field]: String(e) }));
+      else if (field === "proxy") onUnsaved(proxyUnsaved(e));
     }
   };
 
   // Closing the popover unmounts this before a pending edit's blur can land,
   // so flush every pending edit on the way out (best effort), one call per
   // field so an invalid one can't take the others down with it.
-  const latest = useRef({ drafts, saved, onApplied });
-  latest.current = { drafts, saved, onApplied };
+  const latest = useRef({ drafts, saved, onApplied, onUnsaved });
+  latest.current = { drafts, saved, onApplied, onUnsaved };
   useEffect(
     () => () => {
-      const { drafts, saved, onApplied } = latest.current;
+      mounted.current = false;
+      const { drafts, saved, onApplied, onUnsaved } = latest.current;
       if (!saved) return;
       for (const patch of dirtyPatches(drafts, saved)) {
+        const field = fieldOf(patch);
         api
           .setSettings(patch)
-          .then((applied) => onApplied(applied, [fieldOf(patch)]))
-          .catch(() => {});
+          .then((applied) => onApplied(applied, [field]))
+          .catch((e) => field === "proxy" && onUnsaved(proxyUnsaved(e)));
       }
     },
     [],
@@ -157,6 +165,8 @@ export function DownloadSettings({
     </div>
   );
 }
+
+const proxyUnsaved = (e: unknown) => `Proxy not saved. ${String(e)}`;
 
 function SettingRow({
   label,
