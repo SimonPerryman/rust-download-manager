@@ -8,6 +8,9 @@
 .claude/settings.local.json
 .claude/worktrees/
 
+# Factory worker worktrees
+.factory/worktrees/
+
 # Environment / editor
 .env
 .idea/
