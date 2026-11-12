@@ -280,8 +280,9 @@ async fn settled_ramp_reprobes_each_interval_and_retires_a_useless_trial() {
     let control = Control::new();
     let stopper = control.clone();
     let mut seen: Vec<Progress> = Vec::new();
-    // Stop once a second trial has been retired, well before the download
-    // ends (when lanes leave as the work runs out).
+    // Stop once two re-probes (after the initial ramp's own trial of a fifth)
+    // have been retired, well before the download ends (when lanes leave as
+    // the work runs out).
     let result = download(&req, &control, |p| {
         seen.push(p);
         let tail = &seen[seen.len().saturating_sub(2)..];
@@ -293,7 +294,7 @@ async fn settled_ramp_reprobes_each_interval_and_retires_a_useless_trial() {
                 "the trial retired: {:?}",
                 runs(&seen)
             );
-            if rises_to(&seen, 5) >= 2 {
+            if rises_to(&seen, 5) >= 3 {
                 stopper.cancel();
             }
         }
@@ -306,7 +307,8 @@ async fn settled_ramp_reprobes_each_interval_and_retires_a_useless_trial() {
 }
 
 /// After a host refuses a third connection (503), re-probes, however often,
-/// never go past the two it accepts.
+/// never go past the two it accepts. (The pool's own cap holds a 503 here;
+/// the ramp's cap, which also covers a 429, is unit-tested in `ramp.rs`.)
 #[tokio::test(flavor = "multi_thread")]
 async fn reprobes_never_exceed_a_host_cap() {
     // ~1 MiB/s per connection: 16 MiB on two outlasts many re-probe intervals.

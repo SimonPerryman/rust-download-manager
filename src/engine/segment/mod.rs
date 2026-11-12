@@ -379,7 +379,10 @@ pub(crate) async fn run(
                     bytes_per_sec: downloaded.saturating_sub(downloaded_then) as f64 / secs,
                     waited_fraction: waited.saturating_sub(waited_then) as f64 / 1e9 / (secs * live),
                     pool_changed: shared.pool.take_changed(),
-                    short: shared.pool.live() < shared.pool.target(),
+                    // Lanes short with nothing left to hand out: the work is
+                    // running out, so the window doesn't measure the target.
+                    short: shared.pool.live() < shared.pool.target()
+                        && !lock(&shared.table).has_unowned_work(),
                 };
                 // A window under the old limit says nothing about the new
                 // one, so a raise trials a connection straight away.
