@@ -18,6 +18,11 @@ desktop app share one version.
   when saved and shown with its password masked. A change applies from each
   download's next start or resume. Copy diagnostics names only the kind of
   proxy.
+- On Windows, finished downloads are marked as downloaded from the internet
+  (Mark-of-the-Web), as a browser marks its downloads, so SmartScreen,
+  Office Protected View and antivirus check them too. The mark records the
+  URL without any login or query string. Drives that can't hold the mark
+  (FAT32, exFAT, some network shares) still finish the download, unmarked.
 
 ### Changed
 
