@@ -12,6 +12,11 @@
 //! segment back; if it is stuck for [`SHED_GRACE`], the next lane to reach a
 //! boundary leaves instead.
 //!
+//! Once the host has rate-limited this download, an attempt runs on one lane
+//! that fetches everything left in a single request (see
+//! [`Job::one_request`]), since every new request may cost another
+//! `Retry-After`.
+//!
 //! Workers are futures polled by the coordinator inside the caller's task (no
 //! spawned tasks), so the whole [`download`](crate::download) future stays
 //! `Send` and every worker is drained before the coordinator returns.
@@ -119,6 +124,9 @@ pub(crate) struct Job<'a> {
     pub ramp: Ramping,
     pub shed_grace: Duration,
     pub first: Option<reqwest::Response>,
+    /// Fetch everything left in one request, on one lane, reading past (not
+    /// rewriting) bytes already on disk: the host has rate-limited this download.
+    pub one_request: bool,
     pub tally: &'a Tally,
 }
 
@@ -132,6 +140,7 @@ struct Shared<'a> {
     total: u64,
     min: u64,
     read_timeout: Duration,
+    one_request: bool,
     part: &'a Path,
     table: Mutex<Table>,
     progressed: Notify,
@@ -186,9 +195,13 @@ pub(crate) async fn run(
         .unwrap_or(MAX_CONNECTIONS)
         .clamp(1, MAX_CONNECTIONS);
     let (mut ramp, window) = match job.ramp {
+        _ if job.one_request => (Ramp::fixed(1), None),
         Ramping::Window(w) => (Ramp::new(ceiling), Some(w.max(Duration::from_millis(1)))),
         Ramping::Off => (Ramp::fixed(ceiling), None),
     };
+    if job.one_request {
+        tracing::info!("Server limits requests — fetching what's left in one request");
+    }
     let (stop, _) = watch::channel(false);
     let shared = Shared {
         client: job.client,
@@ -199,6 +212,7 @@ pub(crate) async fn run(
         total,
         min: job.min_segment_size,
         read_timeout: job.read_timeout,
+        one_request: job.one_request,
         part: job.part,
         table: Mutex::new(Table {
             segments,

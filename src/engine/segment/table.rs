@@ -140,6 +140,31 @@ impl Table {
         self.segments.iter().map(|s| s.done).sum()
     }
 
+    /// The lowest offset not yet on disk, if any.
+    pub(super) fn first_missing(&self) -> Option<u64> {
+        self.segments
+            .iter()
+            .filter(|s| !s.is_complete())
+            .map(|s| s.start + s.done)
+            .min()
+    }
+
+    /// One past the highest offset not yet on disk, if any.
+    pub(super) fn last_missing_end(&self) -> Option<u64> {
+        self.segments
+            .iter()
+            .filter(|s| !s.is_complete())
+            .map(|s| s.end)
+            .max()
+    }
+
+    /// The segment whose range holds byte `at` (segments tile the file).
+    pub(super) fn segment_at(&self, at: u64) -> Option<usize> {
+        self.segments
+            .iter()
+            .position(|s| (s.start..s.end).contains(&at))
+    }
+
     /// Whether some unfinished segment has no worker (e.g. one handed back).
     pub(super) fn has_unowned_work(&self) -> bool {
         self.segments
@@ -233,6 +258,29 @@ mod tests {
         assert_eq!(table.owner, vec![None, Some(0), Some(1)]);
         table.release(1);
         assert_eq!(table.lanes(), vec![None, Some(1), None]);
+    }
+
+    #[test]
+    fn first_missing_and_segment_at_follow_the_tiling() {
+        let table = Table {
+            segments: vec![seg(0, 100, 100), seg(200, 300, 0), seg(100, 200, 40)],
+            owner: vec![None, None, None],
+            rate_limited: false,
+        };
+        assert_eq!(table.first_missing(), Some(140));
+        assert_eq!(table.last_missing_end(), Some(300));
+        assert_eq!(table.segment_at(0), Some(0));
+        assert_eq!(table.segment_at(199), Some(2));
+        assert_eq!(table.segment_at(200), Some(1));
+        assert_eq!(table.segment_at(300), None);
+
+        let done = Table {
+            segments: vec![seg(0, 100, 100)],
+            owner: vec![None],
+            rate_limited: false,
+        };
+        assert_eq!(done.first_missing(), None);
+        assert_eq!(done.last_missing_end(), None);
     }
 
     #[test]
