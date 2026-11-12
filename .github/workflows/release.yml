@@ -9,7 +9,9 @@
 # * the Homebrew formula is committed at the tap's root, not under Formula/;
 # * the custom jobs get no repository secrets;
 # * sign-gui-updates signs the GUI's updater bundles and writes latest.json,
-#   the only job that sees the update signing key.
+#   the only job that sees the update signing key;
+# * every Linux job starts with Harden-Runner in audit mode (logs egress,
+#   blocks nothing).
 # guard-release-workflow.mjs (pnpm lint) enforces the trigger and permissions.
 #
 # CI that:
