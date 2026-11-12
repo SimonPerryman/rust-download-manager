@@ -93,15 +93,20 @@ new one is saved as `name (1).ext`.
 
 ## Proxies
 
-A download can go through an HTTP, HTTPS or SOCKS5 proxy (`socks5h` to have
-the proxy resolve host names too), set with the CLI's `--proxy` or the
-desktop app's Proxy setting, and then every request it makes does, each
-connection of a segmented download included. In the desktop app a changed
-proxy applies from each download's next start or resume. Only a proxy you
-set is used for downloads: the `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY`
-environment variables and the operating system's proxy settings are
-ignored, so a proxy never applies unasked. Logs and error messages show the
-proxy with its login redacted, like any URL's.
+A download uses one of three proxy modes, and every request it makes,
+each connection of a segmented download included, goes the same way:
+
+- **System** (the default): the `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY`
+  environment variable, with `NO_PROXY`'s hosts going direct; when none is
+  set, on Windows and macOS the operating system's proxy settings and their
+  bypass list. Proxy auto-config (PAC scripts, WPAD) isn't supported. The
+  system proxy is read as each download starts or resumes.
+- **None:** always connect directly.
+- **Custom:** an HTTP, HTTPS or SOCKS5 proxy you give (`socks5h` to have
+  the proxy resolve host names too), for every host.
+
+Logs and error messages show a custom proxy with its login redacted, like
+any URL's.
 
 ## Engine and frontends
 

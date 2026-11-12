@@ -76,6 +76,26 @@ impl serde::Serialize for Proxy {
     }
 }
 
+/// Which proxy a download's requests go through.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum ProxyMode {
+    /// The system's proxy: `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` (with
+    /// `NO_PROXY` respected), else on Windows and macOS the OS proxy settings
+    /// (PAC/WPAD auto-config scripts aren't run).
+    #[default]
+    System,
+    /// Always connect directly.
+    None,
+    /// Through this proxy, for every host.
+    Custom(Proxy),
+}
+
+impl From<Proxy> for ProxyMode {
+    fn from(proxy: Proxy) -> Self {
+        Self::Custom(proxy)
+    }
+}
+
 impl fmt::Display for Proxy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&redact_url(self.0.as_str()))

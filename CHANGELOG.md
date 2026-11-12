@@ -11,18 +11,20 @@ desktop app share one version.
 
 - `--proxy <url>` (CLI) downloads through an HTTP, HTTPS or SOCKS5 proxy
   (`socks5h://` for DNS through the proxy), with an optional `user:pass@`.
-  The proxy's login is redacted from all output.
-- A Proxy setting (desktop app) under Settings → Downloads: checked when
-  saved, applied from each download's next start, and shown with its
-  password masked. Copy diagnostics names only the kind of proxy.
+  The proxy's login is redacted from all output. `--no-proxy` connects
+  directly instead.
+- A Proxy setting (desktop app) under Settings → Downloads: Use system
+  proxy (the default), No proxy, or Custom proxy with a URL that's checked
+  when saved and shown with its password masked. A change applies from each
+  download's next start or resume. Copy diagnostics names only the kind of
+  proxy.
 
 ### Changed
 
-- The `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` environment variables no
-  longer apply to downloads; only an explicit proxy does. In the desktop
-  app, the system's proxy settings (such as Windows' Internet Options) no
-  longer apply to downloads either: set the proxy under Settings →
-  Downloads instead.
+- The CLI now also follows the operating system's proxy settings on Windows
+  and macOS when no `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` environment
+  variable is set, as the desktop app already did. Using the system's proxy
+  stays the default; proxy auto-config (PAC, WPAD) isn't supported.
 
 ## 0.3.0 - 2026-11-11
 

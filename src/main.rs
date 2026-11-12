@@ -17,7 +17,7 @@ use tracing_subscriber::EnvFilter;
 
 use rdm::{
     download, engine::state, parse_rate, redact_url, Checksum, Control, DownloadRequest, Error,
-    Proxy, RateLimiter, Summary,
+    Proxy, ProxyMode, RateLimiter, Summary,
 };
 
 /// Printed when Ctrl-C paused the download.
@@ -67,13 +67,18 @@ struct Cli {
     #[arg(long = "limit-rate", value_name = "RATE", value_parser = parse_rate)]
     limit_rate: Option<u64>,
 
-    /// Download through a proxy: `http://`, `https://`, `socks5://` or
-    /// `socks5h://` (DNS through the proxy), with an optional `user:pass@`,
-    /// e.g. `socks5h://127.0.0.1:1080`.
+    /// Download through this proxy instead of the system's: `http://`,
+    /// `https://`, `socks5://` or `socks5h://` (DNS through the proxy), with
+    /// an optional `user:pass@`, e.g. `socks5h://127.0.0.1:1080`.
     // Parsed in `main`, not by clap, whose error would repeat the value and
     // with it any password.
     #[arg(long = "proxy", value_name = "URL")]
     proxy: Option<String>,
+
+    /// Connect directly, ignoring the system's proxy (the OS settings and
+    /// the `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` environment variables).
+    #[arg(long = "no-proxy", conflicts_with = "proxy")]
+    no_proxy: bool,
 
     /// Also log informational engine events (download start, fallbacks) to
     /// stderr; `RUST_LOG` overrides the level.
@@ -114,6 +119,8 @@ async fn main() -> anyhow::Result<ExitCode> {
     }
     if let Some(proxy) = cli.proxy.as_deref().map(parse_proxy) {
         req = req.with_proxy(proxy);
+    } else if cli.no_proxy {
+        req = req.with_proxy(ProxyMode::None);
     }
 
     // When the target is known up front (explicit -o), note whether a prior
