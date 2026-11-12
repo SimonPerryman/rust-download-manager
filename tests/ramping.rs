@@ -374,7 +374,7 @@ impl Watch {
 }
 
 /// Settled at 4 (the ceiling), a download whose host slows to a quarter for
-/// most of one window keeps all four; slowed for good, it sheds one (after
+/// half a window keeps all four; slowed for good, it sheds one (after
 /// three slow windows) and, its best reset, no more.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_sustained_slowdown_sheds_a_connection_and_a_brief_one_does_not() {
@@ -391,9 +391,9 @@ async fn a_sustained_slowdown_sheds_a_connection_and_a_brief_one_does_not() {
         let settled = watch.reports();
         // Past the window that settles it at 4, even on a late timer.
         tokio::time::sleep(WINDOW * 4).await;
-        // At most two windows see this one.
+        // At most two windows see this one, even if it overruns.
         server.set_ramp_link(SEG_RAMP_RATE);
-        tokio::time::sleep(WINDOW * 4 / 5).await;
+        tokio::time::sleep(WINDOW / 2).await;
         server.set_ramp_link(SEG_RAMP_CAP);
         tokio::time::sleep(WINDOW * 6).await;
         let slowed = watch.reports();

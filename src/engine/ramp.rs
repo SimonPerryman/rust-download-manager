@@ -169,12 +169,14 @@ impl Ramp {
             };
             if w.bytes_per_sec < self.best * SLOW_FRACTION {
                 self.slow = self.slow.saturating_add(1);
-                if self.slow < SHED_AFTER || self.target <= 1 {
+                // A host cap can hold the pool below the target.
+                let lanes = self.target.min(self.most());
+                if self.slow < SHED_AFTER || lanes <= 1 {
                     return Decision::Hold;
                 }
                 // Today's speed becomes the best, so a later re-probe judges
                 // the connection against it and can win it back.
-                self.target -= 1;
+                self.target = lanes - 1;
                 self.best = w.bytes_per_sec;
                 self.settle();
                 return Decision::Shed;
@@ -720,6 +722,11 @@ mod tests {
             assert_eq!(r.observe(judged(200.0)), Decision::Hold);
         }
         assert_eq!(r.target(), 4, "the coordinator holds the pool at the cap");
+        // A real slowdown sheds from the two lanes the cap allows.
+        assert_eq!(r.observe(judged(100.0)), Decision::Hold);
+        assert_eq!(r.observe(judged(100.0)), Decision::Hold);
+        assert_eq!(r.observe(judged(100.0)), Decision::Shed);
+        assert_eq!(r.target(), 1);
     }
 
     #[test]
