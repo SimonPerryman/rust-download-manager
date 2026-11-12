@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::engine::{segment, Error, Proxy, Result, DEFAULT_CONNECTIONS};
+use crate::engine::{segment, Error, ProxyMode, Result, DEFAULT_CONNECTIONS};
 
 /// Current store schema version. Bump when the on-disk shape changes in a
 /// way an older build mustn't silently drop; a document newer than this fails
@@ -169,26 +169,34 @@ pub struct Settings {
     pub global_limit: Option<u64>,
     /// Max parallel connections per download, applied when a download (re)starts.
     pub max_connections: u8,
-    /// Proxy for downloads, applied when a download (re)starts; `None`
-    /// connects directly. Saved in full, login included, like the URLs.
+    /// Which proxy downloads use, applied when a download (re)starts; absent
+    /// (as in files from before proxy support) is the system's. A custom one
+    /// is saved in full, login included, like the URLs.
     #[serde(
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "proxy_or_none"
+        skip_serializing_if = "is_system",
+        deserialize_with = "proxy_mode_or_system"
     )]
-    pub proxy: Option<Proxy>,
+    pub proxy: ProxyMode,
 }
 
-/// A stored proxy that no longer parses (a hand-edited `state.json`) is
-/// dropped with a warning rather than failing to load the whole list.
-fn proxy_or_none<'de, D: serde::Deserializer<'de>>(
+fn is_system(mode: &ProxyMode) -> bool {
+    *mode == ProxyMode::System
+}
+
+/// A stored proxy that no longer parses (a hand-edited `state.json`) falls
+/// back to the system's with a warning rather than failing to load the whole
+/// list.
+fn proxy_mode_or_system<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
-) -> std::result::Result<Option<Proxy>, D::Error> {
+) -> std::result::Result<ProxyMode, D::Error> {
     let stored = Option::<String>::deserialize(deserializer)?;
-    Ok(stored.and_then(|s| {
-        s.parse()
-            .inspect_err(|e| tracing::warn!("Ignoring the saved proxy: {e}"))
-            .ok()
-    }))
+    Ok(stored
+        .and_then(|s| {
+            s.parse()
+                .inspect_err(|e| tracing::warn!("Using the system proxy, not the saved one: {e}"))
+                .ok()
+        })
+        .unwrap_or_default())
 }
 
 impl Default for Settings {
@@ -197,7 +205,7 @@ impl Default for Settings {
             max_concurrent: 3,
             global_limit: None,
             max_connections: DEFAULT_CONNECTIONS,
-            proxy: None,
+            proxy: ProxyMode::System,
         }
     }
 }
@@ -385,7 +393,7 @@ mod tests {
                 max_concurrent: 5,
                 global_limit: Some(512 * 1024),
                 max_connections: 8,
-                proxy: None,
+                proxy: ProxyMode::None,
             },
         };
         store.save(&data).unwrap();
@@ -460,22 +468,29 @@ mod tests {
         assert_eq!(loaded.downloads[0].limit, None);
     }
 
-    /// A saved proxy round-trips in full; one that no longer parses (a
-    /// hand-edited file) is dropped and the rest of the settings still load.
+    /// Each proxy mode round-trips, a custom proxy in full; one that no
+    /// longer parses (a hand-edited file) falls back to the system's and the
+    /// rest of the settings still load.
     #[test]
-    fn proxy_setting_round_trips_and_a_bad_one_is_dropped() {
+    fn proxy_setting_round_trips_and_a_bad_one_is_the_system_proxy() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
         let store = JsonStore::new(&path);
-        let data = StoreData {
-            settings: Settings {
-                proxy: Some("socks5h://u:p@127.0.0.1:1080".parse().unwrap()),
-                ..Settings::default()
-            },
-            ..StoreData::default()
-        };
-        store.save(&data).unwrap();
-        assert_eq!(store.load().unwrap(), data);
+        for proxy in [
+            ProxyMode::System,
+            ProxyMode::None,
+            ProxyMode::Custom("socks5h://u:p@127.0.0.1:1080".parse().unwrap()),
+        ] {
+            let data = StoreData {
+                settings: Settings {
+                    proxy,
+                    ..Settings::default()
+                },
+                ..StoreData::default()
+            };
+            store.save(&data).unwrap();
+            assert_eq!(store.load().unwrap(), data);
+        }
 
         std::fs::write(
             &path,
@@ -483,8 +498,25 @@ mod tests {
         )
         .unwrap();
         let loaded = store.load().unwrap();
-        assert_eq!(loaded.settings.proxy, None);
+        assert_eq!(loaded.settings.proxy, ProxyMode::System);
         assert_eq!(loaded.settings.max_connections, 8);
+    }
+
+    /// A settings file from before proxy support, and a fresh install, use
+    /// the system proxy.
+    #[test]
+    fn no_saved_proxy_is_the_system_proxy() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        std::fs::write(
+            &path,
+            r#"{"version":2,"settings":{"max_concurrent":3,"global_limit":null,"max_connections":4}}"#,
+        )
+        .unwrap();
+        let store = JsonStore::new(&path);
+        assert_eq!(store.load().unwrap().settings.proxy, ProxyMode::System);
+        assert_eq!(Settings::default().proxy, ProxyMode::System);
+        assert_eq!(StoreData::default().settings.proxy, ProxyMode::System);
     }
 
     /// A `state.json` as v0.1.0 wrote it (schema v1) loads with nothing
@@ -547,7 +579,7 @@ mod tests {
             max_concurrent: 0,
             global_limit: Some(0),
             max_connections: 200,
-            proxy: None,
+            proxy: ProxyMode::None,
         };
         let clamped = wild.clamped();
         assert_eq!(clamped.max_concurrent, 1);

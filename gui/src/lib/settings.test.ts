@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  appliedDrafts,
   dirtyPatches,
   draftsFrom,
   fieldOf,
@@ -33,7 +34,7 @@ const saved: Settings = {
   max_concurrent: 3,
   global_limit: null,
   max_connections: 4,
-  proxy: null,
+  proxy: { mode: "system" },
 };
 
 const MIB = 1024 * 1024;
@@ -52,12 +53,26 @@ describe("fieldPatch", () => {
     });
   });
 
-  it("sends the proxy trimmed, leaving its validation to the engine", () => {
-    expect(fieldPatch("proxy", { ...drafts, proxy: " socks5h://host:1080 " })).toEqual({
-      patch: { proxy: "socks5h://host:1080" },
+  it("sends a custom proxy trimmed, leaving its validation to the engine", () => {
+    const custom = { ...drafts, proxyMode: "custom" as const };
+    expect(fieldPatch("proxy", { ...custom, proxy: " socks5h://host:1080 " })).toEqual({
+      patch: { proxy: { mode: "custom", url: "socks5h://host:1080" } },
     });
-    expect(fieldPatch("proxy", { ...drafts, proxy: "not a url" })).toEqual({
-      patch: { proxy: "not a url" },
+    expect(fieldPatch("proxy", { ...custom, proxy: "not a url" })).toEqual({
+      patch: { proxy: { mode: "custom", url: "not a url" } },
+    });
+    expect(fieldPatch("proxy", { ...custom, proxy: "  " })).toEqual({
+      error: "Enter the proxy's URL, or pick another option.",
+    });
+  });
+
+  it("sends the system proxy or none without a URL", () => {
+    const typed = { ...drafts, proxy: "http://host:3128" };
+    expect(fieldPatch("proxy", { ...typed, proxyMode: "none" })).toEqual({
+      patch: { proxy: { mode: "none" } },
+    });
+    expect(fieldPatch("proxy", { ...typed, proxyMode: "system" })).toEqual({
+      patch: { proxy: { mode: "system" } },
     });
   });
 
@@ -89,20 +104,44 @@ describe("isDirty", () => {
   });
 });
 
-describe("isDirty for the proxy", () => {
-  const withProxy = { ...saved, proxy: "socks5h://alice:••••••@host:1080" };
+describe("the proxy drafts", () => {
+  const url = "socks5h://alice:••••••@host:1080";
+  const withProxy: Settings = { ...saved, proxy: { mode: "custom", url } };
 
-  it("shows the saved, masked proxy and treats it as unchanged", () => {
-    expect(draftsFrom(withProxy).proxy).toBe(withProxy.proxy);
-    expect(isDirty("proxy", draftsFrom(withProxy), withProxy)).toBe(false);
-    expect(
-      isDirty("proxy", { ...draftsFrom(withProxy), proxy: ` ${withProxy.proxy} ` }, withProxy),
-    ).toBe(false);
+  it("shows Use system proxy by default, with no URL", () => {
+    expect(drafts.proxyMode).toBe("system");
+    expect(drafts.proxy).toBe("");
   });
 
-  it("sees an edit, and clearing it", () => {
-    expect(isDirty("proxy", { ...drafts, proxy: "http://host:3128" }, saved)).toBe(true);
+  it("shows the saved, masked proxy and treats it as unchanged", () => {
+    expect(draftsFrom(withProxy)).toMatchObject({ proxyMode: "custom", proxy: url });
+    expect(isDirty("proxy", draftsFrom(withProxy), withProxy)).toBe(false);
+    expect(isDirty("proxy", { ...draftsFrom(withProxy), proxy: ` ${url} ` }, withProxy)).toBe(
+      false,
+    );
+  });
+
+  it("sees a changed mode or custom URL, but not a URL typed for another mode", () => {
+    expect(isDirty("proxy", { ...drafts, proxyMode: "none" }, saved)).toBe(true);
     expect(isDirty("proxy", { ...draftsFrom(withProxy), proxy: "" }, withProxy)).toBe(true);
+    expect(isDirty("proxy", { ...draftsFrom(withProxy), proxyMode: "system" }, withProxy)).toBe(
+      true,
+    );
+    expect(isDirty("proxy", { ...drafts, proxy: "http://host:3128" }, saved)).toBe(false);
+  });
+
+  it("keeps the URL draft when the engine applies another mode", () => {
+    const typed = { ...draftsFrom(withProxy), proxyMode: "none" as const };
+    const applied: Settings = { ...saved, proxy: { mode: "none" } };
+    expect(appliedDrafts("proxy", typed, applied)).toMatchObject({ proxyMode: "none", proxy: url });
+    expect(appliedDrafts("proxy", drafts, withProxy)).toMatchObject({
+      proxyMode: "custom",
+      proxy: url,
+    });
+    expect(appliedDrafts("connections", drafts, { ...saved, max_connections: 8 })).toEqual({
+      ...drafts,
+      connections: "8",
+    });
   });
 });
 
@@ -111,7 +150,7 @@ describe("fieldOf", () => {
     expect(fieldOf({ maxConcurrent: 2 })).toBe("concurrent");
     expect(fieldOf({ globalLimit: "" })).toBe("limit");
     expect(fieldOf({ maxConnections: 4 })).toBe("connections");
-    expect(fieldOf({ proxy: "" })).toBe("proxy");
+    expect(fieldOf({ proxy: { mode: "none" } })).toBe("proxy");
   });
 });
 
@@ -125,13 +164,14 @@ describe("dirtyPatches", () => {
       concurrent: "1",
       limit: { amount: "2", unit: "M" as const },
       connections: "8",
+      proxyMode: "custom" as const,
       proxy: "http://host:3128",
     };
     expect(dirtyPatches(edited, saved)).toEqual([
       { maxConcurrent: 1 },
       { globalLimit: "2M" },
       { maxConnections: 8 },
-      { proxy: "http://host:3128" },
+      { proxy: { mode: "custom", url: "http://host:3128" } },
     ]);
   });
 
@@ -147,6 +187,7 @@ describe("dirtyPatches", () => {
       concurrent: "abc",
       limit: { amount: "0", unit: "K" as const },
       connections: "8",
+      proxyMode: "custom" as const,
       proxy: "",
     };
     expect(dirtyPatches(edited, saved)).toEqual([{ maxConnections: 8 }]);
@@ -169,7 +210,7 @@ describe("mergeApplied", () => {
       max_concurrent: 1,
       global_limit: 2048,
       max_connections: 4,
-      proxy: null,
+      proxy: { mode: "system" },
     });
   });
 

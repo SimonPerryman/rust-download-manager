@@ -43,8 +43,8 @@ export const getSettings = () => invoke<Settings>("get_settings");
 
 /**
  * Apply some manager-wide settings; omitted fields are left unchanged
- * (`globalLimit` is a rate string, blank = unlimited; `proxy` a URL, blank =
- * none). Resolves with the settings as the engine clamped them.
+ * (`globalLimit` is a rate string, blank = unlimited; a custom `proxy` URL
+ * is checked by the engine). Resolves with the settings as the engine clamped them.
  */
 export const setSettings = (patch: SettingsPatch) =>
   invoke<Settings>("set_settings", {

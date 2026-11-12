@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
 import { NO_LIMIT } from "../../lib/rate";
 import {
+  appliedDrafts,
   dirtyPatches,
   draftsFrom,
   fieldOf,
@@ -11,8 +12,14 @@ import {
   type SettingsDrafts as Drafts,
   type SettingsField as Field,
 } from "../../lib/settings";
-import type { Settings } from "../../lib/types";
+import type { ProxyModeName, Settings } from "../../lib/types";
 import { RateInput } from "../RateInput";
+
+const PROXY_MODES: { value: ProxyModeName; label: string }[] = [
+  { value: "system", label: "Use system proxy" },
+  { value: "none", label: "No proxy" },
+  { value: "custom", label: "Custom proxy" },
+];
 
 const INPUT_CLASS =
   "flex h-7 rounded-md border border-line-strong bg-raised px-2 text-sm transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden disabled:opacity-60 aria-[invalid]:border-danger";
@@ -35,6 +42,7 @@ export function DownloadSettings({
     concurrent: "",
     limit: NO_LIMIT,
     connections: "",
+    proxyMode: "system",
     proxy: "",
   });
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
@@ -51,8 +59,9 @@ export function DownloadSettings({
   }, []);
 
   // Sends only `field`, so overlapping commits of different fields can't
-  // clobber each other with stale values.
-  const commit = async (field: Field) => {
+  // clobber each other with stale values. `drafts` is passed in when the
+  // change is to commit in the same event that makes it (the proxy's mode).
+  const commit = async (field: Field, drafts: Drafts = latest.current.drafts) => {
     if (!saved) return;
     if (!isDirty(field, drafts, saved)) {
       setErrors((e) => ({ ...e, [field]: undefined }));
@@ -66,7 +75,7 @@ export function DownloadSettings({
     try {
       const applied = await api.setSettings(r.patch);
       setSaved((prev) => mergeApplied(prev, applied, [field]));
-      setDrafts((d) => ({ ...d, [field]: draftsFrom(applied)[field] }));
+      setDrafts((d) => appliedDrafts(field, d, applied));
       setErrors((e) => ({ ...e, [field]: undefined }));
       onApplied(applied, [field]);
     } catch (e) {
@@ -96,6 +105,14 @@ export function DownloadSettings({
       }
     };
   }, []);
+
+  // Use system proxy and No proxy apply at once; Custom waits for its URL.
+  const chooseProxyMode = (proxyMode: ProxyModeName) => {
+    const next = { ...drafts, proxyMode };
+    setDrafts(next);
+    setErrors((e) => ({ ...e, proxy: undefined }));
+    if (proxyMode !== "custom") void commit("proxy", next);
+  };
 
   const input = (field: "concurrent" | "connections", label: string) => (
     <input
@@ -144,13 +161,32 @@ export function DownloadSettings({
       </SettingRow>
       <SettingRow
         label="Proxy"
-        hint="HTTP or SOCKS5. Empty = none. Applies when a download next starts"
+        hint={
+          drafts.proxyMode === "custom"
+            ? "HTTP or SOCKS5. Applies when a download next starts"
+            : "Applies when a download next starts"
+        }
         error={errors.proxy}
         wide
       >
+        <select
+          aria-label="Proxy"
+          disabled={!saved}
+          value={drafts.proxyMode}
+          onChange={(e) => chooseProxyMode(e.target.value as ProxyModeName)}
+          className={`${INPUT_CLASS} w-40`}
+        >
+          {PROXY_MODES.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </SettingRow>
+      {drafts.proxyMode === "custom" && (
         <input
           type="text"
-          aria-label="Proxy"
+          aria-label="Proxy URL"
           aria-invalid={errors.proxy ? true : undefined}
           disabled={!saved}
           value={drafts.proxy}
@@ -160,9 +196,9 @@ export function DownloadSettings({
           onChange={(e) => setDrafts((d) => ({ ...d, proxy: e.target.value }))}
           onBlur={() => commit("proxy")}
           onKeyDown={(e) => e.key === "Enter" && commit("proxy")}
-          className={`${INPUT_CLASS} w-52`}
+          className={`${INPUT_CLASS} w-full`}
         />
-      </SettingRow>
+      )}
     </div>
   );
 }

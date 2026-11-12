@@ -3,7 +3,7 @@
 use super::Manager;
 use crate::engine::lock::lock;
 use crate::engine::store::Settings;
-use crate::engine::Proxy;
+use crate::engine::ProxyMode;
 
 impl Manager {
     /// The current manager-wide settings.
@@ -29,9 +29,9 @@ impl Manager {
         self.update_settings(|s| s.max_connections = n);
     }
 
-    /// Send downloads through `proxy` (`None` connects directly). Applies from
-    /// each download's next start or resume, not to ones already running.
-    pub fn set_proxy(&self, proxy: Option<Proxy>) {
+    /// Choose the proxy downloads use. Applies from each download's next
+    /// start or resume, not to ones already running.
+    pub fn set_proxy(&self, proxy: ProxyMode) {
         self.update_settings(|s| s.proxy = proxy);
     }
 

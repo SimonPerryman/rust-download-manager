@@ -91,14 +91,14 @@ fn parse_limit(limit: Option<String>) -> Result<Option<u64>, String> {
     }
 }
 
-/// The engine's manager-wide settings as the window sees them: the proxy's
-/// password masked ([`proxy_setting::masked`]).
+/// The engine's manager-wide settings as the window sees them: a custom
+/// proxy's password masked ([`proxy_setting::shown`]).
 #[derive(serde::Serialize)]
 struct SettingsView {
     max_concurrent: usize,
     global_limit: Option<u64>,
     max_connections: u8,
-    proxy: Option<String>,
+    proxy: proxy_setting::ProxyChoice,
 }
 
 impl From<Settings> for SettingsView {
@@ -107,7 +107,7 @@ impl From<Settings> for SettingsView {
             max_concurrent: s.max_concurrent,
             global_limit: s.global_limit,
             max_connections: s.max_connections,
-            proxy: s.proxy.as_ref().map(proxy_setting::masked),
+            proxy: proxy_setting::shown(&s.proxy),
         }
     }
 }
@@ -120,20 +120,20 @@ fn get_settings(state: State<'_, AppState>) -> SettingsView {
 
 /// Update some of the manager-wide settings: an absent field is left as is,
 /// so concurrent edits of different fields can't clobber each other.
-/// `global_limit` is a rate string (blank = unlimited) and `proxy` a URL
-/// (blank = none; see [`proxy_setting::resolve`]), both validated before
-/// anything is applied. Returns the settings as the engine clamped them.
+/// `global_limit` is a rate string (blank = unlimited) and `proxy` the
+/// chosen mode (a custom URL is checked; see [`proxy_setting::resolve`]),
+/// both validated before anything is applied. Returns the settings as the engine clamped them.
 #[tauri::command]
 fn set_settings(
     state: State<'_, AppState>,
     max_concurrent: Option<usize>,
     global_limit: Option<String>,
     max_connections: Option<u8>,
-    proxy: Option<String>,
+    proxy: Option<proxy_setting::ProxyChoice>,
 ) -> Result<SettingsView, String> {
     let global_limit = global_limit.map(|l| parse_limit(Some(l))).transpose()?;
     let proxy = proxy
-        .map(|p| proxy_setting::resolve(&p, state.manager.settings().proxy.as_ref()))
+        .map(|p| proxy_setting::resolve(p, &state.manager.settings().proxy))
         .transpose()?;
     if let Some(n) = max_concurrent {
         state.manager.set_max_concurrent(n);
@@ -517,11 +517,11 @@ fn startup_lines(manager: &Manager, level: &str) -> Vec<String> {
         .global_limit
         .map(|rate| format!("{rate} B/s"))
         .unwrap_or_else(|| "none".to_owned());
-    // Only the kind of proxy: its host and login identify the user.
-    let proxy = settings
-        .proxy
-        .as_ref()
-        .map_or("none", |p| p.as_str().split(':').next().unwrap_or_default());
+    // Only the kind of proxy: a custom one's host and login identify the user.
+    let proxy = match &settings.proxy {
+        rdm::ProxyMode::Custom(p) => p.as_str().split(':').next().unwrap_or_default(),
+        mode => mode.as_str(),
+    };
     vec![
         format!(
             "rdm {} · {} · WebView {webview} · log level {level} · memory {memory}",
@@ -950,6 +950,33 @@ mod tests {
 
     /// The startup lines name the build and the settings, and nothing that
     /// could identify what was downloaded: no URL, path or tag.
+    /// A fresh install and a settings file from before the Proxy setting
+    /// both show Use system proxy.
+    #[test]
+    fn the_proxy_setting_defaults_to_the_system_proxy() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let shown = |path: &std::path::Path| {
+            let store = rdm::JsonStore::new(path);
+            let mgr = rdm::Manager::load(Box::new(store), runtime.handle().clone()).unwrap();
+            serde_json::to_value(super::SettingsView::from(mgr.settings())).unwrap()["proxy"]
+                .clone()
+        };
+        let system = serde_json::json!({ "mode": "system" });
+
+        assert_eq!(shown(&path), system);
+        std::fs::write(
+            &path,
+            r#"{"version":2,"downloads":[],"settings":{"max_concurrent":2,"max_connections":8}}"#,
+        )
+        .unwrap();
+        assert_eq!(shown(&path), system);
+    }
+
     #[test]
     fn startup_lines_leave_out_urls_paths_and_tags() {
         let dir = std::env::temp_dir().join(format!("rdm-gui-startup-{}", std::process::id()));
@@ -962,12 +989,13 @@ mod tests {
         let store = rdm::JsonStore::new(dir.join("state.json"));
         let mgr = rdm::Manager::load(Box::new(store), runtime.handle().clone()).unwrap();
         assert!(super::startup_lines(&mgr, "info")[1].ends_with("downloads: none"));
+        assert!(super::startup_lines(&mgr, "info")[1].contains("proxy system"));
+        mgr.set_proxy(rdm::ProxyMode::None);
         assert!(super::startup_lines(&mgr, "info")[1].contains("proxy none"));
-        mgr.set_proxy(Some(
-            "socks5h://proxyuser:PROXYPW7@proxy.private.example:1080"
-                .parse()
-                .unwrap(),
-        ));
+        let custom: rdm::Proxy = "socks5h://proxyuser:PROXYPW7@proxy.private.example:1080"
+            .parse()
+            .unwrap();
+        mgr.set_proxy(custom.into());
 
         let options = rdm::AddOptions {
             tags: vec!["secret-tag".to_owned()],

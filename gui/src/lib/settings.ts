@@ -1,11 +1,11 @@
 // Pure helpers for the engine-backed Downloads settings form: read the
 // whole-number fields, show the stored global limit as a rate draft, and turn
 // edited fields into a partial settings update. Beyond refusing what the rate
-// box can't mean (see `composeRate`), validating rates and the proxy URL
-// stays in the engine.
+// box can't mean (see `composeRate`) and a blank custom proxy, validating
+// rates and the proxy URL stays in the engine.
 
 import { composeRate, rateDraft, sameRate, type RateDraft } from "./rate";
-import type { Settings } from "./types";
+import type { ProxyModeName, ProxySetting, Settings } from "./types";
 
 /** A whole number typed into a count field, clamped to `[min, max]`; null if not a number. */
 export function parseCount(text: string, min: number, max: number): number | null {
@@ -20,6 +20,8 @@ export interface SettingsDrafts {
   concurrent: string;
   limit: RateDraft;
   connections: string;
+  /** The proxy's mode, and the URL used when it's custom. */
+  proxyMode: ProxyModeName;
   proxy: string;
 }
 
@@ -29,8 +31,8 @@ export interface SettingsPatch {
   /** A rate string; blank = unlimited. */
   globalLimit?: string;
   maxConnections?: number;
-  /** A proxy URL; blank = none. A masked password keeps the saved one. */
-  proxy?: string;
+  /** A custom URL's masked password keeps the saved one. */
+  proxy?: ProxySetting;
 }
 
 /** One field's update, or why its draft can't be sent. */
@@ -42,6 +44,7 @@ export const MAX_CONCURRENT = 99;
 export const MAX_CONNECTIONS = 16;
 
 const NOT_A_COUNT = "Enter a whole number.";
+const NO_PROXY_URL = "Enter the proxy's URL, or pick another option.";
 
 const SETTINGS_KEY = {
   concurrent: "max_concurrent",
@@ -56,7 +59,26 @@ export function draftsFrom(s: Settings): SettingsDrafts {
     concurrent: String(s.max_concurrent),
     limit: rateDraft(s.global_limit),
     connections: String(s.max_connections),
-    proxy: s.proxy ?? "",
+    proxyMode: s.proxy.mode,
+    proxy: s.proxy.mode === "custom" ? s.proxy.url : "",
+  };
+}
+
+/**
+ * `drafts` with `field` showing what the engine `applied`. A proxy mode
+ * other than custom keeps the URL draft, so switching back finds it there.
+ */
+export function appliedDrafts(
+  field: SettingsField,
+  drafts: SettingsDrafts,
+  applied: Settings,
+): SettingsDrafts {
+  const shown = draftsFrom(applied);
+  if (field !== "proxy") return { ...drafts, [field]: shown[field] };
+  return {
+    ...drafts,
+    proxyMode: shown.proxyMode,
+    proxy: shown.proxyMode === "custom" ? shown.proxy : drafts.proxy,
   };
 }
 
@@ -64,7 +86,12 @@ export function draftsFrom(s: Settings): SettingsDrafts {
 export function isDirty(field: SettingsField, drafts: SettingsDrafts, saved: Settings): boolean {
   const current = draftsFrom(saved);
   if (field === "limit") return !sameRate(drafts.limit, current.limit);
-  if (field === "proxy") return drafts.proxy.trim() !== current.proxy;
+  if (field === "proxy") {
+    return (
+      drafts.proxyMode !== current.proxyMode ||
+      (drafts.proxyMode === "custom" && drafts.proxy.trim() !== current.proxy)
+    );
+  }
   return drafts[field] !== current[field];
 }
 
@@ -86,8 +113,11 @@ export function fieldPatch(field: SettingsField, drafts: SettingsDrafts): FieldP
       const r = composeRate(drafts.limit);
       return r.ok ? { patch: { globalLimit: r.rate } } : { error: r.error };
     }
-    case "proxy":
-      return { patch: { proxy: drafts.proxy.trim() } };
+    case "proxy": {
+      if (drafts.proxyMode !== "custom") return { patch: { proxy: { mode: drafts.proxyMode } } };
+      const url = drafts.proxy.trim();
+      return url ? { patch: { proxy: { mode: "custom", url } } } : { error: NO_PROXY_URL };
+    }
   }
 }
 

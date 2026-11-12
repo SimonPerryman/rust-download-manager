@@ -194,8 +194,6 @@ fn request_for(
         let cs: Checksum = cs;
         req = req.with_checksum(cs);
     }
-    if let Some(proxy) = &settings.proxy {
-        req = req.with_proxy(proxy.clone());
-    }
-    req.with_connections(settings.max_connections)
+    req.with_proxy(settings.proxy.clone())
+        .with_connections(settings.max_connections)
 }

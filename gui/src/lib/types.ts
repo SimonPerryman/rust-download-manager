@@ -110,6 +110,10 @@ export interface Settings {
   /** Aggregate speed cap in bytes/s; null is unlimited. */
   global_limit: number | null;
   max_connections: number;
-  /** Proxy URL with its password masked; null is none. */
-  proxy: string | null;
+  /** Which proxy downloads use; a custom URL comes with its password masked. */
+  proxy: ProxySetting;
 }
+
+/** The Proxy setting: the system's proxy (the default), none, or a URL. */
+export type ProxySetting = { mode: "system" } | { mode: "none" } | { mode: "custom"; url: string };
+export type ProxyModeName = ProxySetting["mode"];

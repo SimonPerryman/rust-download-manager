@@ -182,25 +182,33 @@ shows the total speed, and you can click the global limit there to change it.
 
 ### Proxy
 
-**Proxy** sends downloads through an HTTP, HTTPS or SOCKS5 proxy: enter its
-URL, e.g. `socks5h://127.0.0.1:1080` (`socks5h` has the proxy look up host
-names too) or `http://user:pass@proxy.example:3128`. Leave it empty for no
-proxy. The URL is checked when you press Enter or leave the field; an
-invalid one shows an error under the field and isn't saved (closing Settings
-first shows the error as a notice instead). A change applies
-to downloads started or resumed after it, not to ones already running.
+**Proxy** chooses how downloads connect:
 
-Once saved, the field shows the password as `••••••`. Leave the dots to keep
-the saved password; it's kept only while the scheme, host, port and user
-name stay the same, so the password never goes to a proxy you didn't enter
-it for. To change any of those, type the password again. Logs and Copy
-diagnostics never show the password (diagnostics name only the kind of
-proxy, e.g. `proxy socks5h`), and only `state.json` keeps it.
+- **Use system proxy** (the default): the operating system's proxy settings
+  on Windows and macOS (Windows: Settings → Network & internet → Proxy →
+  Manual proxy setup), with their bypass list, and on every OS the
+  `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` environment variables, which
+  take precedence, with the hosts in `NO_PROXY` going direct. Proxy
+  auto-config (a PAC script or WPAD, "Automatically detect settings") isn't
+  supported: with only that set up, downloads connect directly.
+- **No proxy:** always connect directly.
+- **Custom proxy:** an HTTP, HTTPS or SOCKS5 proxy you enter in the field
+  that appears, e.g. `socks5h://127.0.0.1:1080` (`socks5h` has the proxy
+  look up host names too) or `http://user:pass@proxy.example:3128`, for
+  every host. The URL is checked when you press Enter or leave the field;
+  an invalid one shows an error under the field and isn't saved (closing
+  Settings first shows the error as a notice instead).
 
-Downloads use only this setting: the `HTTP_PROXY`, `HTTPS_PROXY` and
-`ALL_PROXY` environment variables and the system's proxy settings (such as
-Windows' Internet Options) don't apply to them. The in-app updater still
-follows the system's proxy settings.
+A change applies to downloads started or resumed after it, not to ones
+already running. The in-app updater always uses the system proxy.
+
+Once saved, the custom proxy's field shows the password as `••••••`. Leave
+the dots to keep the saved password; it's kept only while the scheme, host,
+port and user name stay the same, so the password never goes to a proxy you
+didn't enter it for. To change any of those, type the password again. Logs
+and Copy diagnostics never show the password (diagnostics name only the
+kind of proxy: `proxy system`, `proxy none`, or the scheme, e.g. `proxy
+socks5h`), and only `state.json` keeps it.
 
 ## Updates
 
