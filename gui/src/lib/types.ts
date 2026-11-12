@@ -110,4 +110,6 @@ export interface Settings {
   /** Aggregate speed cap in bytes/s; null is unlimited. */
   global_limit: number | null;
   max_connections: number;
+  /** Proxy URL with its password masked; null is none. */
+  proxy: string | null;
 }

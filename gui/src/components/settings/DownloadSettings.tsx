@@ -4,19 +4,18 @@ import { NO_LIMIT } from "../../lib/rate";
 import {
   dirtyPatches,
   draftsFrom,
+  fieldOf,
   fieldPatch,
   isDirty,
   mergeApplied,
   type SettingsDrafts as Drafts,
   type SettingsField as Field,
-  type SettingsPatch,
 } from "../../lib/settings";
 import type { Settings } from "../../lib/types";
 import { RateInput } from "../RateInput";
 
-// Which field a single-field patch from `fieldPatch` / `dirtyPatches` sets.
-const fieldOf = (patch: SettingsPatch): Field =>
-  patch.maxConcurrent != null ? "concurrent" : patch.globalLimit != null ? "limit" : "connections";
+const INPUT_CLASS =
+  "flex h-7 rounded-md border border-line-strong bg-raised px-2 text-sm transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden disabled:opacity-60 aria-[invalid]:border-danger";
 
 // The engine-backed "Downloads" section of the settings popover. Values are
 // read from the engine each time it mounts (the popover opens) and written
@@ -32,6 +31,7 @@ export function DownloadSettings({
     concurrent: "",
     limit: NO_LIMIT,
     connections: "",
+    proxy: "",
   });
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
 
@@ -100,7 +100,7 @@ export function DownloadSettings({
       onBlur={() => commit(field)}
       onKeyDown={(e) => e.key === "Enter" && commit(field)}
       inputMode="numeric"
-      className="flex h-7 w-full rounded-md border border-line-strong bg-raised px-2 text-sm tabular-nums transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden disabled:opacity-60 aria-[invalid]:border-danger"
+      className={`${INPUT_CLASS} w-full tabular-nums`}
     />
   );
 
@@ -132,6 +132,27 @@ export function DownloadSettings({
         error={errors.connections}
       >
         {input("connections", "Max connections per download")}
+      </SettingRow>
+      <SettingRow
+        label="Proxy"
+        hint="HTTP or SOCKS5. Empty = none. Applies when a download next starts"
+        error={errors.proxy}
+        wide
+      >
+        <input
+          type="text"
+          aria-label="Proxy"
+          aria-invalid={errors.proxy ? true : undefined}
+          disabled={!saved}
+          value={drafts.proxy}
+          placeholder="socks5h://host:1080"
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e) => setDrafts((d) => ({ ...d, proxy: e.target.value }))}
+          onBlur={() => commit("proxy")}
+          onKeyDown={(e) => e.key === "Enter" && commit("proxy")}
+          className={`${INPUT_CLASS} w-52`}
+        />
       </SettingRow>
     </div>
   );

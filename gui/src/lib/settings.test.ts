@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   dirtyPatches,
   draftsFrom,
+  fieldOf,
   fieldPatch,
   isDirty,
   mergeApplied,
@@ -28,7 +29,12 @@ describe("parseCount", () => {
   });
 });
 
-const saved: Settings = { max_concurrent: 3, global_limit: null, max_connections: 4 };
+const saved: Settings = {
+  max_concurrent: 3,
+  global_limit: null,
+  max_connections: 4,
+  proxy: null,
+};
 
 const MIB = 1024 * 1024;
 const drafts = draftsFrom(saved);
@@ -43,6 +49,15 @@ describe("fieldPatch", () => {
     });
     expect(fieldPatch("connections", { ...drafts, connections: "99" })).toEqual({
       patch: { maxConnections: 16 },
+    });
+  });
+
+  it("sends the proxy trimmed, leaving its validation to the engine", () => {
+    expect(fieldPatch("proxy", { ...drafts, proxy: " socks5h://host:1080 " })).toEqual({
+      patch: { proxy: "socks5h://host:1080" },
+    });
+    expect(fieldPatch("proxy", { ...drafts, proxy: "not a url" })).toEqual({
+      patch: { proxy: "not a url" },
     });
   });
 
@@ -74,6 +89,32 @@ describe("isDirty", () => {
   });
 });
 
+describe("isDirty for the proxy", () => {
+  const withProxy = { ...saved, proxy: "socks5h://alice:••••••@host:1080" };
+
+  it("shows the saved, masked proxy and treats it as unchanged", () => {
+    expect(draftsFrom(withProxy).proxy).toBe(withProxy.proxy);
+    expect(isDirty("proxy", draftsFrom(withProxy), withProxy)).toBe(false);
+    expect(
+      isDirty("proxy", { ...draftsFrom(withProxy), proxy: ` ${withProxy.proxy} ` }, withProxy),
+    ).toBe(false);
+  });
+
+  it("sees an edit, and clearing it", () => {
+    expect(isDirty("proxy", { ...drafts, proxy: "http://host:3128" }, saved)).toBe(true);
+    expect(isDirty("proxy", { ...draftsFrom(withProxy), proxy: "" }, withProxy)).toBe(true);
+  });
+});
+
+describe("fieldOf", () => {
+  it("names the field each single-field patch sets", () => {
+    expect(fieldOf({ maxConcurrent: 2 })).toBe("concurrent");
+    expect(fieldOf({ globalLimit: "" })).toBe("limit");
+    expect(fieldOf({ maxConnections: 4 })).toBe("connections");
+    expect(fieldOf({ proxy: "" })).toBe("proxy");
+  });
+});
+
 describe("dirtyPatches", () => {
   it("is empty when nothing changed", () => {
     expect(dirtyPatches(drafts, saved)).toEqual([]);
@@ -84,11 +125,13 @@ describe("dirtyPatches", () => {
       concurrent: "1",
       limit: { amount: "2", unit: "M" as const },
       connections: "8",
+      proxy: "http://host:3128",
     };
     expect(dirtyPatches(edited, saved)).toEqual([
       { maxConcurrent: 1 },
       { globalLimit: "2M" },
       { maxConnections: 8 },
+      { proxy: "http://host:3128" },
     ]);
   });
 
@@ -104,6 +147,7 @@ describe("dirtyPatches", () => {
       concurrent: "abc",
       limit: { amount: "0", unit: "K" as const },
       connections: "8",
+      proxy: "",
     };
     expect(dirtyPatches(edited, saved)).toEqual([{ maxConnections: 8 }]);
   });
@@ -125,6 +169,7 @@ describe("mergeApplied", () => {
       max_concurrent: 1,
       global_limit: 2048,
       max_connections: 4,
+      proxy: null,
     });
   });
 

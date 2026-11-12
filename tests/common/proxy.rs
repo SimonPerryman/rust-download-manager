@@ -40,7 +40,9 @@ impl ProxyServer {
 }
 
 /// An HTTP forward proxy: absolute-form requests are rewritten to
-/// origin-form and relayed; `CONNECT` is tunnelled.
+/// origin-form and relayed; `CONNECT` is tunnelled. A request for the proxy
+/// itself (`GET /seen`) answers how many requests it has relayed, so an
+/// out-of-process client (the GUI's E2E suite) can tell it was used.
 pub async fn spawn_http_proxy() -> ProxyServer {
     spawn(|client, seen| async move {
         let _ = relay_http(client, seen).await;
@@ -92,6 +94,14 @@ async fn relay_http(mut client: TcpStream, seen: SeenLog) -> std::io::Result<()>
     let head = String::from_utf8_lossy(&buf[..head_end]).into_owned();
     let mut lines = head.split("\r\n");
     let request_line = lines.next().unwrap_or_default().to_owned();
+    if request_line.starts_with("GET /seen ") {
+        let count = seen.lock().unwrap().len().to_string();
+        let reply = format!(
+            "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{count}",
+            count.len()
+        );
+        return client.write_all(reply.as_bytes()).await;
+    }
     let login = lines
         .filter_map(|l| l.split_once(':'))
         .find(|(name, _)| name.eq_ignore_ascii_case("proxy-authorization"))

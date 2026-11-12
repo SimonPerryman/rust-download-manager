@@ -69,6 +69,13 @@ impl FromStr for Proxy {
     }
 }
 
+/// Saved as the full URL, login included.
+impl serde::Serialize for Proxy {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
 impl fmt::Display for Proxy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&redact_url(self.0.as_str()))

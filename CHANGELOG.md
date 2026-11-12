@@ -12,6 +12,9 @@ desktop app share one version.
 - `--proxy <url>` (CLI) downloads through an HTTP, HTTPS or SOCKS5 proxy
   (`socks5h://` for DNS through the proxy), with an optional `user:pass@`.
   The proxy's login is redacted from all output.
+- A Proxy setting (desktop app) under Settings → Downloads: checked when
+  saved, applied from each download's next start, and shown with its
+  password masked. Copy diagnostics names only the kind of proxy.
 
 ### Changed
 

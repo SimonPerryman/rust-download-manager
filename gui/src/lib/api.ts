@@ -43,14 +43,15 @@ export const getSettings = () => invoke<Settings>("get_settings");
 
 /**
  * Apply some manager-wide settings; omitted fields are left unchanged
- * (`globalLimit` is a rate string, blank = unlimited). Resolves with the
- * settings as the engine clamped them.
+ * (`globalLimit` is a rate string, blank = unlimited; `proxy` a URL, blank =
+ * none). Resolves with the settings as the engine clamped them.
  */
 export const setSettings = (patch: SettingsPatch) =>
   invoke<Settings>("set_settings", {
     maxConcurrent: patch.maxConcurrent ?? null,
     globalLimit: patch.globalLimit ?? null,
     maxConnections: patch.maxConnections ?? null,
+    proxy: patch.proxy ?? null,
   });
 
 /**

@@ -1,7 +1,8 @@
 // Pure helpers for the engine-backed Downloads settings form: read the
 // whole-number fields, show the stored global limit as a rate draft, and turn
 // edited fields into a partial settings update. Beyond refusing what the rate
-// box can't mean (see `composeRate`), validating rates stays in the engine.
+// box can't mean (see `composeRate`), validating rates and the proxy URL
+// stays in the engine.
 
 import { composeRate, rateDraft, sameRate, type RateDraft } from "./rate";
 import type { Settings } from "./types";
@@ -13,12 +14,13 @@ export function parseCount(text: string, min: number, max: number): number | nul
   return Math.min(max, Math.max(min, Number(trimmed)));
 }
 
-/** The form's editable fields: two counts and the global limit. */
-export type SettingsField = "concurrent" | "limit" | "connections";
+/** The form's editable fields: two counts, the global limit and the proxy. */
+export type SettingsField = "concurrent" | "limit" | "connections" | "proxy";
 export interface SettingsDrafts {
   concurrent: string;
   limit: RateDraft;
   connections: string;
+  proxy: string;
 }
 
 /** A partial `set_settings` update: omitted fields are left unchanged. */
@@ -27,6 +29,8 @@ export interface SettingsPatch {
   /** A rate string; blank = unlimited. */
   globalLimit?: string;
   maxConnections?: number;
+  /** A proxy URL; blank = none. A masked password keeps the saved one. */
+  proxy?: string;
 }
 
 /** One field's update, or why its draft can't be sent. */
@@ -43,6 +47,7 @@ const SETTINGS_KEY = {
   concurrent: "max_concurrent",
   limit: "global_limit",
   connections: "max_connections",
+  proxy: "proxy",
 } as const satisfies Record<SettingsField, keyof Settings>;
 
 /** What each field shows for `s`. */
@@ -51,15 +56,16 @@ export function draftsFrom(s: Settings): SettingsDrafts {
     concurrent: String(s.max_concurrent),
     limit: rateDraft(s.global_limit),
     connections: String(s.max_connections),
+    proxy: s.proxy ?? "",
   };
 }
 
 /** Whether `field`'s draft differs from what `saved` shows. */
 export function isDirty(field: SettingsField, drafts: SettingsDrafts, saved: Settings): boolean {
   const current = draftsFrom(saved);
-  return field === "limit"
-    ? !sameRate(drafts.limit, current.limit)
-    : drafts[field] !== current[field];
+  if (field === "limit") return !sameRate(drafts.limit, current.limit);
+  if (field === "proxy") return drafts.proxy.trim() !== current.proxy;
+  return drafts[field] !== current[field];
 }
 
 /**
@@ -80,10 +86,20 @@ export function fieldPatch(field: SettingsField, drafts: SettingsDrafts): FieldP
       const r = composeRate(drafts.limit);
       return r.ok ? { patch: { globalLimit: r.rate } } : { error: r.error };
     }
+    case "proxy":
+      return { patch: { proxy: drafts.proxy.trim() } };
   }
 }
 
-const FIELDS: SettingsField[] = ["concurrent", "limit", "connections"];
+const FIELDS: SettingsField[] = ["concurrent", "limit", "connections", "proxy"];
+
+/** Which field a single-field patch from `fieldPatch` / `dirtyPatches` sets. */
+export function fieldOf(patch: SettingsPatch): SettingsField {
+  if (patch.maxConcurrent != null) return "concurrent";
+  if (patch.globalLimit != null) return "limit";
+  if (patch.proxy != null) return "proxy";
+  return "connections";
+}
 
 /**
  * A separate update per dirty field, skipping drafts that can't be sent.

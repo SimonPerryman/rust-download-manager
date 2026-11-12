@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::engine::{segment, Error, Result, DEFAULT_CONNECTIONS};
+use crate::engine::{segment, Error, Proxy, Result, DEFAULT_CONNECTIONS};
 
 /// Current store schema version. Bump when the on-disk shape changes in a
 /// way an older build mustn't silently drop; a document newer than this fails
@@ -157,7 +157,7 @@ pub struct DownloadRecord {
 }
 
 /// Manager-wide download settings, persisted with the download list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     /// Most downloads streaming at once; the rest wait as [`Status::Queued`].
@@ -167,6 +167,26 @@ pub struct Settings {
     pub global_limit: Option<u64>,
     /// Max parallel connections per download, applied when a download (re)starts.
     pub max_connections: u8,
+    /// Proxy for downloads, applied when a download (re)starts; `None`
+    /// connects directly. Saved in full, login included, like the URLs.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "proxy_or_none"
+    )]
+    pub proxy: Option<Proxy>,
+}
+
+/// A stored proxy that no longer parses (a hand-edited `state.json`) is
+/// dropped with a warning rather than failing to load the whole list.
+fn proxy_or_none<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<Proxy>, D::Error> {
+    let stored = Option::<String>::deserialize(deserializer)?;
+    Ok(stored.and_then(|s| {
+        s.parse()
+            .inspect_err(|e| tracing::warn!("Ignoring the saved proxy: {e}"))
+            .ok()
+    }))
 }
 
 impl Default for Settings {
@@ -175,6 +195,7 @@ impl Default for Settings {
             max_concurrent: 3,
             global_limit: None,
             max_connections: DEFAULT_CONNECTIONS,
+            proxy: None,
         }
     }
 }
@@ -187,6 +208,7 @@ impl Settings {
             max_concurrent: self.max_concurrent.max(1),
             global_limit: self.global_limit.filter(|&r| r > 0),
             max_connections: self.max_connections.clamp(1, segment::MAX_CONNECTIONS),
+            proxy: self.proxy,
         }
     }
 }
@@ -361,6 +383,7 @@ mod tests {
                 max_concurrent: 5,
                 global_limit: Some(512 * 1024),
                 max_connections: 8,
+                proxy: None,
             },
         };
         store.save(&data).unwrap();
@@ -435,6 +458,33 @@ mod tests {
         assert_eq!(loaded.downloads[0].limit, None);
     }
 
+    /// A saved proxy round-trips in full; one that no longer parses (a
+    /// hand-edited file) is dropped and the rest of the settings still load.
+    #[test]
+    fn proxy_setting_round_trips_and_a_bad_one_is_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let store = JsonStore::new(&path);
+        let data = StoreData {
+            settings: Settings {
+                proxy: Some("socks5h://u:p@127.0.0.1:1080".parse().unwrap()),
+                ..Settings::default()
+            },
+            ..StoreData::default()
+        };
+        store.save(&data).unwrap();
+        assert_eq!(store.load().unwrap(), data);
+
+        std::fs::write(
+            &path,
+            r#"{"version":2,"settings":{"max_connections":8,"proxy":"ftp://nope"}}"#,
+        )
+        .unwrap();
+        let loaded = store.load().unwrap();
+        assert_eq!(loaded.settings.proxy, None);
+        assert_eq!(loaded.settings.max_connections, 8);
+    }
+
     /// A `state.json` as v0.1.0 wrote it (schema v1) loads with nothing
     /// archived or tagged, and saves back as the current version.
     #[test]
@@ -495,6 +545,7 @@ mod tests {
             max_concurrent: 0,
             global_limit: Some(0),
             max_connections: 200,
+            proxy: None,
         };
         let clamped = wild.clamped();
         assert_eq!(clamped.max_concurrent, 1);

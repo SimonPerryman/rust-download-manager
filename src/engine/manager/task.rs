@@ -15,7 +15,7 @@ use super::files::{owned_elsewhere, unique_target};
 use super::{now_secs, Inner, Live};
 use crate::engine::download_log::TASK_SPAN;
 use crate::engine::lock::lock;
-use crate::engine::store::{ChecksumState, DownloadRecord, Status};
+use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status};
 use crate::engine::tally::Tally;
 use crate::engine::{download, panic_message, Checksum, Control, DownloadRequest, Error};
 
@@ -123,7 +123,7 @@ pub(super) fn spawn_task(
     inner: Arc<Inner>,
     record: &DownloadRecord,
     control: Control,
-    connections: u8,
+    settings: &Settings,
     tally: Arc<Tally>,
 ) -> JoinHandle<()> {
     let id = record.id;
@@ -135,8 +135,8 @@ pub(super) fn spawn_task(
         span.record("file", tracing::field::display(file_name(&record.target)));
     }
     let active_before = Duration::from_millis(record.active_ms.unwrap_or(0));
-    let req = request_for(&inner, record, &control, connections, &span)
-        .with_history(tally, active_before);
+    let req =
+        request_for(&inner, record, &control, settings, &span).with_history(tally, active_before);
     let handle = inner.handle.clone();
     handle.spawn(
         async move {
@@ -170,7 +170,7 @@ fn request_for(
     inner: &Arc<Inner>,
     record: &DownloadRecord,
     control: &Control,
-    connections: u8,
+    settings: &Settings,
     span: &tracing::Span,
 ) -> DownloadRequest {
     let mut req = if record.target_provisional {
@@ -194,5 +194,8 @@ fn request_for(
         let cs: Checksum = cs;
         req = req.with_checksum(cs);
     }
-    req.with_connections(connections)
+    if let Some(proxy) = &settings.proxy {
+        req = req.with_proxy(proxy.clone());
+    }
+    req.with_connections(settings.max_connections)
 }

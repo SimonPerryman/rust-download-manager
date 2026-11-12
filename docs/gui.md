@@ -173,11 +173,27 @@ turns orange and the Speed column reads the speed against the limit:
 
 **Settings** (the sliders button) holds the theme under **Display**, and
 under **Downloads** the number of concurrent downloads, the global speed
-limit, the max connections per download and whether Remove asks first, and
+limit, the max connections per download, the [proxy](#proxy) and whether
+Remove asks first, and
 under **Updates** this version, **Check for updates** and **Check for updates
 automatically** (see [Updates](#updates)), and, last, **Troubleshooting**
 (see [Logs and troubleshooting](#logs-and-troubleshooting)). The status bar
 shows the total speed, and you can click the global limit there to change it.
+
+### Proxy
+
+**Proxy** sends downloads through an HTTP, HTTPS or SOCKS5 proxy: enter its
+URL, e.g. `socks5h://127.0.0.1:1080` (`socks5h` has the proxy look up host
+names too) or `http://user:pass@proxy.example:3128`. Leave it empty for no
+proxy. The URL is checked when you press Enter or leave the field; an
+invalid one shows an error under the field and isn't saved. A change applies
+to downloads started or resumed after it, not to ones already running.
+
+Once saved, the field shows the password as `••••••`. Edit the rest of the
+URL and leave the dots to keep the saved password, or type a new one. Logs
+and Copy diagnostics never show the password (diagnostics name only the kind
+of proxy, e.g. `proxy socks5h`), and only `state.json` keeps it. The proxy
+environment variables (`HTTP_PROXY`, `ALL_PROXY`) are ignored.
 
 ## Updates
 
@@ -250,7 +266,8 @@ Logged URLs and error messages hide a link's secrets but not where it
 points: a login shows only as `<redacted>:<redacted>@` (or `<redacted>@`
 for a user name alone), so you can still tell one was used, a query string
 becomes `?<redacted>`, and a fragment is dropped. Site names and file paths
-stay visible. Only `state.json` keeps download URLs in full.
+stay visible. Only `state.json` keeps download URLs, and the proxy's login,
+in full.
 
 **Settings → Troubleshooting** has two buttons:
 
