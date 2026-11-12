@@ -113,6 +113,8 @@
 
 #![allow(dead_code)] // Not every test binary uses every helper.
 
+pub mod proxy;
+
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

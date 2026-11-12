@@ -12,6 +12,7 @@ share it, so everything here applies to both.
 - [Safe file names](#safe-file-names)
 - [Marked as downloaded (Windows)](#marked-as-downloaded-windows)
 - [The queue and speed limits](#the-queue-and-speed-limits)
+- [Proxies](#proxies)
 - [Engine and frontends](#engine-and-frontends)
 - [When something goes wrong](#when-something-goes-wrong)
 
@@ -99,6 +100,23 @@ network shares) leaves the file unmarked, and the download still succeeds.
   limit straight away, with no initial burst. Its speed is measured over the
   last 5 seconds from bytes that have passed the limit's wait, so it reads
   close to the limit, even when data arrives less often than that.
+
+## Proxies
+
+A download uses one of three proxy modes, and every request it makes,
+each connection of a segmented download included, goes the same way:
+
+- **System** (the default): the `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY`
+  environment variable, with `NO_PROXY`'s hosts going direct; when none is
+  set, on Windows and macOS the operating system's proxy settings and their
+  bypass list. Proxy auto-config (PAC scripts, WPAD) isn't supported. The
+  system proxy is read as each download starts or resumes.
+- **None:** always connect directly.
+- **Custom:** an HTTP, HTTPS or SOCKS5 proxy you give (`socks5h` to have
+  the proxy resolve host names too), for every host.
+
+Logs and error messages show a custom proxy with its login redacted, like
+any URL's.
 
 ## Engine and frontends
 

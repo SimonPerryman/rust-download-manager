@@ -16,11 +16,45 @@ rdm [OPTIONS] <URL>
 | `--checksum <algo:hex>` | Verify the finished file against a checksum, e.g. `sha256:…`. |
 | `-c, --connections <n>` | Max parallel connections, 1–16 (default 4; `-c 1` for a single connection). Starts on one and adds more, up to `n`, while measured speed keeps rising. Used only for files of 2 MiB or more on servers that support range requests. |
 | `--limit-rate <rate>` | Cap the download speed in bytes/s, with an optional `K`/`M`/`G` suffix (×1024), e.g. `500K` or `2M`. Shared across all of the download's connections. |
+| `--proxy <url>` | Download through this proxy instead of the system's: `http://`, `https://`, `socks5://` or `socks5h://` (host names resolved by the proxy), with an optional `user:pass@`, e.g. `socks5h://127.0.0.1:1080`. See [Proxies](#proxies). |
+| `--no-proxy` | Connect directly, ignoring the system's proxy. Can't be combined with `--proxy`. |
 | `-v, --verbose` | Also log informational engine events (how the download started, lanes added, resumes, the checksum result, where it was saved and a summary) to stderr. |
 | `-h, --help` / `-V, --version` | Print help or the version. |
 
 [How it works](how-it-works.md) explains connections, retries and checksums
 in more detail.
+
+## Proxies
+
+By default rdm uses the system's proxy:
+
+- the `HTTP_PROXY` (for `http://` links), `HTTPS_PROXY` (for `https://`
+  links) or `ALL_PROXY` environment variable, lowercase names too, skipping
+  the hosts listed in `NO_PROXY` (e.g. `NO_PROXY=localhost,.internal.example`);
+- if none of those is set, on Windows and macOS the proxy set in the
+  operating system's settings (Windows: Settings → Network & internet →
+  Proxy → Manual proxy setup), with its bypass list.
+
+Proxy auto-config (a PAC script or WPAD, "Automatically detect settings")
+isn't supported: with only that set up, rdm connects directly. Use
+`--proxy` to name the proxy instead, or `--no-proxy` to connect directly
+whatever the system says.
+
+`--proxy` sends every request of the download through an HTTP, HTTPS or
+SOCKS5 proxy, e.g. one behind a corporate firewall or the SOCKS5 endpoint a
+VPN service offers. Use `socks5h://` rather than `socks5://` to have the
+proxy look up the host name too, so no DNS lookup leaves your machine
+directly. A SOCKS5 proxy without a port uses 1080.
+
+```sh
+rdm https://example.com/big-file.zip --proxy socks5h://user:pass@127.0.0.1:1080
+```
+
+`--proxy` applies to every host; `NO_PROXY` doesn't apply to it. An
+invalid proxy URL is reported before
+anything is downloaded (exit code 2). The proxy's login never appears in
+rdm's output: `-v` shows the proxy as `Through proxy
+socks5h://<redacted>:<redacted>@127.0.0.1:1080`.
 
 ## Resuming and Ctrl-C
 

@@ -29,6 +29,7 @@ mod lock;
 pub mod manager;
 mod mark_of_the_web;
 pub mod progress;
+mod proxy;
 mod ramp;
 mod redact;
 pub mod retry;
@@ -47,6 +48,7 @@ pub use integrity::{Algo, Checksum};
 pub use limit::{parse_rate, RateLimiter};
 pub use manager::{AddOptions, DownloadSnapshot, Manager};
 pub use progress::{Progress, SpeedMeter};
+pub use proxy::{Proxy, ProxyMode};
 #[doc(hidden)]
 pub use ramp::Ramping;
 pub use redact::{map_urls_in, redact_url, redact_urls_in};
@@ -84,6 +86,8 @@ pub struct DownloadRequest {
     pub retry: RetryPolicy,
     /// Optional checksum to verify the finished file against.
     pub checksum: Option<Checksum>,
+    /// Which proxy every request goes through (default: the system's).
+    pub proxy: ProxyMode,
     /// Optional hook to claim the derived target before anything is written;
     /// ignored when `out` is set.
     pub claim_target: Option<ClaimTarget>,
@@ -152,6 +156,7 @@ impl DownloadRequest {
             out: None,
             retry: RetryPolicy::default(),
             checksum: None,
+            proxy: ProxyMode::System,
             claim_target: None,
             connections: DEFAULT_CONNECTIONS,
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
@@ -172,6 +177,7 @@ impl DownloadRequest {
             out: Some(out),
             retry: RetryPolicy::default(),
             checksum: None,
+            proxy: ProxyMode::System,
             claim_target: None,
             connections: DEFAULT_CONNECTIONS,
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
@@ -192,6 +198,13 @@ impl DownloadRequest {
     /// Require the finished file to match `checksum` (builder).
     pub fn with_checksum(mut self, checksum: Checksum) -> Self {
         self.checksum = Some(checksum);
+        self
+    }
+
+    /// Choose the proxy every request goes through (builder); a [`Proxy`]
+    /// means [`ProxyMode::Custom`].
+    pub fn with_proxy(mut self, proxy: impl Into<ProxyMode>) -> Self {
+        self.proxy = proxy.into();
         self
     }
 
@@ -364,8 +377,21 @@ pub async fn download(
     install_crypto_provider();
     let client = reqwest::Client::builder()
         .user_agent(USER_AGENT)
-        .connect_timeout(CONNECT_TIMEOUT)
-        .build()?;
+        .connect_timeout(CONNECT_TIMEOUT);
+    // reqwest reads the system proxy (env vars, then the OS settings) when
+    // the client is built, so a changed one applies from the next download.
+    let client = match &req.proxy {
+        ProxyMode::System => client,
+        ProxyMode::None => {
+            tracing::info!("Not using a proxy");
+            client.no_proxy()
+        }
+        ProxyMode::Custom(proxy) => {
+            tracing::info!("Through proxy {proxy}");
+            client.proxy(reqwest::Proxy::all(proxy.as_str())?)
+        }
+    }
+    .build()?;
 
     // The target may not be known until the first response (derived filename),
     // but when it is known up front we can detect an existing resume. The
