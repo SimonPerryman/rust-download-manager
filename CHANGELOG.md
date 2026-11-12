@@ -16,7 +16,9 @@ desktop app share one version.
 ### Changed
 
 - The `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` environment variables no
-  longer apply to downloads; only an explicit proxy does.
+  longer apply to downloads; only an explicit proxy does. In the desktop
+  app, the system's proxy settings (such as Windows' Internet Options) no
+  longer apply to downloads either.
 
 ## 0.3.0 - 2026-11-11
 
