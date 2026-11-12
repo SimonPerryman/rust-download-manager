@@ -19,7 +19,9 @@
 //! - `GET /missing`   — 404.
 //! - `GET /missing/{*name}` — 404 under any file name.
 //! - `GET /ranged`    — payload, full+correct `Range`/`If-Range` support.
-//! - `GET /slow`      — like `/ranged` but streamed slowly (a kill/pause window).
+//! - `GET /slow`      — like `/ranged` but streamed slowly (a kill/pause window);
+//!   with [`FixtureConfig::slow_hold_after`], every response holds after that
+//!   many chunks until released through [`TestServer::gate`].
 //! - `GET /named-slow` — `/slow` plus `/named`'s `Content-Disposition`.
 //! - `GET /crawl`     — `/slow` over a [`CRAWL_LEN`] payload (~150 chunks), so
 //!   it outlasts a multi-step UI flow at the E2E delay.
@@ -134,7 +136,7 @@ pub const LAST_MODIFIED: &str = "Wed, 01 Jan 2020 00:00:00 GMT";
 const FLAKY_FAILURES: usize = 2;
 
 /// Bytes streamed per chunk by the slow/flaky streaming bodies.
-const STREAM_CHUNK: usize = 4 * 1024;
+pub const STREAM_CHUNK: usize = 4 * 1024;
 
 /// Default per-chunk delay for `/slow`, opening a window to kill/pause
 /// mid-stream.
@@ -236,6 +238,10 @@ pub fn seg_payload() -> Vec<u8> {
 pub struct FixtureConfig {
     /// `/slow`, `/named-slow`, `/crawl`: delay between streamed chunks.
     pub slow_chunk_delay: Duration,
+    /// `/slow`, `/named-slow`, `/crawl`: hold every response after this many
+    /// chunks until [`TestServer::gate`] releases it, so a test can act on a
+    /// partial download that cannot finish under it.
+    pub slow_hold_after: Option<usize>,
     /// Length of [`seg_payload_of`] served by the `/seg*` routes.
     pub seg_len: usize,
     /// `/seg` (and most `/seg*` routes): delay before each 32 KiB chunk.
@@ -257,6 +263,7 @@ impl Default for FixtureConfig {
     fn default() -> Self {
         Self {
             slow_chunk_delay: SLOW_CHUNK_DELAY,
+            slow_hold_after: None,
             seg_len: SEG_LEN,
             seg_chunk_delay: Duration::ZERO,
             seg_abort_after: 1,
@@ -709,29 +716,24 @@ async fn ranged_handler(headers: HeaderMap) -> Response {
 /// chunks with a short delay — a window to kill or pause mid-stream. Range and
 /// If-Range are honoured so a resume finishes quickly.
 async fn slow_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    slow_response(&headers, None, state.cfg.slow_chunk_delay, payload())
+    slow_response(&state, &headers, None, payload())
 }
 
 /// `/crawl`: `/slow` over a [`CRAWL_LEN`] payload.
 async fn crawl_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     let body = (0..CRAWL_LEN).map(|i| (i % 251) as u8).collect();
-    slow_response(&headers, None, state.cfg.slow_chunk_delay, body)
+    slow_response(&state, &headers, None, body)
 }
 
 /// `/named-slow`: `/slow` with a `Content-Disposition` filename.
 async fn named_slow_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    slow_response(
-        &headers,
-        Some(NAMED_DISPOSITION),
-        state.cfg.slow_chunk_delay,
-        payload(),
-    )
+    slow_response(&state, &headers, Some(NAMED_DISPOSITION), payload())
 }
 
 fn slow_response(
+    state: &Arc<AppState>,
     headers: &HeaderMap,
     disposition: Option<&str>,
-    delay: Duration,
     body: Vec<u8>,
 ) -> Response {
     let etag = "\"v1\"";
@@ -754,7 +756,11 @@ fn slow_response(
     };
 
     let slice_len = slice.len();
-    let stream_body = slow_stream(slice, delay);
+    let hold = state
+        .cfg
+        .slow_hold_after
+        .map(|after| (after, state.gate.enter()));
+    let stream_body = slow_stream(slice, state.cfg.slow_chunk_delay, hold);
 
     let mut builder = Response::builder()
         .status(status)
@@ -776,20 +782,28 @@ fn slow_response(
     builder.body(stream_body).unwrap()
 }
 
-/// A body that yields `slice` a few KB at a time with a per-chunk delay.
-fn slow_stream(slice: Vec<u8>, delay: Duration) -> Body {
+/// A body that yields `slice` a few KB at a time with a per-chunk delay; with
+/// `hold`, it pauses after that many chunks until the ticket is released.
+fn slow_stream(slice: Vec<u8>, delay: Duration, hold: Option<(usize, GateTicket)>) -> Body {
     // Hand-rolled stream without an extra dependency: chunk the buffer and
     // sleep between yields.
     let chunks: Vec<Vec<u8>> = slice.chunks(STREAM_CHUNK).map(|c| c.to_vec()).collect();
-    let s = futures_util::stream::unfold(chunks.into_iter(), move |mut it| async move {
-        match it.next() {
-            Some(chunk) => {
-                tokio::time::sleep(delay).await;
-                Some((Ok::<_, std::io::Error>(axum::body::Bytes::from(chunk)), it))
+    let s = futures_util::stream::unfold(
+        (chunks.into_iter(), 0usize, hold),
+        move |(mut it, sent, hold)| async move {
+            let chunk = it.next()?;
+            if let Some((after, ticket)) = &hold {
+                while sent >= *after && !ticket.released() {
+                    tokio::time::sleep(GATED_TRICKLE).await;
+                }
             }
-            None => None,
-        }
-    });
+            tokio::time::sleep(delay).await;
+            Some((
+                Ok::<_, std::io::Error>(Bytes::from(chunk)),
+                (it, sent + 1, hold),
+            ))
+        },
+    );
     Body::from_stream(s)
 }
 
