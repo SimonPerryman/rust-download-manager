@@ -379,6 +379,7 @@ pub(crate) async fn run(
                     bytes_per_sec: downloaded.saturating_sub(downloaded_then) as f64 / secs,
                     waited_fraction: waited.saturating_sub(waited_then) as f64 / 1e9 / (secs * live),
                     pool_changed: shared.pool.take_changed(),
+                    short: shared.pool.live() < shared.pool.target(),
                 };
                 // A window under the old limit says nothing about the new
                 // one, so a raise trials a connection straight away.
@@ -391,8 +392,11 @@ pub(crate) async fn run(
                 };
                 shared.pool.set_target(capped(ramp.target(), cap));
                 tracing::trace!(?measured, ?decision, target = ramp.target(), "ramp window");
+                // A lane still on its way out of a retire already fills a
+                // re-probe's extra place.
+                let room = shared.pool.live() < shared.pool.target();
                 match decision {
-                    Decision::Add if !shared.is_stopping() && job.control.poll() == Flow::Continue => {
+                    Decision::Add if room && !shared.is_stopping() && job.control.poll() == Flow::Continue => {
                         let slot = shared.pool.join(None);
                         let number = slot.number();
                         workers.push(worker(&shared, None, slot));

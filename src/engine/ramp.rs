@@ -20,6 +20,9 @@ pub(crate) const REPROBE_INTERVAL: Duration = Duration::from_secs(30);
 /// an improvement worth another connection.
 const MARGIN: f64 = 0.10;
 
+/// How far each judged settled window moves the smoothed settled speed.
+const LEVEL_WEIGHT: f64 = 0.25;
+
 /// A window that spent at least this share of its connection-time waiting on
 /// rate-limit tokens says nothing about the server, so it is not judged.
 const FREEZE_FRACTION: f64 = 0.5;
@@ -50,6 +53,9 @@ pub(crate) struct Window {
     pub waited_fraction: f64,
     /// Whether any worker started or exited during the window.
     pub pool_changed: bool,
+    /// Whether fewer workers ran than the pool wants (the work is running
+    /// out), so the window doesn't measure the target.
+    pub short: bool,
 }
 
 /// What the coordinator should do after a window.
@@ -72,9 +78,12 @@ pub(crate) struct Ramp {
     cap: Option<u8>,
     target: u8,
     best: f64,
-    /// The latest judged window's speed: what a re-probe's trial must beat.
-    latest: f64,
+    /// The settled speed, smoothed over judged windows so one dip can't let
+    /// a useless trial look like a gain: what a re-probe's trial must beat.
+    level: f64,
     settled: bool,
+    /// Whether the steps since the last settle began with a re-probe.
+    trial: bool,
     /// Windows since the ramp last settled.
     settled_for: u32,
     /// Settled windows before a re-probe.
@@ -82,8 +91,8 @@ pub(crate) struct Ramp {
 }
 
 impl Ramp {
-    /// Start at one connection, ramping up to `ceiling`; never re-probes
-    /// until [`Ramp::reprobing_every`] says how often.
+    /// Start at one connection, ramping up to `ceiling`; re-probes only when
+    /// asked ([`Ramp::reprobe`]) until [`Ramp::reprobing_every`] sets a pace.
     pub fn new(ceiling: u8) -> Self {
         let ceiling = ceiling.max(1);
         Self {
@@ -91,8 +100,9 @@ impl Ramp {
             cap: None,
             target: 1,
             best: 0.0,
-            latest: 0.0,
+            level: 0.0,
             settled: ceiling <= 1,
+            trial: false,
             settled_for: 0,
             reprobe_after: u32::MAX,
         }
@@ -124,11 +134,23 @@ impl Ramp {
         // A pool change means some connection spent part of the window on
         // setup (incl. the first window's request latency): under-measuring
         // it would make the next step over-ramp.
-        if w.pool_changed || w.waited_fraction >= FREEZE_FRACTION || w.bytes_per_sec <= 0.0 {
+        if w.pool_changed || w.short || w.bytes_per_sec <= 0.0 {
             return Decision::Hold;
         }
-        self.latest = w.bytes_per_sec;
+        if w.waited_fraction >= FREEZE_FRACTION {
+            // A trial held back by the limit can't pay off.
+            return if self.trial && !self.settled {
+                self.retire()
+            } else {
+                Decision::Hold
+            };
+        }
         if self.settled {
+            self.level = if self.level == 0.0 {
+                w.bytes_per_sec
+            } else {
+                self.level + LEVEL_WEIGHT * (w.bytes_per_sec - self.level)
+            };
             let due = self.settled_for >= self.reprobe_after;
             return if due && self.reprobe() {
                 Decision::Add
@@ -145,6 +167,11 @@ impl Ramp {
             self.settle();
             return Decision::Hold;
         }
+        self.retire()
+    }
+
+    /// Give up the last step and settle on the speed before it.
+    fn retire(&mut self) -> Decision {
         self.settle();
         if self.target > 1 {
             self.target -= 1;
@@ -155,14 +182,15 @@ impl Ramp {
     }
 
     /// Leave settled to trial one more connection, judged like a ramp-up
-    /// step against the latest speed. False while still ramping, or already
+    /// step against the settled speed. False while still ramping, or already
     /// at the ceiling or the host's cap.
     pub fn reprobe(&mut self) -> bool {
         if !self.settled || self.target >= self.most() {
             return false;
         }
         self.settled = false;
-        self.best = self.latest;
+        self.trial = true;
+        self.best = self.level;
         self.target += 1;
         true
     }
@@ -175,15 +203,24 @@ impl Ramp {
             return;
         }
         self.cap = Some(self.cap.map_or(n, |c| c.min(n)));
-        if !self.settled && n < self.target {
-            self.target = n;
-            self.settle();
+        if n < self.target {
+            if !self.settled {
+                self.target = n;
+                self.settle();
+            }
+            // Speeds measured on more connections than the host now allows
+            // are no baseline: the next judged window is.
+            self.best = 0.0;
+            self.level = 0.0;
         }
     }
 
+    /// Settle at the target, whose speed is the best so far.
     fn settle(&mut self) {
         self.settled = true;
+        self.trial = false;
         self.settled_for = 0;
+        self.level = self.best;
     }
 
     /// The most connections the ramp may ask for.
@@ -216,6 +253,7 @@ mod tests {
             bytes_per_sec,
             waited_fraction: 0.0,
             pool_changed: false,
+            short: false,
         }
     }
 
@@ -353,7 +391,7 @@ mod tests {
         );
     }
 
-    /// Ramp 1 → 2, retire the third: settled at 2 with a latest speed of 200.
+    /// Ramp 1 → 2, retire the third: settled at 2 at a speed of 200.
     fn settled_at_two(ceiling: u8) -> Ramp {
         let mut r = Ramp::new(ceiling);
         r.observe(judged(100.0));
@@ -370,7 +408,7 @@ mod tests {
         assert_eq!(r.target(), 3);
         assert!(!r.reprobe(), "already trialling");
         assert_eq!(r.observe(skipped()), Decision::Hold, "setup window");
-        // Judged against the latest speed (200), not some older best: a gain
+        // Judged against the settled speed (200): a gain
         // keeps the trial and ramps on, as a ramp-up step would.
         assert_eq!(r.observe(judged(300.0)), Decision::Add);
         assert_eq!(r.target(), 4);
@@ -456,6 +494,43 @@ mod tests {
         assert_eq!(after(ms(1200), ms(500)), 3, "rounded up");
         assert_eq!(after(Duration::ZERO, ms(500)), 1);
         assert_eq!(Ramp::new(4).reprobe_after, u32::MAX, "never by default");
+    }
+
+    #[test]
+    fn one_dip_before_a_reprobe_doesnt_let_a_useless_trial_win() {
+        let mut r = settled_at_two(8);
+        assert_eq!(r.observe(judged(160.0)), Decision::Hold);
+        assert!(r.reprobe());
+        // Back to normal isn't 10% better than the smoothed 190.
+        assert_eq!(r.observe(judged(200.0)), Decision::Retire);
+        assert_eq!(r.target(), 2);
+    }
+
+    #[test]
+    fn a_trial_held_back_by_the_limit_retires() {
+        let mut r = settled_at_two(8);
+        assert!(r.reprobe());
+        assert_eq!(r.observe(skipped()), Decision::Hold);
+        let frozen = Window {
+            waited_fraction: 0.9,
+            ..judged(200.0)
+        };
+        assert_eq!(r.observe(frozen), Decision::Retire);
+        assert_eq!(r.target(), 2);
+        assert!(r.reprobe(), "settled again, so the next raise can trial");
+    }
+
+    #[test]
+    fn a_short_handed_window_is_not_judged() {
+        let window = Duration::from_millis(500);
+        let mut r = settled_at_two(8).reprobing_every(window, window);
+        let short = Window {
+            short: true,
+            ..judged(200.0)
+        };
+        assert_eq!(r.observe(short), Decision::Hold, "the work is running out");
+        assert_eq!(r.target(), 2);
+        assert_eq!(r.observe(judged(200.0)), Decision::Add);
     }
 
     #[test]
