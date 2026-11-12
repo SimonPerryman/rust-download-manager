@@ -17,10 +17,16 @@ const MIN_SCALE = 10 * 1024 * 1024;
 export function Sparkline({ speed, samples, globalLimit }: Props) {
   const max = Math.max(...samples, globalLimit ?? 0, MIN_SCALE) * 1.15;
   const p: Plot = { width: W, height: H, top: 2, bottom: 2, left: 0, right: 0, max };
+  // Split so the icon rail can stack the unit under the number.
+  const [num, unit] = formatSpeed(speed).split(" ");
   return (
     <div className="spark" data-testid="sparkline">
-      <div className="text-lg font-semibold tabular-nums">{formatSpeed(speed)}</div>
-      <div className="text-xs text-g400">Total speed now; the line is the last minute</div>
+      <div className="spark-speed font-semibold tabular-nums" data-testid="total-speed">
+        <span className="spark-num">{num}</span> <span className="spark-unit">{unit}</span>
+      </div>
+      <div className="spark-caption text-xs text-g400">
+        Total speed now; the line is the last minute
+      </div>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
         {samples.length > 1 && (
           <>

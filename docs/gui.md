@@ -34,8 +34,8 @@ Under **More options** you can give a SHA-256 checksum and a speed limit.
 - **Filter** with the sidebar (by status, destination folder or
   [tag](#archive-and-tags)) or by name from the toolbar. Click a column header to sort. The sidebar also shows the
   total speed with a graph of the last minute. In a window narrower than about
-  760 px the sidebar shrinks to an icon rail (hover an icon for its name) and
-  less important columns hide.
+  760 px the sidebar shrinks to an icon rail (hover an icon for its name; the
+  total speed puts its unit under the number) and less important columns hide.
 - **Select** a row by clicking it; Ctrl+click adds or removes rows and
   Shift+click selects a range. With two or more selected, the toolbar offers
   the actions that apply to them all (Open, Pause, Resume, Stop, Retry,

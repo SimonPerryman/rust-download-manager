@@ -3,7 +3,7 @@
 // deletes it); Ctrl-click selects two rows and the toolbar turns into their
 // actions; Shift+Down and Space work the selection from the keyboard; the
 // density toggle switches 32/48 px rows and is remembered; a narrow window
-// folds the sidebar into an icon rail.
+// folds the sidebar into an icon rail that still fits the total speed.
 // Shares the app state dir with the other specs (see wdio.conf.ts), so it
 // removes its downloads and leaves compact rows when done.
 
@@ -198,6 +198,25 @@ describe("rdm GUI power features", () => {
       });
       // The rail's icons keep their names for screen readers.
       await expect(all).toHaveAttribute("aria-label", expect.stringContaining("All"));
+      // The total speed fits the rail, now and at its widest number.
+      const speedFits = () =>
+        browser.execute(() => {
+          const aside = document.querySelector("aside")!;
+          const speed = document.querySelector<HTMLElement>('[data-testid="total-speed"]')!;
+          const num = speed.querySelector<HTMLElement>(".spark-num");
+          const fits = () =>
+            aside.scrollWidth <= aside.clientWidth &&
+            speed.scrollWidth <= speed.clientWidth &&
+            speed.getBoundingClientRect().right <= aside.getBoundingClientRect().right;
+          const now = fits();
+          if (!num) return { now, widest: false };
+          const shown = num.textContent;
+          num.textContent = "1023.9";
+          const widest = fits();
+          num.textContent = shown;
+          return { now, widest };
+        });
+      expect(await speedFits()).toEqual({ now: true, widest: true });
     } finally {
       await browser.setWindowSize(width, height);
     }
