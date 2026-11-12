@@ -3,6 +3,11 @@
   "projectType": "mixed",
   "conventions": ["CLAUDE.md", "AGENTS.md"],
   "defaultBranch": "main",
+  "paths": {
+    "context": ".ai-cache",
+    "scratch": ".e2e-verify",
+    "docs": "docs"
+  },
   "gate": {
     "format": "cargo fmt --all --check && pnpm --dir gui format:check",
     "lint": "cargo clippy --all-targets -- -D warnings && cargo clippy -p rdm-gui --all-targets -- -D warnings && pnpm --dir gui lint",
@@ -10,8 +15,10 @@
     "test": "cargo test && cargo test -p rdm-gui && pnpm --dir gui test"
   },
   "vcs": {
-    "host": "github"
+    "host": "github",
+    "stacking": "gh-stack"
   },
+  "progress": "off",
   "review": {
     "panel": ["claude", "claude"],
     "maxIterations": 5
@@ -31,5 +38,41 @@
     "provider": "project-skill:rdm-e2e",
     "specDir": "gui/e2e/specs",
     "auth": "none"
+  },
+  "tracker": {
+    "provider": "ticket-store"
+  },
+  "auto": {
+    "targets": [
+      {
+        "name": "rdm",
+        "scopeRule": "Builds roadmap tickets only. Does not change the release pipeline, tag or publish releases, bump the pinned toolchain/runner images, or add paid services (code signing, telemetry) without an owner decision.",
+        "autoMerge": false
+      }
+    ],
+    "maxInFlight": 1,
+    "reviewCap": 3,
+    "reviewers": [],
+    "worktreeDir": ".factory/worktrees",
+    "dispatch": "detached-claude",
+    "workerPermissions": "--permission-mode auto",
+    "workerQuietMin": 60,
+    "baseline": { "every": 0 },
+    "monitor": {
+      "mergeReadyHours": 24,
+      "ciPendingHours": 6,
+      "runawayFactor": 3,
+      "cpuPeggedMin": 30,
+      "cpuPeggedPct": 90
+    }
+  },
+  "notify": {
+    "provider": "os-banner",
+    "remindHours": 24
+  },
+  "scheduler": {
+    "provider": "none",
+    "everyMin": 30,
+    "monitorEveryMin": 60
   }
 }
