@@ -47,7 +47,7 @@ pub use integrity::{Algo, Checksum};
 pub use limit::{parse_rate, RateLimiter};
 pub use manager::{AddOptions, DownloadSnapshot, Manager};
 pub use progress::{Progress, SpeedMeter};
-pub use proxy::Proxy;
+pub use proxy::{Proxy, ProxyMode};
 #[doc(hidden)]
 pub use ramp::Ramping;
 pub use redact::{map_urls_in, redact_url, redact_urls_in};
@@ -85,9 +85,8 @@ pub struct DownloadRequest {
     pub retry: RetryPolicy,
     /// Optional checksum to verify the finished file against.
     pub checksum: Option<Checksum>,
-    /// Proxy every request goes through; `None` connects directly (proxy
-    /// environment variables such as `HTTP_PROXY` are ignored either way).
-    pub proxy: Option<Proxy>,
+    /// Which proxy every request goes through (default: the system's).
+    pub proxy: ProxyMode,
     /// Optional hook to claim the derived target before anything is written;
     /// ignored when `out` is set.
     pub claim_target: Option<ClaimTarget>,
@@ -156,7 +155,7 @@ impl DownloadRequest {
             out: None,
             retry: RetryPolicy::default(),
             checksum: None,
-            proxy: None,
+            proxy: ProxyMode::System,
             claim_target: None,
             connections: DEFAULT_CONNECTIONS,
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
@@ -177,7 +176,7 @@ impl DownloadRequest {
             out: Some(out),
             retry: RetryPolicy::default(),
             checksum: None,
-            proxy: None,
+            proxy: ProxyMode::System,
             claim_target: None,
             connections: DEFAULT_CONNECTIONS,
             min_segment_size: DEFAULT_MIN_SEGMENT_SIZE,
@@ -201,9 +200,10 @@ impl DownloadRequest {
         self
     }
 
-    /// Send every request through `proxy` (builder).
-    pub fn with_proxy(mut self, proxy: Proxy) -> Self {
-        self.proxy = Some(proxy);
+    /// Choose the proxy every request goes through (builder); a [`Proxy`]
+    /// means [`ProxyMode::Custom`].
+    pub fn with_proxy(mut self, proxy: impl Into<ProxyMode>) -> Self {
+        self.proxy = proxy.into();
         self
     }
 
@@ -377,14 +377,18 @@ pub async fn download(
     let client = reqwest::Client::builder()
         .user_agent(USER_AGENT)
         .connect_timeout(CONNECT_TIMEOUT);
-    // Only an explicit proxy: reqwest would otherwise pick one up from the
-    // environment (`HTTP_PROXY`, `ALL_PROXY`), unasked.
+    // reqwest reads the system proxy (env vars, then the OS settings) when
+    // the client is built, so a changed one applies from the next download.
     let client = match &req.proxy {
-        Some(proxy) => {
+        ProxyMode::System => client,
+        ProxyMode::None => {
+            tracing::info!("Not using a proxy");
+            client.no_proxy()
+        }
+        ProxyMode::Custom(proxy) => {
             tracing::info!("Through proxy {proxy}");
             client.proxy(reqwest::Proxy::all(proxy.as_str())?)
         }
-        None => client.no_proxy(),
     }
     .build()?;
 

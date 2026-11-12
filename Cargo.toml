@@ -45,8 +45,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util
 # TLS via rustls with the OS trust store (rustls-platform-verifier). The
 # crypto provider is ring, installed by the engine, so the build skips
 # aws-lc-rs and its C toolchain (cmake/NASM). `socks` adds SOCKS5 proxies
-# (HTTP and HTTPS proxies need no feature).
-reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "stream", "socks"] }
+# (HTTP and HTTPS proxies need no feature); `system-proxy` reads the Windows
+# and macOS proxy settings (the proxy env vars are read without it).
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "stream", "socks", "system-proxy"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 url = "2"
