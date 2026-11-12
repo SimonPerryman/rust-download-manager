@@ -7,7 +7,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use anyhow::Context;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use indicatif::{ProgressBar, ProgressStyle};
 use tracing::Level;
 use tracing_subscriber::filter::{filter_fn, FilterExt};
@@ -17,7 +17,7 @@ use tracing_subscriber::EnvFilter;
 
 use rdm::{
     download, engine::state, parse_rate, redact_url, Checksum, Control, DownloadRequest, Error,
-    RateLimiter, Summary,
+    Proxy, RateLimiter, Summary,
 };
 
 /// Printed when Ctrl-C paused the download.
@@ -67,6 +67,14 @@ struct Cli {
     #[arg(long = "limit-rate", value_name = "RATE", value_parser = parse_rate)]
     limit_rate: Option<u64>,
 
+    /// Download through a proxy: `http://`, `https://`, `socks5://` or
+    /// `socks5h://` (DNS through the proxy), with an optional `user:pass@`,
+    /// e.g. `socks5h://127.0.0.1:1080`.
+    // Parsed in `main`, not by clap, whose error would repeat the value and
+    // with it any password.
+    #[arg(long = "proxy", value_name = "URL")]
+    proxy: Option<String>,
+
     /// Also log informational engine events (download start, fallbacks) to
     /// stderr; `RUST_LOG` overrides the level.
     #[arg(short = 'v', long = "verbose")]
@@ -76,6 +84,19 @@ struct Cli {
 /// clap value parser: `sha256:<hex>` → [`Checksum`].
 fn parse_checksum(s: &str) -> Result<Checksum, String> {
     s.parse()
+}
+
+/// `--proxy` → [`Proxy`], or exit with a usage error that names the flag but
+/// not the value.
+fn parse_proxy(s: &str) -> Proxy {
+    s.parse().unwrap_or_else(|e| {
+        Cli::command()
+            .error(
+                clap::error::ErrorKind::ValueValidation,
+                format!("invalid value for '--proxy <URL>': {e}"),
+            )
+            .exit()
+    })
 }
 
 #[tokio::main]
@@ -90,6 +111,9 @@ async fn main() -> anyhow::Result<ExitCode> {
     .with_connections(cli.connections);
     if let Some(checksum) = cli.checksum {
         req = req.with_checksum(checksum);
+    }
+    if let Some(proxy) = cli.proxy.as_deref().map(parse_proxy) {
+        req = req.with_proxy(proxy);
     }
 
     // When the target is known up front (explicit -o), note whether a prior

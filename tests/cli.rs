@@ -590,3 +590,112 @@ async fn verbose_logs_the_version_and_os() {
     );
     assert!(stderr.contains(&line), "no {line:?} in stderr: {stderr}");
 }
+
+/// `--proxy` sends the download through the proxy.
+#[tokio::test]
+async fn cli_downloads_through_a_proxy() {
+    let server = common::spawn().await;
+    let proxy = common::proxy::spawn_socks5_proxy().await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("f.bin");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .arg(server.url("/file"))
+        .arg("-o")
+        .arg(&out)
+        .arg("--proxy")
+        .arg(proxy.url("socks5h", Some("user:pw")))
+        .status()
+        .await
+        .expect("spawn rdm");
+
+    assert!(status.success(), "rdm exited with {status}");
+    assert_eq!(std::fs::read(&out).unwrap(), common::payload());
+    assert_eq!(proxy.seen().len(), 1, "{:?}", proxy.seen());
+}
+
+/// An invalid `--proxy` is a usage error (exit 2, where a failed download
+/// exits 1) naming the flag, and the message doesn't repeat the value (it may
+/// hold a password).
+#[tokio::test]
+async fn cli_rejects_an_invalid_proxy_before_downloading() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    for bad in ["not-a-url", "ftp://user:SECRETPW@host:21"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
+            .arg(server.url("/missing"))
+            .arg("-o")
+            .arg(dir.path().join("f.bin"))
+            .arg("--proxy")
+            .arg(bad)
+            .output()
+            .await
+            .expect("spawn rdm");
+
+        assert_eq!(output.status.code(), Some(2), "{bad}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("--proxy"), "stderr: {stderr}");
+        assert!(!stderr.contains("SECRETPW"), "stderr: {stderr}");
+    }
+}
+
+/// A failed download through a proxy prints neither the proxy's login nor
+/// its password, even with `-v` and `RUST_LOG=debug`.
+#[tokio::test]
+async fn cli_output_never_shows_proxy_credentials() {
+    let server = common::spawn().await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let closed = listener.local_addr().unwrap();
+    drop(listener);
+    let dir = tempfile::tempdir().unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .arg(server.url("/file"))
+        .arg("-o")
+        .arg(dir.path().join("f.bin"))
+        .arg("--proxy")
+        .arg(format!("http://proxyuser:SECRETPW@{closed}"))
+        .arg("--verbose")
+        .env("RUST_LOG", "debug")
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert!(!output.status.success());
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!all.contains("SECRETPW"), "output: {all}");
+    assert!(!all.contains("proxyuser"), "output: {all}");
+    assert!(
+        all.contains("Through proxy http://<redacted>:<redacted>@127.0.0.1:"),
+        "output: {all}"
+    );
+}
+
+/// Proxy environment variables are ignored: only `--proxy` routes a download
+/// through a proxy.
+#[tokio::test]
+async fn cli_ignores_proxy_environment_variables() {
+    let server = common::spawn().await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let closed = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("f.bin");
+
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_rdm"));
+    cmd.arg(server.url("/file")).arg("-o").arg(&out);
+    for var in ["HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"] {
+        cmd.env(var, &closed);
+    }
+    for var in ["NO_PROXY", "no_proxy"] {
+        cmd.env_remove(var);
+    }
+    let status = cmd.status().await.expect("spawn rdm");
+
+    assert!(status.success(), "rdm exited with {status}");
+    assert_eq!(std::fs::read(&out).unwrap(), common::payload());
+}

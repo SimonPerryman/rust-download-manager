@@ -7,6 +7,17 @@ desktop app share one version.
 
 ## Unreleased
 
+### Added
+
+- `--proxy <url>` (CLI) downloads through an HTTP, HTTPS or SOCKS5 proxy
+  (`socks5h://` for DNS through the proxy), with an optional `user:pass@`.
+  The proxy's login is redacted from all output.
+
+### Changed
+
+- The `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` environment variables no
+  longer apply to downloads; only an explicit proxy does.
+
 ## 0.3.0 - 2026-11-11
 
 ### Added

@@ -44,8 +44,9 @@ fault-injection = []
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "time", "sync", "signal"] }
 # TLS via rustls with the OS trust store (rustls-platform-verifier). The
 # crypto provider is ring, installed by the engine, so the build skips
-# aws-lc-rs and its C toolchain (cmake/NASM).
-reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "stream"] }
+# aws-lc-rs and its C toolchain (cmake/NASM). `socks` adds SOCKS5 proxies
+# (HTTP and HTTPS proxies need no feature).
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "stream", "socks"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 url = "2"

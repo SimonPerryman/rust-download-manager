@@ -11,6 +11,7 @@ share it, so everything here applies to both.
 - [Integrity checks](#integrity-checks)
 - [Safe file names](#safe-file-names)
 - [The queue and speed limits](#the-queue-and-speed-limits)
+- [Proxies](#proxies)
 - [Engine and frontends](#engine-and-frontends)
 - [When something goes wrong](#when-something-goes-wrong)
 
@@ -89,6 +90,15 @@ new one is saved as `name (1).ext`.
   limit straight away, with no initial burst. Its speed is measured over the
   last 5 seconds from bytes that have passed the limit's wait, so it reads
   close to the limit, even when data arrives less often than that.
+
+## Proxies
+
+A download can go through an HTTP, HTTPS or SOCKS5 proxy (`socks5h` to have
+the proxy resolve host names too), and then every request it makes does,
+each connection of a segmented download included. Only a proxy you set is
+used: the `HTTP_PROXY`/`ALL_PROXY` environment variables are ignored, so a
+proxy never applies unasked. The proxy's login is redacted wherever the
+proxy is shown, like any URL's.
 
 ## Engine and frontends
 

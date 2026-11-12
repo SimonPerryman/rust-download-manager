@@ -62,6 +62,9 @@ rdm https://example.com/big-file.zip --limit-rate 2M
 
 # Verify the result against a SHA-256 checksum:
 rdm https://example.com/big-file.zip --checksum sha256:<hex>
+
+# Go through a SOCKS5 or HTTP proxy:
+rdm https://example.com/big-file.zip --proxy socks5h://127.0.0.1:1080
 ```
 
 Interrupted, or pressed Ctrl-C? Run the same command again to resume. The
