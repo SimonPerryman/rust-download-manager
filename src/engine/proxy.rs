@@ -32,10 +32,11 @@ impl FromStr for Proxy {
         const EXAMPLE: &str = "expected e.g. http://host:8080 or socks5://host:1080";
         let url = url::Url::parse(s.trim())
             .map_err(|e| format!("not a valid proxy URL ({e}); {EXAMPLE}"))?;
+        // Not naming what was taken for the scheme: with the scheme left off,
+        // as in `user:pass@host:1080`, that's the user name.
         if !SCHEMES.contains(&url.scheme()) {
             return Err(format!(
-                "unsupported proxy scheme '{}' (use http, https, socks5 or socks5h); {EXAMPLE}",
-                url.scheme()
+                "a proxy URL starts with http://, https://, socks5:// or socks5h://; {EXAMPLE}"
             ));
         }
         if url.host_str().is_none_or(str::is_empty) {
@@ -79,9 +80,9 @@ mod tests {
         for (url, says) in [
             ("not-a-url", "not a valid proxy URL"),
             ("", "not a valid proxy URL"),
-            ("ftp://host:21", "unsupported proxy scheme 'ftp'"),
-            ("socks4://host:1080", "unsupported proxy scheme 'socks4'"),
-            ("localhost:8080", "unsupported proxy scheme 'localhost'"),
+            ("ftp://host:21", "starts with http://"),
+            ("socks4://host:1080", "starts with http://"),
+            ("localhost:8080", "starts with http://"),
             ("socks5:host", "has no host"),
             ("http://:8080", "not a valid proxy URL"),
         ] {
@@ -107,7 +108,14 @@ mod tests {
             "socks5h://alice:hunter2@proxy.example.com:1080"
         );
 
-        let err = "ftp://alice:hunter2@host".parse::<Proxy>().unwrap_err();
-        assert!(!err.contains("hunter2"), "{err}");
+        for url in [
+            "ftp://alice:hunter2@host",
+            "alice:hunter2@host:1080",
+            "http://alice:hunter2@:1080",
+        ] {
+            let err = url.parse::<Proxy>().unwrap_err();
+            assert!(!err.contains("alice"), "{err}");
+            assert!(!err.contains("hunter2"), "{err}");
+        }
     }
 }

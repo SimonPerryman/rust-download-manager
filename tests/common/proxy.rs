@@ -15,10 +15,11 @@ pub struct ProxyServer {
     seen: Arc<Mutex<Vec<Seen>>>,
 }
 
-/// One request a proxy relayed.
+/// One connection a proxy relayed. Only its first request is seen: the rest
+/// of a kept-alive connection is relayed as is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Seen {
-    /// HTTP: the request line as the client sent it (absolute-form, or
+    /// HTTP: the first request line as the client sent it (absolute-form, or
     /// `CONNECT host:port`). SOCKS5: the `host:port` it was asked to reach.
     pub target: String,
     /// HTTP: the `Proxy-Authorization` header. SOCKS5: the `user:pass` login.
@@ -32,7 +33,7 @@ impl ProxyServer {
         format!("{scheme}://{login}{}", self.addr)
     }
 
-    /// Every request relayed so far, in arrival order.
+    /// Every connection relayed so far, in arrival order.
     pub fn seen(&self) -> Vec<Seen> {
         self.seen.lock().unwrap().clone()
     }

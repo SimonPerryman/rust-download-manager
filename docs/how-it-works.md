@@ -96,9 +96,9 @@ new one is saved as `name (1).ext`.
 A download can go through an HTTP, HTTPS or SOCKS5 proxy (`socks5h` to have
 the proxy resolve host names too), and then every request it makes does,
 each connection of a segmented download included. Only a proxy you set is
-used: the `HTTP_PROXY`/`ALL_PROXY` environment variables are ignored, so a
-proxy never applies unasked. The proxy's login is redacted wherever the
-proxy is shown, like any URL's.
+used: the `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` environment variables
+are ignored, so a proxy never applies unasked. Logs and error messages show
+the proxy with its login redacted, like any URL's.
 
 ## Engine and frontends
 

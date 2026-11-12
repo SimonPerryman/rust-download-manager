@@ -640,28 +640,28 @@ async fn cli_rejects_an_invalid_proxy_before_downloading() {
 }
 
 /// A failed download through a proxy prints neither the proxy's login nor
-/// its password, even with `-v` and `RUST_LOG=debug`.
+/// its password, even with `-v` and `RUST_LOG=debug` (a 404, so it fails at
+/// once instead of retrying).
 #[tokio::test]
 async fn cli_output_never_shows_proxy_credentials() {
     let server = common::spawn().await;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let closed = listener.local_addr().unwrap();
-    drop(listener);
+    let proxy = common::proxy::spawn_http_proxy().await;
     let dir = tempfile::tempdir().unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
-        .arg(server.url("/file"))
+        .arg(server.url("/missing"))
         .arg("-o")
         .arg(dir.path().join("f.bin"))
         .arg("--proxy")
-        .arg(format!("http://proxyuser:SECRETPW@{closed}"))
+        .arg(proxy.url("http", Some("proxyuser:SECRETPW")))
         .arg("--verbose")
         .env("RUST_LOG", "debug")
         .output()
         .await
         .expect("spawn rdm");
 
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(proxy.seen().len(), 1, "{:?}", proxy.seen());
     let all = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
