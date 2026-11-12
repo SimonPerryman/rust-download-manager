@@ -15,6 +15,14 @@ desktop app share one version.
   URL without any login or query string. Drives that can't hold the mark
   (FAT32, exFAT, some network shares) still finish the download, unmarked.
 
+### Changed
+
+- A download on several connections keeps adjusting them: once it has
+  settled below its maximum, it tries one more connection every 30 seconds,
+  and straight away when its speed limit is raised or removed, keeping it
+  only if the download gets faster. Before, lifting a limit never brought
+  connections back.
+
 ## 0.3.0 - 2026-11-11
 
 ### Added
