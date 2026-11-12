@@ -29,7 +29,7 @@ in more detail.
 SOCKS5 proxy, e.g. one behind a corporate firewall or the SOCKS5 endpoint a
 VPN service offers. Use `socks5h://` rather than `socks5://` to have the
 proxy look up the host name too, so no DNS lookup leaves your machine
-directly.
+directly. A SOCKS5 proxy without a port uses 1080.
 
 ```sh
 rdm https://example.com/big-file.zip --proxy socks5h://user:pass@127.0.0.1:1080

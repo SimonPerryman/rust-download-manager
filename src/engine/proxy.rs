@@ -9,6 +9,9 @@ use super::redact_url;
 /// names through the proxy instead of locally.
 const SCHEMES: [&str; 4] = ["http", "https", "socks5", "socks5h"];
 
+/// The port a SOCKS proxy URL without one gets.
+const SOCKS_PORT: u16 = 1080;
+
 /// An HTTP, HTTPS or SOCKS5 proxy for a download's requests, e.g.
 /// `socks5h://user:pass@127.0.0.1:1080`. It shows (`Display`, `Debug`) only
 /// redacted, so its credentials never reach logs or error text.
@@ -39,8 +42,28 @@ impl FromStr for Proxy {
                 "a proxy URL starts with http://, https://, socks5:// or socks5h://; {EXAMPLE}"
             ));
         }
-        if url.host_str().is_none_or(str::is_empty) {
-            return Err(format!("the proxy URL has no host; {EXAMPLE}"));
+        // `socks5` URLs are parsed loosely (opaque host), but the HTTP client
+        // re-parses the proxy and, if that fails, quietly connects directly:
+        // so refuse any host it couldn't use.
+        let usable = match url.host() {
+            Some(url::Host::Domain(name)) => {
+                !name.is_empty()
+                    && name
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"-._".contains(&b))
+            }
+            Some(_) => true,
+            None => false,
+        };
+        if !usable {
+            return Err(format!(
+                "the proxy URL needs a host name (in ASCII) or IP address; {EXAMPLE}"
+            ));
+        }
+        let mut url = url;
+        if url.scheme().starts_with("socks") && url.port().is_none() {
+            // SOCKS's usual port; the client would otherwise dial 80.
+            let _ = url.set_port(Some(SOCKS_PORT));
         }
         Ok(Self(url))
     }
@@ -83,12 +106,25 @@ mod tests {
             ("ftp://host:21", "starts with http://"),
             ("socks4://host:1080", "starts with http://"),
             ("localhost:8080", "starts with http://"),
-            ("socks5:host", "has no host"),
+            ("socks5:host", "needs a host name"),
+            ("socks5h://localhost}:9050", "needs a host name"),
+            ("socks5h://ho%7Bst:1080", "needs a host name"),
+            ("socks5h://прокси.lan:1080", "needs a host name"),
             ("http://:8080", "not a valid proxy URL"),
         ] {
             let err = url.parse::<Proxy>().unwrap_err();
             assert!(err.contains(says), "{url}: {err}");
         }
+    }
+
+    #[test]
+    fn a_socks_proxy_without_a_port_gets_1080() {
+        let proxy: Proxy = "socks5h://127.0.0.1".parse().unwrap();
+        assert_eq!(proxy.as_str(), "socks5h://127.0.0.1:1080");
+        let proxy: Proxy = "socks5://[::1]:9050".parse().unwrap();
+        assert_eq!(proxy.as_str(), "socks5://[::1]:9050");
+        let proxy: Proxy = "http://proxy.example".parse().unwrap();
+        assert_eq!(proxy.as_str(), "http://proxy.example/");
     }
 
     #[test]
