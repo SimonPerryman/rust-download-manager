@@ -62,7 +62,7 @@ impl FromStr for Proxy {
         }
         let mut url = url;
         if url.scheme().starts_with("socks") && url.port().is_none() {
-            // SOCKS's usual port; the client would otherwise dial 80.
+            // SOCKS's usual port, written out so the saved URL says which.
             let _ = url.set_port(Some(SOCKS_PORT));
         }
         Ok(Self(url))
