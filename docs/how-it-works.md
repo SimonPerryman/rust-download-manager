@@ -40,8 +40,9 @@ into byte ranges fetched in parallel, over up to 4 connections by default
   - *Shed:* a settled download whose speed stays below 70% of its best
     (smoothed over a few seconds) for 3 measured seconds running closes one
     connection (never the last), since the extra connections are likely
-    hurting rather than helping. Its best becomes the current speed, so a
-    later re-probe can win the connection back once the speed recovers.
+    hurting rather than helping. A second slowed by rdm's own speed limit
+    doesn't count. Its best becomes the current speed, so a later re-probe
+    can win the connection back once the speed recovers.
 
   A second spent waiting on rdm's own speed limit, in which a connection
   opened or closed, or in which the work was running out, says nothing

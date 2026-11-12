@@ -30,6 +30,10 @@ const SLOW_FRACTION: f64 = 0.70;
 /// ... and this many judged ones in a row shed a connection.
 const SHED_AFTER: u8 = 3;
 
+/// A slow window that spent more than this share of its connection-time
+/// waiting on the speed limit was slowed by the limit, not the host.
+const LIMITED_FRACTION: f64 = 0.05;
+
 /// A window that spent at least this share of its connection-time waiting on
 /// rate-limit tokens says nothing about the server, so it is not judged.
 const FREEZE_FRACTION: f64 = 0.5;
@@ -168,6 +172,10 @@ impl Ramp {
                 self.level + LEVEL_WEIGHT * (w.bytes_per_sec - self.level)
             };
             if w.bytes_per_sec < self.best * SLOW_FRACTION {
+                if w.waited_fraction > LIMITED_FRACTION {
+                    // Slowed by rdm's own limit: no evidence about the host.
+                    return Decision::Hold;
+                }
                 self.slow = self.slow.saturating_add(1);
                 // A host cap can hold the pool below the target.
                 let lanes = self.target.min(self.most());
@@ -727,6 +735,19 @@ mod tests {
         assert_eq!(r.observe(judged(100.0)), Decision::Hold);
         assert_eq!(r.observe(judged(100.0)), Decision::Shed);
         assert_eq!(r.target(), 1);
+    }
+
+    #[test]
+    fn a_limit_that_binds_without_freezing_never_sheds() {
+        let mut r = settled_at_four();
+        let limited = Window {
+            waited_fraction: 0.3,
+            ..judged(240.0)
+        };
+        for _ in 0..6 {
+            assert_eq!(r.observe(limited), Decision::Hold);
+        }
+        assert_eq!(r.target(), 4);
     }
 
     #[test]
