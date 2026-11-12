@@ -88,6 +88,9 @@ pub(crate) struct Ramp {
     settled_for: u32,
     /// Settled windows before a re-probe.
     reprobe_after: u32,
+    /// A raised limit asked for a re-probe once the current lanes' speed
+    /// has been measured afresh.
+    reprobe_now: bool,
 }
 
 impl Ramp {
@@ -105,6 +108,7 @@ impl Ramp {
             trial: false,
             settled_for: 0,
             reprobe_after: u32::MAX,
+            reprobe_now: false,
         }
     }
 
@@ -151,7 +155,7 @@ impl Ramp {
             } else {
                 self.level + LEVEL_WEIGHT * (w.bytes_per_sec - self.level)
             };
-            let due = self.settled_for >= self.reprobe_after;
+            let due = self.reprobe_now || self.settled_for >= self.reprobe_after;
             return if due && self.reprobe() {
                 Decision::Add
             } else {
@@ -190,9 +194,20 @@ impl Ramp {
         }
         self.settled = false;
         self.trial = true;
+        self.reprobe_now = false;
         self.best = self.level;
         self.target += 1;
         true
+    }
+
+    /// The speed limit was raised or removed: forget the speed measured
+    /// under it, and re-probe on the next judged window, which measures the
+    /// current lanes under the new limit.
+    pub fn on_limit_raised(&mut self) {
+        if self.settled {
+            self.level = 0.0;
+            self.reprobe_now = true;
+        }
     }
 
     /// The host refused more than `n` connections (429/503): stay at `n`, and
@@ -504,6 +519,29 @@ mod tests {
         // Back to normal isn't 10% better than the smoothed 190.
         assert_eq!(r.observe(judged(200.0)), Decision::Retire);
         assert_eq!(r.target(), 2);
+    }
+
+    #[test]
+    fn a_raised_limit_trials_against_a_fresh_window() {
+        // Settled at 2 under a limit that held them to 200.
+        let mut r = settled_at_two(8);
+        r.on_limit_raised();
+        // Two lanes alone now run at 500: that's the baseline ...
+        assert_eq!(r.observe(judged(500.0)), Decision::Add);
+        assert_eq!(r.target(), 3);
+        // ... so a trial that adds nothing retires.
+        assert_eq!(r.observe(skipped()), Decision::Hold);
+        assert_eq!(r.observe(judged(500.0)), Decision::Retire);
+        assert_eq!(r.target(), 2);
+
+        let mut ramping = Ramp::new(4);
+        ramping.on_limit_raised();
+        assert_eq!(
+            ramping.observe(judged(100.0)),
+            Decision::Add,
+            "still ramping"
+        );
+        assert_eq!(ramping.target(), 2);
     }
 
     #[test]

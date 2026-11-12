@@ -385,11 +385,12 @@ pub(crate) async fn run(
                         && !lock(&shared.table).has_unowned_work(),
                 };
                 // A window under the old limit says nothing about the new
-                // one, so a raise trials a connection straight away.
+                // one: skip it, and re-probe once the new one is measured.
                 let limit = job.control.rate_limit();
                 let raised = limit_raised(std::mem::replace(&mut speed_limit, limit), limit);
-                let decision = if raised && ramp.reprobe() {
-                    Decision::Add
+                let decision = if raised {
+                    ramp.on_limit_raised();
+                    Decision::Hold
                 } else {
                     ramp.observe(measured)
                 };

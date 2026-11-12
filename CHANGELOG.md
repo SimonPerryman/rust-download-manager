@@ -19,9 +19,9 @@ desktop app share one version.
 
 - A download on several connections keeps adjusting them: once it has
   settled below its maximum, it tries one more connection every 30 seconds,
-  and straight away when its speed limit is raised or removed, keeping it
-  only if the download gets faster. Before, lifting a limit never brought
-  connections back.
+  and within a second or two of its speed limit being raised or removed,
+  keeping it only if the download gets faster. Before, lifting a limit
+  never brought connections back.
 
 ## 0.3.0 - 2026-11-11
 

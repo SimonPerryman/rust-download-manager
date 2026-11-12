@@ -230,9 +230,9 @@ fn rises_to(seen: &[Progress], n: u8) -> usize {
 }
 
 /// A download settled at 2 under a speed limit (the host's link gives two
-/// connections' worth) re-probes as soon as the limit is lifted, and, the
-/// link having got faster meanwhile, keeps ramping past 2. The default 30 s
-/// re-probe interval outlasts the download, so only the lift can do it.
+/// connections' worth) re-probes one window after the limit is lifted and,
+/// the link having got faster meanwhile, keeps ramping past 2. The default
+/// 30 s re-probe interval outlasts the download, so only the lift can do it.
 #[tokio::test(flavor = "multi_thread")]
 async fn lifting_a_speed_limit_reprobes_past_the_settled_count() {
     let server = ramp_server(16 * MIB).await;
