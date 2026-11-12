@@ -10,6 +10,7 @@ share it, so everything here applies to both.
 - [Retries and backoff](#retries-and-backoff)
 - [Integrity checks](#integrity-checks)
 - [Safe file names](#safe-file-names)
+- [Marked as downloaded (Windows)](#marked-as-downloaded-windows)
 - [The queue and speed limits](#the-queue-and-speed-limits)
 - [Engine and frontends](#engine-and-frontends)
 - [When something goes wrong](#when-something-goes-wrong)
@@ -77,6 +78,15 @@ dialog) is verified before the file is moved into place.
 A name taken from the server or the URL is made safe on every OS and always
 lands inside the download folder. An existing file is never overwritten; the
 new one is saved as `name (1).ext`.
+
+## Marked as downloaded (Windows)
+
+On Windows, every finished file is tagged as downloaded from the internet
+(Mark-of-the-Web), just as a browser tags its downloads, so SmartScreen,
+Office's Protected View and antivirus give it the same extra checks. The tag
+records the download's URL without any login or query string, since those
+often carry tokens. A drive that can't hold the tag (FAT32, exFAT, some
+network shares) leaves the file unmarked, and the download still succeeds.
 
 ## The queue and speed limits
 
