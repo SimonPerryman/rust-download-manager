@@ -114,6 +114,9 @@ describe("rdm GUI proxy setting", () => {
       containing: true,
     });
     await closeSettings();
+    // Closing with the bad edit still in the field says so again, as a toast.
+    await $(TOAST).waitForExist();
+    await dismissOverlays();
 
     const saved = await invoke<{ proxy: string | null }>("get_settings");
     expect(saved.proxy).toBe(withLogin.replace("hunter2", "••••••"));

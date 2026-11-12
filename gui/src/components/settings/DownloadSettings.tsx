@@ -80,8 +80,10 @@ export function DownloadSettings({
   // field so an invalid one can't take the others down with it.
   const latest = useRef({ drafts, saved, onApplied, onUnsaved });
   latest.current = { drafts, saved, onApplied, onUnsaved };
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // Set here too: StrictMode's dev-only remount runs the cleanup below once.
+    mounted.current = true;
+    return () => {
       mounted.current = false;
       const { drafts, saved, onApplied, onUnsaved } = latest.current;
       if (!saved) return;
@@ -92,9 +94,8 @@ export function DownloadSettings({
           .then((applied) => onApplied(applied, [field]))
           .catch((e) => field === "proxy" && onUnsaved(proxyUnsaved(e)));
       }
-    },
-    [],
-  );
+    };
+  }, []);
 
   const input = (field: "concurrent" | "connections", label: string) => (
     <input

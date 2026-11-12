@@ -186,7 +186,8 @@ shows the total speed, and you can click the global limit there to change it.
 URL, e.g. `socks5h://127.0.0.1:1080` (`socks5h` has the proxy look up host
 names too) or `http://user:pass@proxy.example:3128`. Leave it empty for no
 proxy. The URL is checked when you press Enter or leave the field; an
-invalid one shows an error under the field and isn't saved. A change applies
+invalid one shows an error under the field and isn't saved (closing Settings
+first shows the error as a notice instead). A change applies
 to downloads started or resumed after it, not to ones already running.
 
 Once saved, the field shows the password as `••••••`. Leave the dots to keep
