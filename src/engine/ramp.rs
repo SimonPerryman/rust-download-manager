@@ -155,7 +155,10 @@ impl Ramp {
             } else {
                 self.level + LEVEL_WEIGHT * (w.bytes_per_sec - self.level)
             };
-            let due = self.reprobe_now || self.settled_for >= self.reprobe_after;
+            // A raise's re-probe is spent here even at the ceiling, so it
+            // can't fire long after, the moment a lane closes.
+            let due =
+                std::mem::take(&mut self.reprobe_now) || self.settled_for >= self.reprobe_after;
             return if due && self.reprobe() {
                 Decision::Add
             } else {
@@ -202,12 +205,17 @@ impl Ramp {
 
     /// The speed limit was raised or removed: forget the speed measured
     /// under it, and re-probe on the next judged window, which measures the
-    /// current lanes under the new limit.
-    pub fn on_limit_raised(&mut self) {
-        if self.settled {
-            self.level = 0.0;
-            self.reprobe_now = true;
-        }
+    /// current lanes under the new limit. A step in progress was judged
+    /// against the old limit, so it's given up first.
+    pub fn on_limit_raised(&mut self) -> Decision {
+        let decision = if self.settled {
+            Decision::Hold
+        } else {
+            self.retire()
+        };
+        self.level = 0.0;
+        self.reprobe_now = true;
+        decision
     }
 
     /// The host refused more than `n` connections (429/503): stay at `n`, and
@@ -236,6 +244,7 @@ impl Ramp {
         self.trial = false;
         self.settled_for = 0;
         self.level = self.best;
+        self.reprobe_now = false;
     }
 
     /// The most connections the ramp may ask for.
@@ -533,15 +542,39 @@ mod tests {
         assert_eq!(r.observe(skipped()), Decision::Hold);
         assert_eq!(r.observe(judged(500.0)), Decision::Retire);
         assert_eq!(r.target(), 2);
+    }
 
+    #[test]
+    fn a_raise_mid_step_gives_the_step_up_and_retries_it_fresh() {
+        // Settled at 2 at 200, trialling a third lane under the old limit.
+        let mut r = settled_at_two(8);
+        assert!(r.reprobe());
+        assert_eq!(r.on_limit_raised(), Decision::Retire);
+        assert_eq!(r.target(), 2);
+        // Two lanes now run at 500: a third that adds nothing retires,
+        // rather than beating the old limit's 200.
+        assert_eq!(r.observe(skipped()), Decision::Hold);
+        assert_eq!(r.observe(judged(500.0)), Decision::Add);
+        assert_eq!(r.observe(skipped()), Decision::Hold);
+        assert_eq!(r.observe(judged(500.0)), Decision::Retire);
+        assert_eq!(r.target(), 2);
+
+        // On its first lane, a ramp-up just carries on.
         let mut ramping = Ramp::new(4);
-        ramping.on_limit_raised();
-        assert_eq!(
-            ramping.observe(judged(100.0)),
-            Decision::Add,
-            "still ramping"
-        );
+        assert_eq!(ramping.on_limit_raised(), Decision::Hold);
+        assert_eq!(ramping.observe(judged(100.0)), Decision::Add);
         assert_eq!(ramping.target(), 2);
+    }
+
+    #[test]
+    fn a_raise_at_the_ceiling_doesnt_reprobe_later() {
+        let mut r = Ramp::new(2);
+        r.observe(judged(100.0));
+        assert_eq!(r.observe(judged(200.0)), Decision::Hold, "settled at 2");
+        assert_eq!(r.on_limit_raised(), Decision::Hold);
+        assert_eq!(r.observe(judged(500.0)), Decision::Hold, "at the ceiling");
+        // Spent, so a lane closing later isn't refilled before the interval.
+        assert!(!r.reprobe_now);
     }
 
     #[test]

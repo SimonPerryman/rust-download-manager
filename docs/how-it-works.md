@@ -29,7 +29,9 @@ into byte ranges fetched in parallel, over up to 4 connections by default
   removed (once it has measured a second at the new limit), in case it can
   now go faster. If that makes the download more than 10% faster than
   its recent speed, the connection stays and ramping carries on; if not,
-  or if the speed limit still holds it back, it closes again. A server
+  or if the speed limit still holds it back, it closes again. A connection
+  still being tried when the limit is raised closes, to be tried again at
+  the new limit (logged as "its speed limit changed mid-try"). A server
   that refused a connection (429 or 503) isn't offered more than it
   accepted until the download next has to retry.
 - **Which lane closes:** connections are numbered Lane 1, Lane 2… in the

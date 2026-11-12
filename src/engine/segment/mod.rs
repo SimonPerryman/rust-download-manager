@@ -389,8 +389,7 @@ pub(crate) async fn run(
                 let limit = job.control.rate_limit();
                 let raised = limit_raised(std::mem::replace(&mut speed_limit, limit), limit);
                 let decision = if raised {
-                    ramp.on_limit_raised();
-                    Decision::Hold
+                    ramp.on_limit_raised()
                 } else {
                     ramp.observe(measured)
                 };
@@ -413,10 +412,12 @@ pub(crate) async fn run(
                     Decision::Retire => {
                         let over = shared.pool.live() > shared.pool.target();
                         if let Some(bottom) = shared.pool.bottom().filter(|_| over) {
-                            tracing::info!(
-                                "Closing Lane {} — more lanes didn't speed this up",
-                                bottom + 1
-                            );
+                            let why = if raised {
+                                "its speed limit changed mid-try"
+                            } else {
+                                "more lanes didn't speed this up"
+                            };
+                            tracing::info!("Closing Lane {} — {why}", bottom + 1);
                         }
                     }
                     Decision::Add | Decision::Hold => {}
