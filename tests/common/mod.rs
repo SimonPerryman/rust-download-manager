@@ -1244,11 +1244,11 @@ fn link(state: &AppState) -> Link {
     }
 }
 
-/// Stream `data` in [`SEG_RAMP_CHUNK`]s, the `n`th no earlier than `n` chunk
-/// times at [`SEG_RAMP_RATE`] after the response started, and each in its own
-/// slot of the shared `link` (one chunk per chunk time at its rate, by
-/// default [`SEG_RAMP_CAP`]). Deadlines, not sleeps, so a late timer
-/// (Windows' ~15.6 ms tick) only jitters the pace and never banks a burst.
+/// Stream `data` in [`SEG_RAMP_CHUNK`]s, each one chunk time at
+/// [`SEG_RAMP_RATE`] after the last one was due, and each in its own slot of
+/// the shared `link` (one chunk per chunk time at its rate, by default
+/// [`SEG_RAMP_CAP`]). Deadlines, not sleeps, so a late timer (Windows'
+/// ~15.6 ms tick) only jitters the pace and never banks a burst.
 fn paced_stream(data: Bytes, link: Link, guard: InFlight) -> Body {
     Body::from_stream(paced(data, link, guard))
 }
@@ -1276,16 +1276,16 @@ fn paced(
     guard: InFlight,
 ) -> impl futures_util::Stream<Item = Result<Bytes, std::io::Error>> {
     let own_gap = Duration::from_secs_f64(SEG_RAMP_CHUNK as f64 / SEG_RAMP_RATE as f64);
-    let started = tokio::time::Instant::now();
+    let first_due = tokio::time::Instant::now() + own_gap;
     let s = futures_util::stream::unfold(
-        (data, 0usize, 1u32, guard),
-        move |(data, offset, n, guard)| {
+        (data, 0usize, first_due, guard),
+        move |(data, offset, due, guard)| {
             let link = link.clone();
             async move {
                 if offset >= data.len() {
                     return None;
                 }
-                tokio::time::sleep_until(started + own_gap * n).await;
+                tokio::time::sleep_until(due).await;
                 let rate = link.rate.load(Ordering::SeqCst).max(1);
                 let link_gap = Duration::from_secs_f64(SEG_RAMP_CHUNK as f64 / rate as f64);
                 let slot = {
@@ -1301,7 +1301,10 @@ fn paced(
                     .0
                     .body_bytes
                     .fetch_add(chunk.len() as u64, Ordering::SeqCst);
-                Some((Ok::<_, std::io::Error>(chunk), (data, end, n + 1, guard)))
+                // Time a slow link held this connection back is lost, not
+                // banked: catching up would burst past its own rate.
+                let next_due = (due + own_gap).max(slot);
+                Some((Ok::<_, std::io::Error>(chunk), (data, end, next_due, guard)))
             }
         },
     );

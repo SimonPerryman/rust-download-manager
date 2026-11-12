@@ -21,19 +21,31 @@ A large file (2 MiB or more) on a server that supports range requests is split
 into byte ranges fetched in parallel, over up to 4 connections by default
 (1–16 with `-c`, or the GUI's max connections setting).
 
-- **Ramping:** a download starts on one connection and adds more, up to the
-  maximum, while the measured speed keeps rising. If more connections stop
-  helping, it closes one again and settles.
-- **Re-probing:** a settled download below the maximum tries one more
-  connection every 30 seconds, and when its speed limit is raised or
-  removed (once it has measured a second at the new limit), in case it can
-  now go faster. If that makes the download more than 10% faster than
-  its recent speed, the connection stays and ramping carries on; if not,
-  or if the speed limit still holds it back, it closes again. A connection
-  still being tried when the limit is raised closes, to be tried again at
-  the new limit (logged as "its speed limit changed mid-try"). A server
-  that refused a connection (429 or 503) isn't offered more than it
-  accepted until the download next has to retry.
+- **Ramping:** the number of connections keeps adjusting for the whole
+  download, judged by the speed measured each second:
+  - *Ramp up:* a download starts on one connection and adds one at a time,
+    up to the maximum, while each makes it more than 10% faster.
+  - *Settle:* when one more connection stops helping, it closes that one
+    again and settles.
+  - *Re-probe:* a settled download below the maximum tries one more
+    connection every 30 seconds, and when its speed limit is raised or
+    removed (once it has measured a second at the new limit), in case it
+    can now go faster. If that makes it more than 10% faster than its
+    recent speed, the connection stays and ramping carries on; if not, or
+    if the speed limit still holds it back, it closes again. A connection
+    still being tried when the limit is raised closes, to be tried again
+    at the new limit (logged as "its speed limit changed mid-try"). A
+    server that refused a connection (429 or 503) isn't offered more than
+    it accepted until the download next has to retry.
+  - *Shed:* a settled download whose speed stays below 70% of its best
+    (smoothed over a few seconds) for 3 measured seconds running closes one
+    connection (never the last), since the extra connections are likely
+    hurting rather than helping. Its best becomes the current speed, so a
+    later re-probe can win the connection back once the speed recovers.
+
+  A second spent waiting on rdm's own speed limit, in which a connection
+  opened or closed, or in which the work was running out, says nothing
+  about the server, so it isn't measured.
 - **Which lane closes:** connections are numbered Lane 1, Lane 2… in the
   order they open, and the highest-numbered one closes first, so Lane 1
   usually stays for the whole download and the numbers stay compact. A lane

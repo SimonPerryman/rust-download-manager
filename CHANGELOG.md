@@ -22,6 +22,9 @@ desktop app share one version.
   and within a second or two of its speed limit being raised or removed,
   keeping it only if the download gets faster. Before, lifting a limit
   never brought connections back.
+- A download whose speed stays well below its best for a few seconds closes
+  one connection ("Closing Lane 4 — the download slowed down"); a later try
+  can win it back once the speed recovers.
 
 ## 0.3.0 - 2026-11-11
 

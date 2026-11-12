@@ -2,7 +2,8 @@
 //! one connection and adds one per measurement window while the aggregate
 //! speed keeps beating its best so far, then settles. A settled download
 //! re-probes: it trials one more connection when its speed limit is raised
-//! and every [`REPROBE_INTERVAL`] while below the ceiling.
+//! and every [`REPROBE_INTERVAL`] while below the ceiling. It sheds one when
+//! its speed stays well below its best.
 //!
 //! [`Ramp`] is the pure decision; the segment coordinator measures each
 //! window and acts on the [`Decision`].
@@ -22,6 +23,12 @@ const MARGIN: f64 = 0.10;
 
 /// How far each judged settled window moves the smoothed settled speed.
 const LEVEL_WEIGHT: f64 = 0.25;
+
+/// A settled window slower than this share of the best is a slow one ...
+const SLOW_FRACTION: f64 = 0.70;
+
+/// ... and this many judged ones in a row shed a connection.
+const SHED_AFTER: u8 = 3;
 
 /// A window that spent at least this share of its connection-time waiting on
 /// rate-limit tokens says nothing about the server, so it is not judged.
@@ -65,6 +72,8 @@ pub(crate) enum Decision {
     Add,
     /// Close one connection (the trial that didn't pay off).
     Retire,
+    /// Close one connection (the download slowed down).
+    Shed,
     /// Keep the pool as it is.
     Hold,
 }
@@ -81,6 +90,8 @@ pub(crate) struct Ramp {
     /// The settled speed, smoothed over judged windows so one dip can't let
     /// a useless trial look like a gain: what a re-probe's trial must beat.
     level: f64,
+    /// Judged settled windows in a row below [`SLOW_FRACTION`] of the best.
+    slow: u8,
     settled: bool,
     /// Whether the steps since the last settle began with a re-probe.
     trial: bool,
@@ -104,6 +115,7 @@ impl Ramp {
             target: 1,
             best: 0.0,
             level: 0.0,
+            slow: 0,
             settled: ceiling <= 1,
             trial: false,
             settled_for: 0,
@@ -155,6 +167,22 @@ impl Ramp {
             } else {
                 self.level + LEVEL_WEIGHT * (w.bytes_per_sec - self.level)
             };
+            if w.bytes_per_sec < self.best * SLOW_FRACTION {
+                self.slow = self.slow.saturating_add(1);
+                if self.slow < SHED_AFTER || self.target <= 1 {
+                    return Decision::Hold;
+                }
+                // Today's speed becomes the best, so a later re-probe judges
+                // the connection against it and can win it back.
+                self.target -= 1;
+                self.best = w.bytes_per_sec;
+                self.settle();
+                return Decision::Shed;
+            }
+            self.slow = 0;
+            // The smoothed speed, so one fast window can't raise the bar a
+            // slowdown is measured against.
+            self.best = self.best.max(self.level);
             // A raise's re-probe is spent here even at the ceiling, so it
             // can't fire long after, the moment a lane closes.
             let due =
@@ -245,6 +273,7 @@ impl Ramp {
         self.settled_for = 0;
         self.level = self.best;
         self.reprobe_now = false;
+        self.slow = 0;
     }
 
     /// The most connections the ramp may ask for.
@@ -612,6 +641,116 @@ mod tests {
         assert!(!limit_raised(Some(200), Some(100)), "lowered");
         assert!(!limit_raised(None, None));
         assert!(!limit_raised(None, Some(100)), "a new limit");
+    }
+
+    /// Ramp 1 → 4, the ceiling: settled with a best of 400.
+    fn settled_at_four() -> Ramp {
+        let mut r = Ramp::new(4);
+        for speed in [100.0, 200.0, 300.0] {
+            assert_eq!(r.observe(judged(speed)), Decision::Add);
+        }
+        assert_eq!(r.observe(judged(400.0)), Decision::Hold);
+        assert_eq!(r.target(), 4);
+        r
+    }
+
+    #[test]
+    fn three_slow_windows_in_a_row_shed_one() {
+        let mut r = settled_at_four();
+        // Two slow windows, then one that isn't: the count starts over.
+        assert_eq!(r.observe(judged(270.0)), Decision::Hold);
+        assert_eq!(r.observe(judged(270.0)), Decision::Hold);
+        assert_eq!(r.observe(judged(280.0)), Decision::Hold, "70% isn't slow");
+        assert_eq!(r.observe(judged(270.0)), Decision::Hold);
+        assert_eq!(r.observe(judged(270.0)), Decision::Hold);
+        assert_eq!(r.target(), 4);
+        assert_eq!(r.observe(judged(270.0)), Decision::Shed);
+        assert_eq!(r.target(), 3);
+        // The best is now 270, so staying there sheds nothing more.
+        for _ in 0..5 {
+            assert_eq!(r.observe(judged(270.0)), Decision::Hold);
+        }
+        assert_eq!(r.target(), 3);
+    }
+
+    #[test]
+    fn unjudged_windows_neither_count_nor_break_a_slow_run() {
+        let mut r = settled_at_four();
+        let frozen = Window {
+            waited_fraction: 0.9,
+            ..judged(100.0)
+        };
+        assert_eq!(r.observe(judged(200.0)), Decision::Hold);
+        assert_eq!(r.observe(frozen), Decision::Hold);
+        assert_eq!(r.observe(skipped()), Decision::Hold);
+        assert_eq!(r.observe(judged(200.0)), Decision::Hold);
+        assert_eq!(r.target(), 4);
+        assert_eq!(r.observe(judged(200.0)), Decision::Shed);
+    }
+
+    #[test]
+    fn a_download_held_down_by_its_limit_never_sheds() {
+        let mut r = settled_at_four();
+        let throttled = Window {
+            waited_fraction: 0.6,
+            ..judged(100.0)
+        };
+        for _ in 0..20 {
+            assert_eq!(r.observe(throttled), Decision::Hold);
+        }
+        assert_eq!(r.target(), 4);
+    }
+
+    #[test]
+    fn one_fast_window_doesnt_raise_the_bar_for_a_shed() {
+        let mut r = settled_at_four();
+        assert_eq!(r.observe(judged(600.0)), Decision::Hold);
+        // Under 70% of that one window, but not of the smoothed best (450).
+        for _ in 0..6 {
+            assert_eq!(r.observe(judged(330.0)), Decision::Hold);
+        }
+        assert_eq!(r.target(), 4);
+    }
+
+    #[test]
+    fn a_cap_while_settled_is_a_new_baseline_not_a_slowdown() {
+        let mut r = settled_at_four();
+        r.settle_at(2);
+        for _ in 0..6 {
+            assert_eq!(r.observe(judged(200.0)), Decision::Hold);
+        }
+        assert_eq!(r.target(), 4, "the coordinator holds the pool at the cap");
+    }
+
+    #[test]
+    fn shedding_stops_at_one_connection() {
+        let mut r = Ramp::new(1);
+        assert_eq!(r.observe(judged(100.0)), Decision::Hold);
+        for _ in 0..300 {
+            assert_eq!(r.observe(judged(10.0)), Decision::Hold);
+        }
+        assert_eq!(r.target(), 1);
+    }
+
+    #[test]
+    fn a_reprobe_after_a_shed_can_win_the_connection_back() {
+        let window = Duration::from_millis(500);
+        let mut r = settled_at_four().reprobing_every(Duration::from_secs(2), window);
+        assert_eq!(r.observe(judged(200.0)), Decision::Hold);
+        assert_eq!(r.observe(judged(200.0)), Decision::Hold);
+        assert_eq!(r.observe(judged(200.0)), Decision::Shed);
+        // The interval counts from the shed; meanwhile the speed recovers.
+        assert_eq!(r.observe(skipped()), Decision::Hold);
+        assert_eq!(r.observe(judged(300.0)), Decision::Hold);
+        assert_eq!(r.observe(judged(300.0)), Decision::Hold);
+        assert_eq!(r.observe(judged(300.0)), Decision::Add);
+        assert_eq!(r.observe(skipped()), Decision::Hold);
+        assert_eq!(
+            r.observe(judged(400.0)),
+            Decision::Hold,
+            "kept, at the ceiling"
+        );
+        assert_eq!(r.target(), 4);
     }
 
     /// A host whose aggregate caps at 4R: 1 → 5 then back to 4, with each

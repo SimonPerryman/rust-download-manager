@@ -211,6 +211,60 @@ async fn ramping_says_when_it_backs_off() {
     );
 }
 
+/// Settled at four lanes, a download whose host slows to a quarter says it
+/// closed the highest lane because the download slowed down.
+#[tokio::test(flavor = "multi_thread")]
+async fn ramping_says_when_a_slowdown_sheds_a_lane() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_len: 32 * 1024 * 1024,
+        ..FixtureConfig::default()
+    })
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let lines = Lines::default();
+    let _guard = capture(&lines);
+
+    let req = DownloadRequest::to_path(server.url("/seg-ramp"), dir.path().join("shed.bin"))
+        .with_connections(4)
+        .with_min_segment_size(64 * KIB)
+        .with_ramp(Ramping::Window(Duration::from_millis(500)));
+    let control = Control::new();
+    let closing = |lines: &Lines| -> Vec<String> {
+        lines
+            .concise()
+            .into_iter()
+            .filter(|l| l.starts_with("Closing Lane "))
+            .collect()
+    };
+    let drive = async {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        let wait = |done: &dyn Fn() -> bool| {
+            let done = done();
+            assert!(tokio::time::Instant::now() < deadline, "timed out");
+            done
+        };
+        while !wait(&|| has(&lines.concise(), "Added Lane 4 ")) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        // Past the window that settles it at 4, even on a late timer.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        server.set_ramp_link(common::SEG_RAMP_RATE);
+        while !wait(&|| !closing(&lines).is_empty()) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        control.cancel();
+    };
+    let (result, ()) = tokio::join!(download(&req, &control, |_| {}), drive);
+
+    assert!(matches!(result, Err(Error::Cancelled)), "got {result:?}");
+    assert_eq!(
+        closing(&lines),
+        ["Closing Lane 4 — the download slowed down"],
+        "{:#?}",
+        lines.concise()
+    );
+}
+
 /// When the ramp sheds a lane, the highest-numbered one closes, so Lane 1
 /// stays. Here that lane (and any opened after it) is held by the fixture
 /// with no body; once the grace passes, a lane that can stop closes in its
