@@ -74,7 +74,7 @@ export function SettingsMenu({
         <div
           role="dialog"
           aria-label="Settings"
-          className="absolute right-0 top-full z-30 mt-2 w-80 space-y-3 rounded-lg bg-raised p-4 text-ink shadow-pop ring-1 ring-line"
+          className="absolute right-0 top-full z-30 mt-2 max-h-[calc(100vh-4.5rem)] w-80 space-y-3 overflow-y-auto rounded-lg bg-raised p-4 text-ink shadow-pop ring-1 ring-line"
         >
           <SectionHeading>Display</SectionHeading>
           <Segmented
