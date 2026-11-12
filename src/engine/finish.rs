@@ -37,8 +37,13 @@ async fn finalize_with(
     }
     // Before the rename, so the file is never in place unmarked (the stream
     // moves with it). A drive without streams just goes unmarked.
-    if let Err(e) = mark(part, &req.url) {
-        tracing::debug!("Couldn't mark the file as downloaded from the internet: {e}");
+    let (marked, url) = (part.to_path_buf(), req.url.clone());
+    match tokio::task::spawn_blocking(move || mark(&marked, &url)).await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            tracing::debug!("Couldn't mark the file as downloaded from the internet: {e}")
+        }
+        Err(e) => tracing::debug!("Marking the file as downloaded didn't finish: {e}"),
     }
 
     let target = target_for_part(part);

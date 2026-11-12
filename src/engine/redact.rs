@@ -17,6 +17,7 @@ pub fn redact_url(url: &str) -> String {
 /// `url` with its login, query and fragment removed outright rather than
 /// marked, for where it's recorded as a file's origin (Mark-of-the-Web). The
 /// same rule as [`redact_url`], nested links included. `None` if unparsable.
+#[cfg(any(windows, test))]
 pub(super) fn strip_url_secrets(url: &str) -> Option<String> {
     scrub(url, false)
 }
@@ -485,6 +486,7 @@ mod tests {
         assert_eq!(redact_url(""), "<invalid url>");
         assert_eq!(redact_url("not a url ?token=SECRET"), "<invalid url>");
         assert_eq!(redact_url("http://[::1/x?token=SECRET"), "<invalid url>");
+        assert_eq!(redact_url("http://[::1/https://u:p?w@h/"), "<invalid url>");
     }
 
     /// Stripping removes the same secrets redaction hides, leaving no marker.
