@@ -21,7 +21,7 @@
   "progress": "off",
   "review": {
     "panel": ["claude", "claude"],
-    "maxIterations": 5
+    "maxIterations": 2
   },
   "plan": {
     "maxRounds": 3
