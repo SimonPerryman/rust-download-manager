@@ -101,6 +101,44 @@ async fn settles_at_the_fixture_aggregate_cap() {
     assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
 }
 
+/// A host slow to set up a connection (first byte well over a window after
+/// the request) still ramps to the ceiling when every connection adds speed:
+/// a new connection's setup isn't judged as "no improvement".
+#[tokio::test(flavor = "multi_thread")]
+async fn slow_setup_still_ramps_to_the_ceiling() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_len: 12 * MIB as usize,
+        // Over two windows, so a new connection's first bytes land beyond
+        // the window after the one it joined.
+        seg_first_byte_delay: WINDOW * 2 + WINDOW / 2,
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-ramp");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("slow-setup.bin");
+
+    let mut seen = Vec::new();
+    download(
+        &ramping(server.url("/seg-ramp"), &out, 4),
+        &Control::new(),
+        |p| seen.push(p),
+    )
+    .await
+    .unwrap();
+
+    let mut ramp: Vec<u8> = seen.iter().map(|p| p.connections).collect();
+    ramp.dedup();
+    assert_eq!(peak(&seen), 4, "stopped early: {ramp:?}");
+    let up_to_peak = &ramp[..=ramp.iter().position(|&c| c == 4).unwrap()];
+    assert!(
+        up_to_peak.windows(2).all(|w| w[0] <= w[1]),
+        "retired on the way up: {ramp:?}"
+    );
+    assert!(stats.max_in_flight() <= 4);
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+}
+
 /// AC (R9): a speed limit well below one connection's speed means every
 /// window is spent waiting on tokens, so the ramp never adds a connection.
 #[tokio::test(flavor = "multi_thread")]

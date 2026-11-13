@@ -49,7 +49,10 @@ into byte ranges fetched in parallel, over up to 4 connections by default
 
   A second spent waiting on rdm's own speed limit, in which a connection
   opened or closed, or in which the work was running out, says nothing
-  about the server, so it isn't measured.
+  about the server, so it isn't measured. Nor is one while a connection is
+  still waiting on its first bytes, so a server that's slow to connect
+  doesn't read as "more connections don't help"; one still silent after 3
+  seconds counts as stuck, and is measured like any other.
 - **Which lane closes:** connections are numbered Lane 1, Lane 2… in the
   order they open, and the highest-numbered one closes first, so Lane 1
   usually stays for the whole download and the numbers stay compact. A lane
