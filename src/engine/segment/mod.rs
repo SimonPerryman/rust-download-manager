@@ -44,7 +44,7 @@ use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
 
 use crate::engine::lock::lock;
-use crate::engine::ramp::{Decision, Ramp, Ramping, Window};
+use crate::engine::ramp::{limit_raised, Decision, Ramp, Ramping, Window};
 use crate::engine::tally::Tally;
 use crate::engine::{
     human, is_transient, progress, Control, DownloadState, Error, Flow, Progress, SpeedMeter,
@@ -123,6 +123,7 @@ pub(crate) struct Job<'a> {
     pub read_timeout: Duration,
     pub ramp: Ramping,
     pub shed_grace: Duration,
+    pub reprobe_interval: Duration,
     pub first: Option<reqwest::Response>,
     /// Fetch everything left in one request, on one lane, reading past (not
     /// rewriting) bytes already on disk: the host has rate-limited this download.
@@ -196,7 +197,11 @@ pub(crate) async fn run(
         .clamp(1, MAX_CONNECTIONS);
     let (mut ramp, window) = match job.ramp {
         _ if job.one_request => (Ramp::fixed(1), None),
-        Ramping::Window(w) => (Ramp::new(ceiling), Some(w.max(Duration::from_millis(1)))),
+        Ramping::Window(w) => {
+            let w = w.max(Duration::from_millis(1));
+            let ramp = Ramp::new(ceiling).reprobing_every(job.reprobe_interval, w);
+            (ramp, Some(w))
+        }
         Ramping::Off => (Ramp::fixed(ceiling), None),
     };
     if job.one_request {
@@ -268,6 +273,7 @@ pub(crate) async fn run(
         tokio::time::interval_at(tokio::time::Instant::now() + ramp_period, ramp_period);
     ramp_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut window_start = (Instant::now(), shared.downloaded(), 0u64);
+    let mut speed_limit = job.control.rate_limit();
 
     let mut control_tick = tokio::time::interval(CONTROL_POLL_INTERVAL);
     control_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -387,12 +393,27 @@ pub(crate) async fn run(
                     bytes_per_sec: downloaded.saturating_sub(downloaded_then) as f64 / secs,
                     waited_fraction: waited.saturating_sub(waited_then) as f64 / 1e9 / (secs * live),
                     pool_changed: shared.pool.take_changed(),
+                    // Lanes short with nothing left to hand out: the work is
+                    // running out, so the window doesn't measure the target.
+                    short: shared.pool.live() < shared.pool.target()
+                        && !lock(&shared.table).has_unowned_work(),
                 };
-                let decision = ramp.observe(measured);
+                // A window under the old limit says nothing about the new
+                // one: skip it, and re-probe once the new one is measured.
+                let limit = job.control.rate_limit();
+                let raised = limit_raised(std::mem::replace(&mut speed_limit, limit), limit);
+                let decision = if raised {
+                    ramp.on_limit_raised()
+                } else {
+                    ramp.observe(measured)
+                };
                 shared.pool.set_target(capped(ramp.target(), cap));
                 tracing::trace!(?measured, ?decision, target = ramp.target(), "ramp window");
+                // A lane still on its way out of a retire already fills a
+                // re-probe's extra place.
+                let room = shared.pool.live() < shared.pool.target();
                 match decision {
-                    Decision::Add if !shared.is_stopping() && job.control.poll() == Flow::Continue => {
+                    Decision::Add if room && !shared.is_stopping() && job.control.poll() == Flow::Continue => {
                         let slot = shared.pool.join(None);
                         let number = slot.number();
                         workers.push(worker(&shared, None, slot));
@@ -405,10 +426,12 @@ pub(crate) async fn run(
                     Decision::Retire => {
                         let over = shared.pool.live() > shared.pool.target();
                         if let Some(bottom) = shared.pool.bottom().filter(|_| over) {
-                            tracing::info!(
-                                "Closing Lane {} — more lanes didn't speed this up",
-                                bottom + 1
-                            );
+                            let why = if raised {
+                                "its speed limit changed mid-try"
+                            } else {
+                                "more lanes didn't speed this up"
+                            };
+                            tracing::info!("Closing Lane {} — {why}", bottom + 1);
                         }
                     }
                     Decision::Add | Decision::Hold => {}

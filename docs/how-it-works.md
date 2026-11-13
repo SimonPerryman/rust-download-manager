@@ -24,7 +24,19 @@ into byte ranges fetched in parallel, over up to 4 connections by default
 
 - **Ramping:** a download starts on one connection and adds more, up to the
   maximum, while the measured speed keeps rising. If more connections stop
-  helping, it closes one again.
+  helping, it closes one again and settles.
+- **Re-probing:** a settled download below the maximum tries one more
+  connection every 30 seconds, and when its speed limit is raised or
+  removed (once it has measured a second at the new limit), in case it can
+  now go faster. If that makes the download more than 10% faster than
+  its recent speed, the connection stays and ramping carries on; if not,
+  or if the speed limit still holds it back, it closes again. A connection
+  still being tried when the limit is raised closes, to be tried again at
+  the new limit (logged as "its speed limit changed mid-try"). A server
+  that refused a connection with a 503 isn't offered more than it
+  accepted until the download next has to retry; one that answered 429
+  gets the rest of the download in one request instead (see
+  [Retries and backoff](#retries-and-backoff)).
 - **Which lane closes:** connections are numbered Lane 1, Lane 2… in the
   order they open, and the highest-numbered one closes first, so Lane 1
   usually stays for the whole download and the numbers stay compact. A lane

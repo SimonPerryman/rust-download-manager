@@ -30,6 +30,11 @@ desktop app share one version.
   and macOS when no `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` environment
   variable is set, as the desktop app already did. Using the system's proxy
   stays the default; proxy auto-config (PAC, WPAD) isn't supported.
+- A download on several connections keeps adjusting them: once it has
+  settled below its maximum, it tries one more connection every 30 seconds,
+  and within a second or two of its speed limit being raised or removed,
+  keeping it only if the download gets faster. Before, lifting a limit
+  never brought connections back.
 
 ## 0.3.0 - 2026-11-11
 

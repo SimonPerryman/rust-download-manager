@@ -79,7 +79,8 @@
 //!   finishes (and none is stolen) until the test releases it.
 //! - `GET /seg-ramp`   — [`SEG_RAMP_CHUNK`]s paced by deadline (no burst) at
 //!   [`SEG_RAMP_RATE`] per connection and [`SEG_RAMP_CAP`] across all of
-//!   them, like a host whose link saturates at four connections.
+//!   them, like a host whose link saturates at four connections; the link's
+//!   rate can be changed mid-download with [`TestServer::set_ramp_link`].
 //! - `GET /seg-ramp-stuck` — `/seg-ramp`, but from ranged request
 //!   [`SEG_RAMP_STUCK_FROM`] on, each sends its headers and then no body until
 //!   [`TestServer::gate`] releases it: a lane opened late sits stuck.
@@ -572,6 +573,9 @@ struct AppState {
     gate: Arc<Gate>,
     /// `/seg-ramp`: when the shared link can send its next chunk.
     ramp_next_free: Arc<Mutex<tokio::time::Instant>>,
+    /// `/seg-ramp`: the shared link's rate in bytes/s (see
+    /// [`TestServer::set_ramp_link`]).
+    ramp_link: Arc<AtomicU64>,
     /// `/seg-429-window`: requests served this window, and when the current
     /// refusal window ends.
     rate_window: Mutex<(usize, Option<Instant>)>,
@@ -591,6 +595,7 @@ impl AppState {
             sig_uses: Mutex::new(HashMap::new()),
             gate: Arc::default(),
             ramp_next_free: Arc::new(Mutex::new(tokio::time::Instant::now())),
+            ramp_link: Arc::new(AtomicU64::new(SEG_RAMP_CAP)),
             rate_window: Mutex::new((0, None)),
             stats: COUNTED_ROUTES
                 .iter()
@@ -1245,17 +1250,12 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg, data: Bytes) -
     let body = if kind == Seg::Gated {
         gated_seg_stream(data.slice(start..end), state.gate.enter(), guard)
     } else if kind == Seg::Ramp {
-        paced_stream(data.slice(start..end), state.ramp_next_free.clone(), guard)
+        paced_stream(data.slice(start..end), link(state), guard)
     } else if kind == Seg::RampStuck {
         let hold = ranged_index
             .filter(|&i| i >= SEG_RAMP_STUCK_FROM)
             .map(|_| state.gate.enter());
-        held_paced_stream(
-            data.slice(start..end),
-            state.ramp_next_free.clone(),
-            hold,
-            guard,
-        )
+        held_paced_stream(data.slice(start..end), link(state), hold, guard)
     } else if kind == Seg::Stall && ranged {
         stalled_stream(guard)
     } else {
@@ -1271,30 +1271,39 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg, data: Bytes) -
     builder.body(body).unwrap()
 }
 
+/// `/seg-ramp`'s shared link: when it can send its next chunk, and its rate.
+#[derive(Clone)]
+struct Link {
+    next_free: Arc<Mutex<tokio::time::Instant>>,
+    rate: Arc<AtomicU64>,
+}
+
+fn link(state: &AppState) -> Link {
+    Link {
+        next_free: state.ramp_next_free.clone(),
+        rate: state.ramp_link.clone(),
+    }
+}
+
 /// Stream `data` in [`SEG_RAMP_CHUNK`]s, the `n`th no earlier than `n` chunk
 /// times at [`SEG_RAMP_RATE`] after the response started, and each in its own
-/// slot of the link shared through `next_free` (one chunk per
-/// [`SEG_RAMP_CAP`] chunk time). Deadlines, not sleeps, so a late timer
+/// slot of the shared `link` (one chunk per chunk time at its rate, by
+/// default [`SEG_RAMP_CAP`]). Deadlines, not sleeps, so a late timer
 /// (Windows' ~15.6 ms tick) only jitters the pace and never banks a burst.
-fn paced_stream(data: Bytes, next_free: Arc<Mutex<tokio::time::Instant>>, guard: InFlight) -> Body {
-    Body::from_stream(paced(data, next_free, guard))
+fn paced_stream(data: Bytes, link: Link, guard: InFlight) -> Body {
+    Body::from_stream(paced(data, link, guard))
 }
 
 /// [`paced_stream`], but with `hold` it sends nothing until that ticket is
 /// released (pacing starts from the release).
-fn held_paced_stream(
-    data: Bytes,
-    next_free: Arc<Mutex<tokio::time::Instant>>,
-    hold: Option<GateTicket>,
-    guard: InFlight,
-) -> Body {
+fn held_paced_stream(data: Bytes, link: Link, hold: Option<GateTicket>, guard: InFlight) -> Body {
     let start = async move {
         if let Some(ticket) = hold {
             while !ticket.released() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         }
-        paced(data, next_free, guard)
+        paced(data, link, guard)
     };
     Body::from_stream(futures_util::StreamExt::flatten(
         futures_util::stream::once(start),
@@ -1304,23 +1313,24 @@ fn held_paced_stream(
 /// The chunks of [`paced_stream`].
 fn paced(
     data: Bytes,
-    next_free: Arc<Mutex<tokio::time::Instant>>,
+    link: Link,
     guard: InFlight,
 ) -> impl futures_util::Stream<Item = Result<Bytes, std::io::Error>> {
     let own_gap = Duration::from_secs_f64(SEG_RAMP_CHUNK as f64 / SEG_RAMP_RATE as f64);
-    let link_gap = Duration::from_secs_f64(SEG_RAMP_CHUNK as f64 / SEG_RAMP_CAP as f64);
     let started = tokio::time::Instant::now();
     let s = futures_util::stream::unfold(
         (data, 0usize, 1u32, guard),
         move |(data, offset, n, guard)| {
-            let next_free = next_free.clone();
+            let link = link.clone();
             async move {
                 if offset >= data.len() {
                     return None;
                 }
                 tokio::time::sleep_until(started + own_gap * n).await;
+                let rate = link.rate.load(Ordering::SeqCst).max(1);
+                let link_gap = Duration::from_secs_f64(SEG_RAMP_CHUNK as f64 / rate as f64);
                 let slot = {
-                    let mut next = next_free.lock().unwrap();
+                    let mut next = link.next_free.lock().unwrap();
                     let slot = (*next).max(tokio::time::Instant::now());
                     *next = slot + link_gap;
                     slot
@@ -1492,6 +1502,13 @@ impl TestServer {
     /// The `/gated` and `/seg-gated` hold, to release their requests.
     pub fn gate(&self) -> &Gate {
         &self.state.gate
+    }
+
+    /// Change the rate `/seg-ramp`'s shared link serves all connections
+    /// together (default [`SEG_RAMP_CAP`]), from its next chunk on: a host that
+    /// gets faster or slower mid-download.
+    pub fn set_ramp_link(&self, bytes_per_sec: u64) {
+        self.state.ramp_link.store(bytes_per_sec, Ordering::SeqCst);
     }
 
     /// Flip `/mutable` to v2 (new bytes, length, ETag).

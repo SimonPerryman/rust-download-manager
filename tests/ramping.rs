@@ -11,7 +11,7 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::{FixtureConfig, SEG_RAMP_RATE};
+use common::{FixtureConfig, SEG_RAMP_CAP, SEG_RAMP_RATE};
 use rdm::engine::state::{self, DownloadState};
 use rdm::engine::{Ramping, Segment};
 use rdm::{download, Control, DownloadRequest, Error, Progress, RateLimiter};
@@ -213,6 +213,132 @@ async fn v2_resume_ramps_and_completes() {
     assert!(peak(&seen) >= 2, "never ramped: peak {}", peak(&seen));
     assert!(stats.closed_ranges().iter().all(|&(s, _)| s >= MIB));
     assert_eq!(std::fs::read(&out).unwrap(), payload);
+}
+
+/// The reported connection counts with repeats collapsed, for messages.
+fn runs(seen: &[Progress]) -> Vec<u8> {
+    let mut counts: Vec<u8> = seen.iter().map(|p| p.connections).collect();
+    counts.dedup();
+    counts
+}
+
+/// How many times the reported connections rose to `n`.
+fn rises_to(seen: &[Progress], n: u8) -> usize {
+    seen.windows(2)
+        .filter(|w| w[0].connections < n && w[1].connections == n)
+        .count()
+}
+
+/// A download settled at 2 under a speed limit (the host's link gives two
+/// connections' worth) re-probes one window after the limit is lifted and,
+/// the link having got faster meanwhile, keeps ramping past 2. The default
+/// 30 s re-probe interval outlasts the download, so only the lift can do it.
+#[tokio::test(flavor = "multi_thread")]
+async fn lifting_a_speed_limit_reprobes_past_the_settled_count() {
+    let server = ramp_server(16 * MIB).await;
+    server.set_ramp_link(2 * SEG_RAMP_RATE);
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("lifted.bin");
+
+    // Never binding at two connections, so their windows are judged.
+    let limiter = Arc::new(RateLimiter::new(Some(3 * SEG_RAMP_RATE)));
+    let control = Control::new().with_limiters([limiter.clone()]);
+    let mut seen: Vec<Progress> = Vec::new();
+    let mut lifted_at = None;
+    let summary = download(&ramping(server.url("/seg-ramp"), &out, 8), &control, |p| {
+        let trialled_three = seen.iter().any(|s| s.connections == 3);
+        if lifted_at.is_none() && trialled_three && p.connections == 2 {
+            server.set_ramp_link(SEG_RAMP_CAP);
+            limiter.set_rate(None);
+            lifted_at = Some(seen.len());
+        }
+        seen.push(p);
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(summary.status, 206);
+    let lift = lifted_at.expect("never settled at 2 under the limit");
+    assert_eq!(peak(&seen[..lift]), 3, "{:?}", runs(&seen[..lift]));
+    assert!(
+        peak(&seen[lift..]) >= 4,
+        "after the lift: {:?}",
+        runs(&seen[lift..])
+    );
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+}
+
+/// Settled at 4 below a ceiling of 8, the ramp trials a fifth connection again
+/// each re-probe interval, and retires it each time it doesn't help.
+#[tokio::test(flavor = "multi_thread")]
+async fn settled_ramp_reprobes_each_interval_and_retires_a_useless_trial() {
+    let server = ramp_server(16 * MIB).await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("reprobed.bin");
+
+    let req = ramping(server.url("/seg-ramp"), &out, 8).with_reprobe_interval(WINDOW * 4);
+    let control = Control::new();
+    let stopper = control.clone();
+    let mut seen: Vec<Progress> = Vec::new();
+    // Stop once two re-probes (after the initial ramp's own trial of a fifth)
+    // have been retired, well before the download ends (when lanes leave as
+    // the work runs out).
+    let result = download(&req, &control, |p| {
+        seen.push(p);
+        let tail = &seen[seen.len().saturating_sub(2)..];
+        let trial_ended = tail.len() == 2 && tail[0].connections == 5 && tail[1].connections != 5;
+        if trial_ended {
+            assert_eq!(
+                tail[1].connections,
+                4,
+                "the trial retired: {:?}",
+                runs(&seen)
+            );
+            if rises_to(&seen, 5) >= 3 {
+                stopper.cancel();
+            }
+        }
+    })
+    .await;
+
+    assert!(matches!(result, Err(Error::Cancelled)), "got {result:?}");
+    assert_eq!(peak(&seen), 5, "never more than one trial at once");
+    assert!(seen.last().unwrap().downloaded < 16 * MIB);
+}
+
+/// After a host refuses a third connection (503), re-probes, however often,
+/// never go past the two it accepts. (The pool's own cap holds a 503 here;
+/// the ramp's cap, which also covers a 429, is unit-tested in `ramp.rs`.)
+#[tokio::test(flavor = "multi_thread")]
+async fn reprobes_never_exceed_a_host_cap() {
+    // ~1 MiB/s per connection: 16 MiB on two outlasts many re-probe intervals.
+    let server = common::spawn_with(FixtureConfig {
+        seg_len: 16 * MIB as usize,
+        seg_chunk_delay: Duration::from_millis(30),
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-capped");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("capped.bin");
+
+    let req = DownloadRequest::to_path(server.url("/seg-capped"), &out)
+        .with_connections(4)
+        .with_ramp(Ramping::Window(WINDOW))
+        .with_reprobe_interval(WINDOW * 2);
+    let mut seen = Vec::new();
+    download(&req, &Control::new(), |p| seen.push(p))
+        .await
+        .unwrap();
+
+    assert!(stats.refused() >= 1, "the cap was never hit");
+    assert_eq!(peak(&seen), 3, "the refused trial connection");
+    let later: Vec<u8> = after_peak(&seen, 3).iter().map(|p| p.connections).collect();
+    assert!(
+        later.iter().all(|&c| c <= 2),
+        "re-probed past the cap: {later:?}"
+    );
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
 }
 
 /// Start a ramping `/seg-ramp` download and stop it (via `stop`) once a
