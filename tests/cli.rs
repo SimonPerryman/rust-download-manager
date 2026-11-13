@@ -590,3 +590,205 @@ async fn verbose_logs_the_version_and_os() {
     );
     assert!(stderr.contains(&line), "no {line:?} in stderr: {stderr}");
 }
+
+/// `--proxy` sends the download through the proxy.
+#[tokio::test]
+async fn cli_downloads_through_a_proxy() {
+    let server = common::spawn().await;
+    let proxy = common::proxy::spawn_socks5_proxy().await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("f.bin");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .arg(server.url("/file"))
+        .arg("-o")
+        .arg(&out)
+        .arg("--proxy")
+        .arg(proxy.url("socks5h", Some("user:pw")))
+        .status()
+        .await
+        .expect("spawn rdm");
+
+    assert!(status.success(), "rdm exited with {status}");
+    assert_eq!(std::fs::read(&out).unwrap(), common::payload());
+    assert_eq!(proxy.seen().len(), 1, "{:?}", proxy.seen());
+}
+
+/// An invalid `--proxy` is a usage error (exit 2, where a failed download
+/// exits 1) naming the flag, and the message doesn't repeat the value (it may
+/// hold a password).
+#[tokio::test]
+async fn cli_rejects_an_invalid_proxy_before_downloading() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    for bad in ["not-a-url", "ftp://user:SECRETPW@host:21"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
+            .arg(server.url("/missing"))
+            .arg("-o")
+            .arg(dir.path().join("f.bin"))
+            .arg("--proxy")
+            .arg(bad)
+            .output()
+            .await
+            .expect("spawn rdm");
+
+        assert_eq!(output.status.code(), Some(2), "{bad}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("--proxy"), "stderr: {stderr}");
+        assert!(!stderr.contains("SECRETPW"), "stderr: {stderr}");
+    }
+}
+
+/// A failed download through a proxy prints neither the proxy's login nor
+/// its password, even with `-v` and `RUST_LOG=debug` (a 404, so it fails at
+/// once instead of retrying).
+#[tokio::test]
+async fn cli_output_never_shows_proxy_credentials() {
+    let server = common::spawn().await;
+    let proxy = common::proxy::spawn_http_proxy().await;
+    let dir = tempfile::tempdir().unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .arg(server.url("/missing"))
+        .arg("-o")
+        .arg(dir.path().join("f.bin"))
+        .arg("--proxy")
+        .arg(proxy.url("http", Some("proxyuser:SECRETPW")))
+        .arg("--verbose")
+        .env("RUST_LOG", "debug")
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(proxy.seen().len(), 1, "{:?}", proxy.seen());
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!all.contains("SECRETPW"), "output: {all}");
+    assert!(!all.contains("proxyuser"), "output: {all}");
+    assert!(
+        all.contains("Through proxy http://<redacted>:<redacted>@127.0.0.1:"),
+        "output: {all}"
+    );
+}
+
+/// `rdm <url> -o <out>` with the proxy environment variables cleared and
+/// then `vars` set, so neither this machine's nor another test's leak in.
+fn rdm_with_proxy_env(url: &str, out: &std::path::Path, vars: &[(&str, &str)]) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_rdm"));
+    cmd.arg(url).arg("-o").arg(out);
+    // Lowercase too: Unix treats them as separate variables. `REQUEST_METHOD`
+    // (a CGI request) makes `HTTP_PROXY` ignored.
+    for var in [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "REQUEST_METHOD",
+    ] {
+        cmd.env_remove(var).env_remove(var.to_lowercase());
+    }
+    for (var, value) in vars {
+        cmd.env(var, value);
+    }
+    cmd
+}
+
+/// With no proxy flag, the system proxy applies: `HTTP_PROXY` or `ALL_PROXY`
+/// routes the download through that proxy.
+#[tokio::test]
+async fn cli_uses_the_proxy_environment_variables_by_default() {
+    let server = common::spawn().await;
+    let http = common::proxy::spawn_http_proxy().await;
+    let socks = common::proxy::spawn_socks5_proxy().await;
+    let dir = tempfile::tempdir().unwrap();
+    for (var, proxy, url) in [
+        ("HTTP_PROXY", &http, http.url("http", None)),
+        ("ALL_PROXY", &socks, socks.url("socks5h", None)),
+    ] {
+        let out = dir.path().join(format!("{var}.bin"));
+        let status = rdm_with_proxy_env(&server.url("/file"), &out, &[(var, &url)])
+            .status()
+            .await
+            .expect("spawn rdm");
+
+        assert!(status.success(), "{var}: rdm exited with {status}");
+        assert_eq!(std::fs::read(&out).unwrap(), common::payload(), "{var}");
+        assert_eq!(proxy.seen().len(), 1, "{var}: {:?}", proxy.seen());
+    }
+}
+
+/// `NO_PROXY` keeps a host off the system proxy.
+#[tokio::test]
+async fn cli_skips_the_system_proxy_for_no_proxy_hosts() {
+    let server = common::spawn().await;
+    let proxy = common::proxy::spawn_http_proxy().await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("f.bin");
+    let via = proxy.url("http", None);
+
+    let status = rdm_with_proxy_env(
+        &server.url("/file"),
+        &out,
+        &[("HTTP_PROXY", &via), ("NO_PROXY", "example.com,127.0.0.1")],
+    )
+    .status()
+    .await
+    .expect("spawn rdm");
+
+    assert!(status.success(), "rdm exited with {status}");
+    assert_eq!(std::fs::read(&out).unwrap(), common::payload());
+    assert!(proxy.seen().is_empty(), "{:?}", proxy.seen());
+}
+
+/// `--no-proxy` connects directly, ignoring the proxy environment variables
+/// (here they point at a closed port, so using them would fail).
+#[tokio::test]
+async fn cli_no_proxy_ignores_the_system_proxy() {
+    let server = common::spawn().await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let closed = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("f.bin");
+
+    let status = rdm_with_proxy_env(
+        &server.url("/file"),
+        &out,
+        &[("HTTP_PROXY", &closed), ("ALL_PROXY", &closed)],
+    )
+    .arg("--no-proxy")
+    .status()
+    .await
+    .expect("spawn rdm");
+
+    assert!(status.success(), "rdm exited with {status}");
+    assert_eq!(std::fs::read(&out).unwrap(), common::payload());
+}
+
+/// `--proxy` and `--no-proxy` together are a usage error (exit 2) naming
+/// both flags, without repeating the proxy's password.
+#[tokio::test]
+async fn cli_rejects_proxy_with_no_proxy() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .arg("http://127.0.0.1:9/f.bin")
+        .arg("-o")
+        .arg(dir.path().join("f.bin"))
+        .arg("--proxy")
+        .arg("http://user:SECRETPW@127.0.0.1:3128")
+        .arg("--no-proxy")
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--proxy"), "stderr: {stderr}");
+    assert!(stderr.contains("--no-proxy"), "stderr: {stderr}");
+    assert!(!stderr.contains("SECRETPW"), "stderr: {stderr}");
+    assert!(!dir.path().join("f.bin").exists());
+}

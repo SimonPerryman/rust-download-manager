@@ -3,11 +3,12 @@
 use super::Manager;
 use crate::engine::lock::lock;
 use crate::engine::store::Settings;
+use crate::engine::ProxyMode;
 
 impl Manager {
     /// The current manager-wide settings.
     pub fn settings(&self) -> Settings {
-        lock(&self.inner.state).settings
+        lock(&self.inner.state).settings.clone()
     }
 
     /// Set how many downloads may stream at once (at least 1). Raising it
@@ -28,6 +29,12 @@ impl Manager {
         self.update_settings(|s| s.max_connections = n);
     }
 
+    /// Choose the proxy downloads use. Applies from each download's next
+    /// start or resume, not to ones already running.
+    pub fn set_proxy(&self, proxy: ProxyMode) {
+        self.update_settings(|s| s.proxy = proxy);
+    }
+
     /// Cap one download's speed in bytes/s (`None` or `Some(0)` is
     /// unlimited). Applies live if it's running, and persists across restarts.
     pub fn set_limit(&self, id: u64, limit: Option<u64>) {
@@ -44,7 +51,7 @@ impl Manager {
     fn update_settings(&self, change: impl FnOnce(&mut Settings)) {
         let st = &mut *lock(&self.inner.state);
         change(&mut st.settings);
-        st.settings = st.settings.clamped();
+        st.settings = std::mem::take(&mut st.settings).clamped();
         self.inner.global.set_rate(st.settings.global_limit);
         self.inner.schedule(st);
         self.inner.persist(st);

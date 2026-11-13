@@ -12,6 +12,7 @@ share it, so everything here applies to both.
 - [Safe file names](#safe-file-names)
 - [Marked as downloaded (Windows)](#marked-as-downloaded-windows)
 - [The queue and speed limits](#the-queue-and-speed-limits)
+- [Proxies](#proxies)
 - [Engine and frontends](#engine-and-frontends)
 - [When something goes wrong](#when-something-goes-wrong)
 
@@ -32,8 +33,10 @@ into byte ranges fetched in parallel, over up to 4 connections by default
   or if the speed limit still holds it back, it closes again. A connection
   still being tried when the limit is raised closes, to be tried again at
   the new limit (logged as "its speed limit changed mid-try"). A server
-  that refused a connection (429 or 503) isn't offered more than it
-  accepted until the download next has to retry.
+  that refused a connection with a 503 isn't offered more than it
+  accepted until the download next has to retry; one that answered 429
+  gets the rest of the download in one request instead (see
+  [Retries and backoff](#retries-and-backoff)).
 - **Which lane closes:** connections are numbered Lane 1, Lane 2… in the
   order they open, and the highest-numbered one closes first, so Lane 1
   usually stays for the whole download and the numbers stay compact. A lane
@@ -77,6 +80,17 @@ exponential backoff. A host that rate-limits (429/503) is backed off from
 rather than sent more connections, and its `Retry-After` (up to 60 s) is
 honoured.
 
+Some hosts limit how often you may ask, not how many connections you hold:
+every new request past a few can cost another `Retry-After`. So once a host
+answers 429, or refuses with a `Retry-After`, rdm fetches everything left in
+one request on one lane, from the first missing byte to the last, reading
+past any parts already on disk in between. The rest of the download then
+normally costs just that one wait; a connection that drops mid-way can cost
+another. The trade-off is the parts read past: they are fetched again (and
+count against a speed limit), so a host that refuses late in a download
+with every lane part-way through re-sends more. This lasts until the
+download stops; resuming it starts on several lanes again.
+
 ## Integrity checks
 
 The finished file's size is always checked. An optional SHA-256 checksum
@@ -109,6 +123,25 @@ network shares) leaves the file unmarked, and the download still succeeds.
   limit straight away, with no initial burst. Its speed is measured over the
   last 5 seconds from bytes that have passed the limit's wait, so it reads
   close to the limit, even when data arrives less often than that.
+
+## Proxies
+
+A download uses one of three proxy modes, and every request it makes,
+each connection of a segmented download included, goes the same way:
+
+- **System** (the default): the `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY`
+  environment variable, with `NO_PROXY`'s hosts going direct; when none is
+  set, on Windows and macOS the operating system's proxy settings and their
+  bypass list. Proxy auto-config (PAC scripts, WPAD) isn't supported. The
+  system proxy is read as each download starts or resumes.
+- **None:** always connect directly.
+- **Custom:** an HTTP, HTTPS or SOCKS5 proxy you give (`socks5h` to have
+  the proxy resolve host names too), for every host.
+
+The CLI picks the mode with `--proxy` and `--no-proxy`, the desktop app
+with its Proxy setting, where a change applies from each download's next
+start or resume. Logs and error messages show a custom proxy with its login
+redacted, like any URL's.
 
 ## Engine and frontends
 

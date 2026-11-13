@@ -137,10 +137,14 @@ async fn pause_and_cancel_are_not_logged_as_errors() {
 /// A URL whose port nothing listens on, carrying secrets in its userinfo and
 /// query, as signed CDN links and `user:pass@` URLs do.
 async fn secret_url_to_closed_port() -> String {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
+    let port = closed_port().await;
     format!("http://user:PASSWORD9@127.0.0.1:{port}/f.bin?token=SECRET123#frag")
+}
+
+/// A loopback port nothing listens on.
+async fn closed_port() -> u16 {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    listener.local_addr().unwrap().port()
 }
 
 /// A failing download's error text and every log line it emits (retries
@@ -172,6 +176,41 @@ async fn failed_download_never_logs_or_reports_url_secrets() {
     // The login itself shows, so a 401 or 403 can be read in context.
     assert!(
         logged.contains("http://<redacted>:<redacted>@127.0.0.1:"),
+        "{logged}"
+    );
+}
+
+/// A download through an unreachable proxy fails, and neither its error nor
+/// any line it logs (retries and the proxy it went through included) shows
+/// the proxy's login.
+#[tokio::test]
+async fn failed_download_never_logs_or_reports_proxy_credentials() {
+    let (captured, _guard) = capture();
+    let server = common::spawn().await;
+    let port = closed_port().await;
+    let proxy: rdm::Proxy = format!("socks5h://proxyuser:PROXYPW7@127.0.0.1:{port}")
+        .parse()
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let req = DownloadRequest::to_path(server.url("/file"), dir.path().join("f.bin"))
+        .with_proxy(proxy)
+        .with_retry(rdm::RetryPolicy {
+            max_attempts: 2,
+            base_delay: Duration::from_millis(1),
+            ..rdm::RetryPolicy::none()
+        });
+
+    let err = download(&req, &Control::new(), |_| {}).await.unwrap_err();
+    assert!(matches!(err, Error::Http(_)), "{err:?}");
+    let reported = format!("{err} {err:?} {req:?}");
+    let logged = captured.lines().join("\n");
+    for secret in ["proxyuser", "PROXYPW7"] {
+        assert!(!reported.contains(secret), "{reported}");
+        assert!(!logged.contains(secret), "{logged}");
+    }
+    assert!(logged.contains("Failed after 2 attempts: "), "{logged}");
+    assert!(
+        logged.contains("Through proxy socks5h://<redacted>:<redacted>@127.0.0.1:"),
         "{logged}"
     );
 }

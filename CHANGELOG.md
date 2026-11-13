@@ -9,6 +9,15 @@ desktop app share one version.
 
 ### Added
 
+- `--proxy <url>` (CLI) downloads through an HTTP, HTTPS or SOCKS5 proxy
+  (`socks5h://` for DNS through the proxy), with an optional `user:pass@`.
+  The proxy's login is redacted from all output. `--no-proxy` connects
+  directly instead.
+- A Proxy setting (desktop app) under Settings → Downloads: Use system
+  proxy (the default), No proxy, or Custom proxy with a URL that's checked
+  when saved and shown with its password masked. A change applies from each
+  download's next start or resume. Copy diagnostics names only the kind of
+  proxy.
 - On Windows, finished downloads are marked as downloaded from the internet
   (Mark-of-the-Web), as a browser marks its downloads, so SmartScreen,
   Office Protected View and antivirus check them too. The mark records the
@@ -17,6 +26,10 @@ desktop app share one version.
 
 ### Changed
 
+- The CLI now also follows the operating system's proxy settings on Windows
+  and macOS when no `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` environment
+  variable is set, as the desktop app already did. Using the system's proxy
+  stays the default; proxy auto-config (PAC, WPAD) isn't supported.
 - A download on several connections keeps adjusting them: once it has
   settled below its maximum, it tries one more connection every 30 seconds,
   and within a second or two of its speed limit being raised or removed,

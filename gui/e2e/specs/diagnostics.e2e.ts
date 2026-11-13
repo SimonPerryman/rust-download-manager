@@ -14,6 +14,7 @@ import {
   addThroughDialog,
   baseUrl,
   clipboardWrites,
+  dismissOverlays,
   openLog,
   removeAll,
   restoreClipboard,
@@ -103,6 +104,8 @@ describe("rdm GUI troubleshooting", () => {
       timeoutMsg: "the download never reached the app log",
     });
 
+    // Its finish notification sits above the popover and can cover the button.
+    await dismissOverlays();
     await openSettings();
     const text = await copyDiagnostics(COPY_DIAGNOSTICS);
     expect(text).toMatch(/^rdm diagnostics\nrdm \d+\.\d+\.\d+.* · WebView .* · memory /);

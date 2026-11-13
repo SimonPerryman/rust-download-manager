@@ -86,6 +86,7 @@ impl Manager {
         }
         let next_id = data.next_id.max(1);
         let settings = data.settings.clamped();
+        let global = Arc::new(RateLimiter::new(settings.global_limit));
 
         let st = ManagerState {
             next_id,
@@ -100,7 +101,7 @@ impl Manager {
             last_publish: Mutex::new(Instant::now()),
             handle,
             closed: AtomicBool::new(false),
-            global: Arc::new(RateLimiter::new(settings.global_limit)),
+            global,
             logs: Arc::default(),
             state: Mutex::new(st),
         });
@@ -126,7 +127,7 @@ impl Inner {
                 .filter_map(|id| st.entries.get(id))
                 .map(|e| e.record.clone())
                 .collect(),
-            settings: st.settings,
+            settings: st.settings.clone(),
         };
         let _ = self.store.save(&data);
     }

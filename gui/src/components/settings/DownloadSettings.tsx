@@ -2,38 +2,51 @@ import { useEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
 import { NO_LIMIT } from "../../lib/rate";
 import {
+  appliedDrafts,
   dirtyPatches,
   draftsFrom,
+  fieldOf,
   fieldPatch,
   isDirty,
   mergeApplied,
   type SettingsDrafts as Drafts,
   type SettingsField as Field,
-  type SettingsPatch,
 } from "../../lib/settings";
-import type { Settings } from "../../lib/types";
+import type { ProxyModeName, Settings } from "../../lib/types";
 import { RateInput } from "../RateInput";
 
-// Which field a single-field patch from `fieldPatch` / `dirtyPatches` sets.
-const fieldOf = (patch: SettingsPatch): Field =>
-  patch.maxConcurrent != null ? "concurrent" : patch.globalLimit != null ? "limit" : "connections";
+const PROXY_MODES: { value: ProxyModeName; label: string }[] = [
+  { value: "system", label: "Use system proxy" },
+  { value: "none", label: "No proxy" },
+  { value: "custom", label: "Custom proxy" },
+];
+
+const INPUT_CLASS =
+  "flex h-7 rounded-md border border-line-strong bg-raised px-2 text-sm transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden disabled:opacity-60 aria-[invalid]:border-danger";
 
 // The engine-backed "Downloads" section of the settings popover. Values are
 // read from the engine each time it mounts (the popover opens) and written
 // back on blur/Enter; the engine clamps and the field shows what it applied.
 // `onApplied` passes each result on, so the status bar's limit follows.
+// A proxy edit refused after the popover has closed goes to `onUnsaved` (a
+// toast) instead: unnoticed, downloads would go somewhere the user didn't pick.
 export function DownloadSettings({
   onApplied,
+  onUnsaved,
 }: {
   onApplied: (applied: Settings, fields: Field[]) => void;
+  onUnsaved: (message: string) => void;
 }) {
   const [saved, setSaved] = useState<Settings | null>(null);
   const [drafts, setDrafts] = useState<Drafts>({
     concurrent: "",
     limit: NO_LIMIT,
     connections: "",
+    proxyMode: "system",
+    proxy: "",
   });
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
+  const mounted = useRef(true);
 
   useEffect(() => {
     api
@@ -46,8 +59,9 @@ export function DownloadSettings({
   }, []);
 
   // Sends only `field`, so overlapping commits of different fields can't
-  // clobber each other with stale values.
-  const commit = async (field: Field) => {
+  // clobber each other with stale values. `drafts` is passed in when the
+  // change is to commit in the same event that makes it (the proxy's mode).
+  const commit = async (field: Field, drafts: Drafts = latest.current.drafts) => {
     if (!saved) return;
     if (!isDirty(field, drafts, saved)) {
       setErrors((e) => ({ ...e, [field]: undefined }));
@@ -61,32 +75,44 @@ export function DownloadSettings({
     try {
       const applied = await api.setSettings(r.patch);
       setSaved((prev) => mergeApplied(prev, applied, [field]));
-      setDrafts((d) => ({ ...d, [field]: draftsFrom(applied)[field] }));
+      setDrafts((d) => appliedDrafts(field, d, applied));
       setErrors((e) => ({ ...e, [field]: undefined }));
       onApplied(applied, [field]);
     } catch (e) {
-      setErrors((prev) => ({ ...prev, [field]: String(e) }));
+      if (mounted.current) setErrors((prev) => ({ ...prev, [field]: String(e) }));
+      else if (field === "proxy") onUnsaved(proxyUnsaved(e));
     }
   };
 
   // Closing the popover unmounts this before a pending edit's blur can land,
   // so flush every pending edit on the way out (best effort), one call per
   // field so an invalid one can't take the others down with it.
-  const latest = useRef({ drafts, saved, onApplied });
-  latest.current = { drafts, saved, onApplied };
-  useEffect(
-    () => () => {
-      const { drafts, saved, onApplied } = latest.current;
+  const latest = useRef({ drafts, saved, onApplied, onUnsaved });
+  latest.current = { drafts, saved, onApplied, onUnsaved };
+  useEffect(() => {
+    // Set here too: StrictMode's dev-only remount runs the cleanup below once.
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const { drafts, saved, onApplied, onUnsaved } = latest.current;
       if (!saved) return;
       for (const patch of dirtyPatches(drafts, saved)) {
+        const field = fieldOf(patch);
         api
           .setSettings(patch)
-          .then((applied) => onApplied(applied, [fieldOf(patch)]))
-          .catch(() => {});
+          .then((applied) => onApplied(applied, [field]))
+          .catch((e) => field === "proxy" && onUnsaved(proxyUnsaved(e)));
       }
-    },
-    [],
-  );
+    };
+  }, []);
+
+  // Use system proxy and No proxy apply at once; Custom waits for its URL.
+  const chooseProxyMode = (proxyMode: ProxyModeName) => {
+    const next = { ...drafts, proxyMode };
+    setDrafts(next);
+    setErrors((e) => ({ ...e, proxy: undefined }));
+    if (proxyMode !== "custom") void commit("proxy", next);
+  };
 
   const input = (field: "concurrent" | "connections", label: string) => (
     <input
@@ -100,7 +126,7 @@ export function DownloadSettings({
       onBlur={() => commit(field)}
       onKeyDown={(e) => e.key === "Enter" && commit(field)}
       inputMode="numeric"
-      className="flex h-7 w-full rounded-md border border-line-strong bg-raised px-2 text-sm tabular-nums transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden disabled:opacity-60 aria-[invalid]:border-danger"
+      className={`${INPUT_CLASS} w-full tabular-nums`}
     />
   );
 
@@ -133,9 +159,51 @@ export function DownloadSettings({
       >
         {input("connections", "Max connections per download")}
       </SettingRow>
+      <SettingRow
+        label="Proxy"
+        hint={
+          drafts.proxyMode === "custom"
+            ? "HTTP or SOCKS5. Applies when a download next starts"
+            : "Applies when a download next starts"
+        }
+        error={errors.proxy}
+        wide
+      >
+        <select
+          aria-label="Proxy"
+          disabled={!saved}
+          value={drafts.proxyMode}
+          onChange={(e) => chooseProxyMode(e.target.value as ProxyModeName)}
+          className={`${INPUT_CLASS} w-40`}
+        >
+          {PROXY_MODES.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </SettingRow>
+      {drafts.proxyMode === "custom" && (
+        <input
+          type="text"
+          aria-label="Proxy URL"
+          aria-invalid={errors.proxy ? true : undefined}
+          disabled={!saved}
+          value={drafts.proxy}
+          placeholder="socks5h://host:1080"
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e) => setDrafts((d) => ({ ...d, proxy: e.target.value }))}
+          onBlur={() => commit("proxy")}
+          onKeyDown={(e) => e.key === "Enter" && commit("proxy")}
+          className={`${INPUT_CLASS} w-full`}
+        />
+      )}
     </div>
   );
 }
+
+const proxyUnsaved = (e: unknown) => `Proxy not saved. ${String(e)}`;
 
 function SettingRow({
   label,
