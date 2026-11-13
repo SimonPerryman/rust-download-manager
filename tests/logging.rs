@@ -3,63 +3,15 @@
 
 mod common;
 
-use std::io;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tracing_subscriber::fmt::MakeWriter;
-
 use rdm::{download, Control, DownloadRequest, Error, JsonStore, Manager, Status, Store};
-
-/// Collects formatted log output for assertions.
-#[derive(Clone, Default)]
-struct Captured(Arc<Mutex<Vec<u8>>>);
-
-impl Captured {
-    fn lines(&self) -> Vec<String> {
-        String::from_utf8_lossy(&self.0.lock().unwrap())
-            .lines()
-            .map(str::to_owned)
-            .collect()
-    }
-}
-
-impl io::Write for Captured {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<'a> MakeWriter<'a> for Captured {
-    type Writer = Captured;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        self.clone()
-    }
-}
-
-/// Route this thread's events (at every level) into a [`Captured`] buffer.
-/// `#[tokio::test]` runs spawned tasks on the same thread, so they're caught too.
-fn capture() -> (Captured, tracing::subscriber::DefaultGuard) {
-    let captured = Captured::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .with_max_level(tracing::Level::TRACE)
-        .with_writer(captured.clone())
-        .finish();
-    (captured, tracing::subscriber::set_default(subscriber))
-}
 
 /// Every line a Manager download logs names its id, so concurrent downloads'
 /// lines can be told apart, and its file once the server has named it.
 #[tokio::test]
 async fn manager_download_lines_carry_its_id() {
-    let (captured, _guard) = capture();
+    let (captured, _guard) = common::capture_log("trace");
     let server = common::spawn().await;
     let dir = tempfile::tempdir().unwrap();
     let store: Box<dyn Store> = Box::new(JsonStore::new(dir.path().join("state.json")));
@@ -100,7 +52,7 @@ async fn manager_download_lines_carry_its_id() {
 /// or WARN, still tagged with the download's URL.
 #[tokio::test]
 async fn pause_and_cancel_are_not_logged_as_errors() {
-    let (captured, _guard) = capture();
+    let (captured, _guard) = common::capture_log("trace");
     let server = common::spawn().await;
     let dir = tempfile::tempdir().unwrap();
     let url = server.url("/slow");
@@ -152,7 +104,7 @@ async fn closed_port() -> u16 {
 /// never leak them.
 #[tokio::test]
 async fn failed_download_never_logs_or_reports_url_secrets() {
-    let (captured, _guard) = capture();
+    let (captured, _guard) = common::capture_log("trace");
     let url = secret_url_to_closed_port().await;
     let dir = tempfile::tempdir().unwrap();
     let req =
@@ -185,7 +137,7 @@ async fn failed_download_never_logs_or_reports_url_secrets() {
 /// the proxy's login.
 #[tokio::test]
 async fn failed_download_never_logs_or_reports_proxy_credentials() {
-    let (captured, _guard) = capture();
+    let (captured, _guard) = common::capture_log("trace");
     let server = common::spawn().await;
     let port = closed_port().await;
     let proxy: rdm::Proxy = format!("socks5h://proxyuser:PROXYPW7@127.0.0.1:{port}")
