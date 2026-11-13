@@ -68,6 +68,17 @@ exponential backoff. A host that rate-limits (429/503) is backed off from
 rather than sent more connections, and its `Retry-After` (up to 60 s) is
 honoured.
 
+Some hosts limit how often you may ask, not how many connections you hold:
+every new request past a few can cost another `Retry-After`. So once a host
+answers 429, or refuses with a `Retry-After`, rdm fetches everything left in
+one request on one lane, from the first missing byte to the last, reading
+past any parts already on disk in between. The rest of the download then
+normally costs just that one wait; a connection that drops mid-way can cost
+another. The trade-off is the parts read past: they are fetched again (and
+count against a speed limit), so a host that refuses late in a download
+with every lane part-way through re-sends more. This lasts until the
+download stops; resuming it starts on several lanes again.
+
 ## Integrity checks
 
 The finished file's size is always checked. An optional SHA-256 checksum

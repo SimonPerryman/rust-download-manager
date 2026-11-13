@@ -63,7 +63,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use attempt::attempt_download;
+use attempt::{attempt_download, Learned};
 use finish::{discard_partial, finalize};
 use http::{backoff, interruption, is_transient, next_chunk};
 use tally::Tally;
@@ -401,9 +401,9 @@ pub async fn download(
     if let Some(target) = &known_target {
         state::remove_stale_temps(&state::sidecar_path(target));
     }
-    // Set once the server proves it can't serve ranges; later attempts stay
-    // single-connection.
-    let mut force_single = false;
+    // What the server has shown so far (no real ranges, a rate limit), which
+    // steers every later attempt.
+    let mut learned = Learned::default();
 
     req.tally.begin_run(req.active_before);
     // Ends the run however `download` returns (or is dropped).
@@ -432,7 +432,7 @@ pub async fn download(
                     req,
                     control,
                     &mut known_target,
-                    &mut force_single,
+                    &mut learned,
                     &mut segmented,
                     &mut on_progress,
                 )
@@ -457,6 +457,9 @@ pub async fn download(
         };
         let max_attempts = req.retry.max_attempts;
         let throttle = throttle_wait(&e);
+        // A 429, or any refusal with `Retry-After`: the host limits how often
+        // we ask. A bare 503 is just as likely an overload, so it isn't.
+        learned.rate_limited |= matches!(e, Error::Status(429) | Error::Throttled { .. });
         let delay = if !is_transient(&e) || max_attempts <= 1 {
             None
         } else if segmented {

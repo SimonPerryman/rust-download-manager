@@ -873,6 +873,201 @@ async fn rate_limit_backoff_escalates_despite_progress() {
     assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
 }
 
+/// A host that limits request rate (one request per `Retry-After` window, like
+/// OVH) costs one wait, not one per segment: after the first 429 the rest
+/// arrives in a single request.
+#[tokio::test]
+async fn a_rate_limited_host_costs_one_wait() {
+    // Wide enough that the lanes still running when the first 429 lands are
+    // refused inside the same window, even on a slow runner.
+    let retry_after = Duration::from_secs(2);
+    let server = common::spawn_with(FixtureConfig {
+        seg_window_budget: 1,
+        seg_retry_after: Some(retry_after.as_secs()),
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-429-window");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("windowed.bin");
+
+    let req = DownloadRequest::to_path(server.url("/seg-429-window"), &out)
+        .with_connections(4)
+        .with_retry(fast_retry(5))
+        .with_ramp(Ramping::Off);
+    download(&req, &Control::new(), |_| {}).await.unwrap();
+
+    let refused = stats.refused_at();
+    assert!(!refused.is_empty(), "the host never rate-limited");
+    let waited_out = refused[0] + retry_after;
+    // Every 429 came before the first wait ended: there was no second wait.
+    assert!(
+        refused.iter().all(|&at| at < waited_out),
+        "{} refusals, some after the first wait",
+        refused.len()
+    );
+    let after_wait = stats
+        .arrived_at()
+        .iter()
+        .filter(|&&at| at >= waited_out)
+        .count();
+    assert_eq!(after_wait, 1, "the rest should take one request");
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+}
+
+/// Seed the seg payload with a gap in the second segment, the third complete
+/// and the fourth untouched, so the rest is two ranges with bytes between.
+fn seed_gaps(server: &common::TestServer, route: &str, out: &Path) {
+    let done = |start, done| Segment {
+        start,
+        end: start + MIB,
+        done,
+    };
+    let segments = vec![
+        done(0, MIB),
+        done(MIB, 256 * KIB),
+        done(2 * MIB, MIB),
+        done(3 * MIB, 0),
+    ];
+    seed_v2(out, &server.url(route), &server.seg_payload(), segments);
+}
+
+/// After a rate limit (here a bare 429, no `Retry-After`), one request covers
+/// every missing range, reading past the bytes already on disk between them.
+#[tokio::test]
+async fn after_a_rate_limit_one_request_fetches_every_gap() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_refusals: 1,
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-429");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("gaps.bin");
+    seed_gaps(&server, "/seg-429", &out);
+
+    let req = DownloadRequest::to_path(server.url("/seg-429"), &out)
+        .with_connections(1)
+        .with_retry(fast_retry(5))
+        .with_ramp(Ramping::Off);
+    download(&req, &Control::new(), |_| {}).await.unwrap();
+
+    let gap = MIB + 256 * KIB;
+    assert_eq!(
+        stats.ranges(),
+        vec![
+            format!("bytes={gap}-{}", 2 * MIB - 1),
+            format!("bytes={gap}-{}", 4 * MIB - 1),
+        ]
+    );
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+}
+
+/// The one request stops at the last missing byte rather than reading on
+/// through finished pieces to the end of the file.
+#[tokio::test]
+async fn the_one_request_ends_at_the_last_gap() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_refusals: 1,
+        seg_retry_after: Some(1),
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-429");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("early-gap.bin");
+    let payload = server.seg_payload();
+    let piece = |start, done| Segment {
+        start,
+        end: start + MIB,
+        done,
+    };
+    let segments = vec![
+        piece(0, 0),
+        piece(MIB, MIB),
+        piece(2 * MIB, 512 * KIB),
+        piece(3 * MIB, MIB),
+    ];
+    seed_v2(&out, &server.url("/seg-429"), &payload, segments);
+
+    let req = DownloadRequest::to_path(server.url("/seg-429"), &out)
+        .with_connections(1)
+        .with_retry(fast_retry(5))
+        .with_ramp(Ramping::Off);
+    download(&req, &Control::new(), |_| {}).await.unwrap();
+
+    assert_eq!(
+        stats.ranges(),
+        vec![
+            format!("bytes=0-{}", MIB - 1),
+            format!("bytes=0-{}", 3 * MIB - 1),
+        ]
+    );
+    assert_eq!(std::fs::read(&out).unwrap(), payload);
+}
+
+/// A 429 to the very first request leaves nothing to resume: the retry plans
+/// the pieces afresh and its own response, the whole file, is the one request.
+#[tokio::test]
+async fn a_rate_limited_probe_fetches_the_file_in_one_request() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_retry_after: Some(1),
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-429-first");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("probe.bin");
+
+    let req = DownloadRequest::to_path(server.url("/seg-429-first"), &out)
+        .with_connections(4)
+        .with_retry(fast_retry(5))
+        .with_ramp(Ramping::Off);
+    download(&req, &Control::new(), |_| {}).await.unwrap();
+
+    assert_eq!(stats.refused(), 1);
+    assert_eq!(stats.requests(), 2, "ranges: {:?}", stats.ranges());
+    assert_eq!(stats.unranged(), 2);
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+}
+
+/// A pause lands mid-way through the one request for the rest, and the
+/// resumed download still ends byte-identical.
+#[tokio::test]
+async fn pause_and_resume_during_the_one_request() {
+    let server = common::spawn_with(FixtureConfig {
+        seg_refusals: 1,
+        seg_retry_after: Some(1),
+        seg_chunk_delay: Duration::from_millis(5),
+        ..FixtureConfig::default()
+    })
+    .await;
+    let stats = server.stats("/seg-429");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("paused.bin");
+    seed_gaps(&server, "/seg-429", &out);
+
+    let req = DownloadRequest::to_path(server.url("/seg-429"), &out)
+        .with_connections(1)
+        .with_retry(fast_retry(5))
+        .with_ramp(Ramping::Off);
+    let control = Control::new();
+    // Past the complete third segment: into the last range of the request.
+    let paused = download(&req, &control, |p| {
+        if p.downloaded >= 3 * MIB + 256 * KIB {
+            control.pause();
+        }
+    })
+    .await;
+    assert!(matches!(paused, Err(Error::Paused)), "{paused:?}");
+    assert_eq!(stats.refused(), 1);
+    assert_eq!(stats.ranges().len(), 2, "{:?}", stats.ranges());
+
+    control.resume();
+    download(&req, &control, |_| {}).await.unwrap();
+    assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+}
+
 /// Resume uses every connection even when few segments remain: idle workers
 /// steal from the one big remaining segment.
 #[tokio::test]

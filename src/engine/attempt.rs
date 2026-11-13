@@ -15,6 +15,16 @@ use super::{
     filename, human, state, Control, DownloadRequest, DownloadState, Error, Progress, Result,
 };
 
+/// What earlier attempts of one download learned about its server.
+#[derive(Debug, Default)]
+pub(super) struct Learned {
+    /// It doesn't really honour ranges: stay on a single connection.
+    pub single: bool,
+    /// It refused a request with 429 or a `Retry-After`: fetch the rest in
+    /// one request, since each new one may cost another wait.
+    pub rate_limited: bool,
+}
+
 /// One attempt, re-run single-connection (without consuming a retry) if a
 /// segmented run finds the server doesn't really honour ranges.
 pub(super) async fn attempt_download(
@@ -22,7 +32,7 @@ pub(super) async fn attempt_download(
     req: &DownloadRequest,
     control: &Control,
     known_target: &mut Option<PathBuf>,
-    force_single: &mut bool,
+    learned: &mut Learned,
     segmented: &mut bool,
     on_progress: &mut impl FnMut(Progress),
 ) -> Result<(u16, PathBuf, u64)> {
@@ -32,7 +42,7 @@ pub(super) async fn attempt_download(
             req,
             control,
             known_target,
-            *force_single,
+            learned,
             segmented,
             on_progress,
         )
@@ -42,7 +52,7 @@ pub(super) async fn attempt_download(
             Err(Failure::Engine(e)) => return Err(e),
             // The segmented run already discarded its sidecar and `.part`.
             Err(Failure::RangeUnsupported) => {
-                *force_single = true;
+                learned.single = true;
                 *segmented = false;
             }
         }
@@ -118,7 +128,7 @@ async fn attempt_once(
     req: &DownloadRequest,
     control: &Control,
     known_target: &mut Option<PathBuf>,
-    force_single: bool,
+    learned: &Learned,
     segmented: &mut bool,
     on_progress: &mut impl FnMut(Progress),
 ) -> std::result::Result<(u16, PathBuf, u64), Failure> {
@@ -143,8 +153,17 @@ async fn attempt_once(
             Existing::Segmented(st) => {
                 *segmented = true;
                 announce_resume(req, st.segments.iter().flatten().map(|s| s.done).sum());
-                return resume_segmented(client, req, control, &part, &sidecar, st, on_progress)
-                    .await;
+                return resume_segmented(
+                    client,
+                    req,
+                    control,
+                    &part,
+                    &sidecar,
+                    st,
+                    learned.rate_limited,
+                    on_progress,
+                )
+                .await;
             }
             Existing::Absent => {}
         }
@@ -208,18 +227,29 @@ async fn attempt_once(
         Existing::Segmented(st) => {
             *segmented = true;
             announce_resume(req, st.segments.iter().flatten().map(|s| s.done).sum());
-            return resume_segmented(client, req, control, &part, &sidecar, st, on_progress).await;
+            return resume_segmented(
+                client,
+                req,
+                control,
+                &part,
+                &sidecar,
+                st,
+                learned.rate_limited,
+                on_progress,
+            )
+            .await;
         }
         Existing::Absent => {}
     }
 
-    if !force_single {
+    if !learned.single {
         if let Some(total) = segmentable(req, &resp) {
             *segmented = true;
             let segments = segment::plan(total, req.effective_connections(), req.min_segment_size);
             let workers = segments.len();
             let pieces = human::count(workers as u32, "piece", "pieces");
             let lanes = match req.ramp {
+                _ if learned.rate_limited => format!("{pieces}, 1 lane"),
                 Ramping::Window(_) => format!("{pieces}, up to {workers} lanes"),
                 Ramping::Off => format!("{pieces}, {workers} lanes"),
             };
@@ -252,6 +282,7 @@ async fn attempt_once(
                 ramp: req.ramp,
                 shed_grace: req.shed_grace,
                 first: Some(resp),
+                one_request: learned.rate_limited,
                 tally: &req.tally,
             };
             let bytes = segment::run(job, on_progress).await?;
@@ -283,7 +314,8 @@ async fn attempt_once(
 
 /// Resume a multi-segment download from its v2 sidecar: fetch only the
 /// missing ranges, with up to `connections` workers (redirects re-followed
-/// from the original URL).
+/// from the original URL), or in one request once the host has rate-limited.
+#[allow(clippy::too_many_arguments)]
 async fn resume_segmented(
     client: &reqwest::Client,
     req: &DownloadRequest,
@@ -291,6 +323,7 @@ async fn resume_segmented(
     part: &Path,
     sidecar: &Path,
     st: DownloadState,
+    one_request: bool,
     on_progress: &mut impl FnMut(Progress),
 ) -> std::result::Result<(u16, PathBuf, u64), Failure> {
     let job = segment::Job {
@@ -307,6 +340,7 @@ async fn resume_segmented(
         ramp: req.ramp,
         shed_grace: req.shed_grace,
         first: None,
+        one_request,
         tally: &req.tally,
     };
     let bytes = segment::run(job, on_progress).await?;

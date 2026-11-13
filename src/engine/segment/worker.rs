@@ -28,14 +28,18 @@ enum Outcome {
 /// A worker: repeatedly claim a segment (queued, else stolen) and fetch it,
 /// until there is no work left, the stop signal is raised, or the pool is over
 /// target. A failed or retired-from segment is handed back to the queue for
-/// the remaining workers.
+/// the remaining workers. In one-request mode it [`sweep`]s instead.
 pub(super) async fn worker(
     shared: &Shared<'_>,
     first: Option<reqwest::Response>,
     mut slot: Slot<'_>,
 ) -> (u8, Result<(), Failure>) {
     let lane = slot.lane;
-    let result = work(shared, first, &mut slot).await;
+    let result = if shared.one_request {
+        sweep(shared, first, &slot).await
+    } else {
+        work(shared, first, &mut slot).await
+    };
     // However it ended, the lane is no longer on any segment.
     lock(&shared.table).release(lane);
     (lane, result)
@@ -161,31 +165,10 @@ async fn fetch_segment(
                 if shared.is_stopping() {
                     return Ok(Outcome::Stopped);
                 }
-                let mut request = shared
-                    .client
-                    .get(&shared.url)
-                    .header(header::RANGE, format!("bytes={pos}-{}", end - 1));
-                if let Some(validator) = &shared.validator {
-                    request = request.header(header::IF_RANGE, validator);
+                match request_range(shared, pos, end, stop, slot).await? {
+                    Some(resp) => resp,
+                    None => return Ok(Outcome::Stopped),
                 }
-                let resp = tokio::select! {
-                    resp = request.send() => resp?,
-                    _ = tokio::time::sleep(shared.read_timeout) => return Err(Error::TimedOut.into()),
-                    _ = stop.wait_for(|stopped| *stopped) => return Ok(Outcome::Stopped),
-                };
-                tracing::debug!(
-                    "Lane {} requested bytes {pos}–{} · HTTP {}",
-                    slot.number(),
-                    end - 1,
-                    resp.status().as_u16()
-                );
-                check_ranged(&resp, pos, end, shared.total, shared.redirected)?;
-                let reconnected =
-                    std::mem::take(&mut lock(&shared.lane_failures)[usize::from(slot.lane)]);
-                if reconnected > 0 {
-                    tracing::info!("Lane {} reconnected", slot.number());
-                }
-                resp
             }
         };
 
@@ -249,6 +232,162 @@ async fn fetch_segment(
         }
         if !progressed {
             return Err(Error::Incomplete(format!("bytes {pos}-{} ended early", end - 1)).into());
+        }
+    }
+}
+
+/// Request bytes `[pos, end)` on `slot`'s lane and check the answer is that
+/// range; `None` if the stop signal was raised first.
+async fn request_range(
+    shared: &Shared<'_>,
+    pos: u64,
+    end: u64,
+    stop: &mut watch::Receiver<bool>,
+    slot: &Slot<'_>,
+) -> Result<Option<reqwest::Response>, Failure> {
+    let mut request = shared
+        .client
+        .get(&shared.url)
+        .header(header::RANGE, format!("bytes={pos}-{}", end - 1));
+    if let Some(validator) = &shared.validator {
+        request = request.header(header::IF_RANGE, validator);
+    }
+    let resp = tokio::select! {
+        resp = request.send() => resp?,
+        _ = tokio::time::sleep(shared.read_timeout) => return Err(Error::TimedOut.into()),
+        _ = stop.wait_for(|stopped| *stopped) => return Ok(None),
+    };
+    tracing::debug!(
+        "Lane {} requested bytes {pos}–{} · HTTP {}",
+        slot.number(),
+        end - 1,
+        resp.status().as_u16()
+    );
+    check_ranged(&resp, pos, end, shared.total, shared.redirected)?;
+    let reconnected = std::mem::take(&mut lock(&shared.lane_failures)[usize::from(slot.lane)]);
+    if reconnected > 0 {
+        tracing::info!("Lane {} reconnected", slot.number());
+    }
+    Ok(Some(resp))
+}
+
+/// [`worker`] for a rate-limited host: fetch everything left in one request,
+/// from the first missing byte to the last, writing each segment's missing
+/// bytes and reading past those already on disk. A response that ends early
+/// after progress is re-requested from the new first missing byte.
+async fn sweep(
+    shared: &Shared<'_>,
+    mut first: Option<reqwest::Response>,
+    slot: &Slot<'_>,
+) -> Result<(), Failure> {
+    let mut stop = shared.stop.subscribe();
+    let mut file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .open(shared.part)
+        .await?;
+    let number = slot.number();
+    tracing::debug!("Lane {number} opened");
+    loop {
+        let (from, until) = {
+            let table = lock(&shared.table);
+            (table.first_missing(), table.last_missing_end())
+        };
+        let (Some(from), Some(until)) = (from, until) else {
+            tracing::debug!("Lane {number} done — nothing left to fetch");
+            return Ok(());
+        };
+        // The probe's response is the whole file, from byte 0.
+        let (start, resp) = match first.take() {
+            Some(resp) => (0, resp),
+            None => {
+                if shared.is_stopping() {
+                    return Ok(());
+                }
+                match request_range(shared, from, until, &mut stop, slot).await? {
+                    Some(resp) => (from, resp),
+                    None => return Ok(()),
+                }
+            }
+        };
+        let mut at = start;
+
+        let mut body = resp.bytes_stream();
+        let mut progressed = false;
+        loop {
+            let next = tokio::select! {
+                next = crate::engine::next_chunk(&mut body, shared.read_timeout) => next,
+                _ = stop.wait_for(|stopped| *stopped) => return Ok(()),
+            };
+            let Some(chunk) = next else { break };
+            let chunk = chunk?;
+
+            // Control point: honoured once per chunk, before the write.
+            if shared.control.poll() != Flow::Continue {
+                shared.raise_stop();
+                return Ok(());
+            }
+            let mut rest = &chunk[..];
+            let mut written = 0;
+            while !rest.is_empty() {
+                let (idx, missing_from, end) = {
+                    let mut table = lock(&shared.table);
+                    let Some(idx) = table.segment_at(at) else {
+                        break;
+                    };
+                    let seg = table.segments[idx];
+                    let missing_from = seg.start + seg.done;
+                    if at == missing_from && table.owner[idx] != Some(slot.lane) {
+                        table.release(slot.lane);
+                        table.owner[idx] = Some(slot.lane);
+                    }
+                    (idx, missing_from, seg.end)
+                };
+                if at < missing_from {
+                    // Already on disk: read past it.
+                    let n = (missing_from - at).min(rest.len() as u64);
+                    at += n;
+                    rest = &rest[n as usize..];
+                    continue;
+                }
+                if at > missing_from {
+                    return Err(Error::Internal(format!(
+                        "byte {at} arrived ahead of the missing byte {missing_from}"
+                    ))
+                    .into());
+                }
+                let n = (end - at).min(rest.len() as u64);
+                file.seek(std::io::SeekFrom::Start(at)).await?;
+                file.write_all(&rest[..n as usize]).await?;
+                file.flush().await?;
+                // `done` only advances once the bytes are written, so a
+                // checkpoint snapshot never claims data that isn't in the file.
+                {
+                    let mut table = lock(&shared.table);
+                    let seg = &mut table.segments[idx];
+                    seg.done = (seg.done + n).min(seg.len());
+                }
+                written += n;
+                at += n;
+                rest = &rest[n as usize..];
+            }
+            progressed |= written > 0;
+
+            // Throttle point: bytes read past cost bandwidth too, so the
+            // whole chunk counts against the speed limit.
+            let stopped = tokio::select! {
+                _ = shared.control.throttle(chunk.len(), Some(&shared.waited)) => false,
+                _ = stop.wait_for(|stopped| *stopped) => true,
+            };
+            shared.paced.fetch_add(written, Ordering::Relaxed);
+            shared.progressed.notify_one();
+            // The probe's response runs to the end of the file, past the last gap.
+            if stopped || lock(&shared.table).first_missing().is_none() {
+                return Ok(());
+            }
+        }
+        if !progressed {
+            let last = until - 1;
+            return Err(Error::Incomplete(format!("bytes {start}-{last} ended early")).into());
         }
     }
 }
