@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::{FixtureConfig, SEG_RAMP_CAP, SEG_RAMP_RATE};
+use common::{FixtureConfig, SEG_RAMP_CAP, SEG_RAMP_CHUNK, SEG_RAMP_RATE};
 use rdm::engine::state::{self, DownloadState};
 use rdm::engine::{Ramping, Segment};
 use rdm::{download, Control, DownloadRequest, Error, Progress, RateLimiter};
@@ -374,8 +374,8 @@ impl Watch {
 }
 
 /// Settled at 4 (the ceiling), a download whose host slows to a quarter for
-/// a quarter of a window keeps all four; slowed for good, it sheds one (after
-/// three slow windows) and, its best reset, no more.
+/// one window's worth of chunks keeps all four; slowed for good, it sheds one
+/// (after three slow windows) and, its best reset, no more.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_sustained_slowdown_sheds_a_connection_and_a_brief_one_does_not() {
     let server = ramp_server(32 * MIB).await;
@@ -391,10 +391,17 @@ async fn a_sustained_slowdown_sheds_a_connection_and_a_brief_one_does_not() {
         let settled = watch.reports();
         // Past the window that settles it at 4, even on a late timer.
         tokio::time::sleep(WINDOW * 4).await;
-        // At most two windows see this one, even if it overruns.
-        server.set_ramp_link(SEG_RAMP_RATE);
-        tokio::time::sleep(WINDOW / 4).await;
-        server.set_ramp_link(SEG_RAMP_CAP);
+        // The link's own pacing ends this slowdown, one window long: a window
+        // is slow when over 40% of it is slowed, so it makes one or two slow
+        // windows, and three only if stretched past 1.8 windows.
+        let one_window = SEG_RAMP_RATE * WINDOW.as_millis() as u64 / 1000 / SEG_RAMP_CHUNK as u64;
+        server.slow_ramp_link_for(SEG_RAMP_RATE, one_window);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        while server.ramp_link_slow_chunks_left() > 0 {
+            assert!(tokio::time::Instant::now() < deadline, "slowdown never ran");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        // Fast windows reset the slow count before the lasting slowdown.
         tokio::time::sleep(WINDOW * 6).await;
         let slowed = watch.reports();
         server.set_ramp_link(SEG_RAMP_RATE);

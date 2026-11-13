@@ -80,7 +80,8 @@
 //! - `GET /seg-ramp`   — [`SEG_RAMP_CHUNK`]s paced by deadline (no burst) at
 //!   [`SEG_RAMP_RATE`] per connection and [`SEG_RAMP_CAP`] across all of
 //!   them, like a host whose link saturates at four connections; the link's
-//!   rate can be changed mid-download with [`TestServer::set_ramp_link`].
+//!   rate can be changed mid-download with [`TestServer::set_ramp_link`],
+//!   or for a set number of chunks with [`TestServer::slow_ramp_link_for`].
 //! - `GET /seg-ramp-stuck` — `/seg-ramp`, but from ranged request
 //!   [`SEG_RAMP_STUCK_FROM`] on, each sends its headers and then no body until
 //!   [`TestServer::gate`] releases it: a lane opened late sits stuck.
@@ -576,6 +577,10 @@ struct AppState {
     /// `/seg-ramp`: the shared link's rate in bytes/s (see
     /// [`TestServer::set_ramp_link`]).
     ramp_link: Arc<AtomicU64>,
+    /// `/seg-ramp`: how many more chunks the link sends at `ramp_slow_rate`
+    /// (see [`TestServer::slow_ramp_link_for`]).
+    ramp_slow_chunks: Arc<AtomicU64>,
+    ramp_slow_rate: Arc<AtomicU64>,
     /// `/seg-429-window`: requests served this window, and when the current
     /// refusal window ends.
     rate_window: Mutex<(usize, Option<Instant>)>,
@@ -596,6 +601,8 @@ impl AppState {
             gate: Arc::default(),
             ramp_next_free: Arc::new(Mutex::new(tokio::time::Instant::now())),
             ramp_link: Arc::new(AtomicU64::new(SEG_RAMP_CAP)),
+            ramp_slow_chunks: Arc::default(),
+            ramp_slow_rate: Arc::default(),
             rate_window: Mutex::new((0, None)),
             stats: COUNTED_ROUTES
                 .iter()
@@ -1276,12 +1283,28 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg, data: Bytes) -
 struct Link {
     next_free: Arc<Mutex<tokio::time::Instant>>,
     rate: Arc<AtomicU64>,
+    slow_chunks: Arc<AtomicU64>,
+    slow_rate: Arc<AtomicU64>,
+}
+
+impl Link {
+    /// The rate for the link's next chunk, spending one slow chunk if any.
+    fn next_rate(&self) -> u64 {
+        let slow = self
+            .slow_chunks
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .is_ok();
+        let rate = if slow { &self.slow_rate } else { &self.rate };
+        rate.load(Ordering::SeqCst).max(1)
+    }
 }
 
 fn link(state: &AppState) -> Link {
     Link {
         next_free: state.ramp_next_free.clone(),
         rate: state.ramp_link.clone(),
+        slow_chunks: state.ramp_slow_chunks.clone(),
+        slow_rate: state.ramp_slow_rate.clone(),
     }
 }
 
@@ -1327,10 +1350,10 @@ fn paced(
                     return None;
                 }
                 tokio::time::sleep_until(due).await;
-                let rate = link.rate.load(Ordering::SeqCst).max(1);
-                let link_gap = Duration::from_secs_f64(SEG_RAMP_CHUNK as f64 / rate as f64);
                 let slot = {
                     let mut next = link.next_free.lock().unwrap();
+                    let link_gap =
+                        Duration::from_secs_f64(SEG_RAMP_CHUNK as f64 / link.next_rate() as f64);
                     let slot = (*next).max(tokio::time::Instant::now());
                     *next = slot + link_gap;
                     slot
@@ -1512,6 +1535,21 @@ impl TestServer {
     /// gets faster or slower mid-download.
     pub fn set_ramp_link(&self, bytes_per_sec: u64) {
         self.state.ramp_link.store(bytes_per_sec, Ordering::SeqCst);
+    }
+
+    /// Slow `/seg-ramp`'s shared link to `bytes_per_sec` for its next `chunks`
+    /// chunks, then back to its set rate: a slowdown whose length the link's
+    /// own pacing sets, not a test's sleep.
+    pub fn slow_ramp_link_for(&self, bytes_per_sec: u64, chunks: u64) {
+        self.state
+            .ramp_slow_rate
+            .store(bytes_per_sec, Ordering::SeqCst);
+        self.state.ramp_slow_chunks.store(chunks, Ordering::SeqCst);
+    }
+
+    /// The chunks left of a [`TestServer::slow_ramp_link_for`] slowdown.
+    pub fn ramp_link_slow_chunks_left(&self) -> u64 {
+        self.state.ramp_slow_chunks.load(Ordering::SeqCst)
     }
 
     /// Flip `/mutable` to v2 (new bytes, length, ETag).
