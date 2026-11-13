@@ -241,7 +241,8 @@ impl DownloadRequest {
     }
 
     /// Override how long the highest-numbered lane gets to close when the
-    /// ramp sheds one, before another may (test seam; frontends never call this).
+    /// ramp sheds one, before another may, and the most a new lane counts as
+    /// warming up (test seam; frontends never call this).
     #[doc(hidden)]
     pub fn with_shed_grace(mut self, grace: Duration) -> Self {
         self.shed_grace = grace;

@@ -38,6 +38,9 @@ desktop app share one version.
 - A download whose speed stays well below its best for a few seconds closes
   one connection ("Closing Lane 4 — the download slowed down"); a later try
   can win it back once the speed recovers.
+- On a server that's slow to connect, a download now still ramps up to its
+  maximum connections: a connection still waiting on its first bytes (for
+  up to 3 seconds) no longer reads as "more connections don't help".
 
 ## 0.3.0 - 2026-11-11
 

@@ -8,7 +8,8 @@ use super::LANES;
 use crate::engine::lock::lock;
 
 /// Live-worker accounting: how many workers run, how many the ramp wants, and
-/// whether the pool changed since the last ramp window.
+/// whether the pool changed (or a worker was warming up) since the last ramp
+/// window.
 pub(super) struct Pool {
     live: AtomicU8,
     target: AtomicU8,
@@ -16,16 +17,32 @@ pub(super) struct Pool {
     /// Lane numbers in use and when the pool went over target. `live` only
     /// changes under this lock, so a leave is judged against a stable pool.
     lanes: Mutex<LaneSet>,
-    /// How long the bottom lane gets to leave before any lane may.
+    /// How long the bottom lane gets to leave before any lane may; also how
+    /// long a worker without bytes counts as warming up rather than stuck.
     grace: Duration,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct LaneSet {
     /// One bit per lane number in use; a lane's number is what the log calls it by.
     used: u32,
     /// When a leave first fell due, while one is pending.
     over_since: Option<Instant>,
+    /// When each lane's worker joined, until it delivers its first bytes.
+    warming_since: [Option<Instant>; LANES],
+    /// Whether a worker delivered its first bytes since the last ramp window.
+    warmed: bool,
+}
+
+impl Default for LaneSet {
+    fn default() -> Self {
+        Self {
+            used: 0,
+            over_since: None,
+            warming_since: [None; LANES],
+            warmed: false,
+        }
+    }
 }
 
 impl LaneSet {
@@ -48,7 +65,8 @@ impl Pool {
     }
 
     /// Count a new worker in, on lane `prefer` if it's free, else the lowest
-    /// free one; it is counted out when the slot drops.
+    /// free one, warming up until [`Slot::delivered`]; it is counted out when
+    /// the slot drops.
     pub(super) fn join(&self, prefer: Option<u8>) -> Slot<'_> {
         let mut lanes = lock(&self.lanes);
         let used = lanes.used;
@@ -58,11 +76,13 @@ impl Pool {
             .or_else(|| (0..LANES as u8).find(free))
             .unwrap_or(LANES as u8 - 1);
         lanes.used |= 1 << lane;
+        lanes.warming_since[usize::from(lane)] = Some(Instant::now());
         self.live.fetch_add(1, Ordering::SeqCst);
         self.changed.store(true, Ordering::SeqCst);
         Slot {
             pool: self,
             held: true,
+            warming: true,
             lane,
         }
     }
@@ -70,6 +90,7 @@ impl Pool {
     /// Count `lane`'s worker out.
     fn leave(&self, lanes: &mut LaneSet, lane: u8) {
         lanes.used &= !(1 << lane);
+        lanes.warming_since[usize::from(lane)] = None;
         self.live.fetch_sub(1, Ordering::SeqCst);
         self.changed.store(true, Ordering::SeqCst);
     }
@@ -94,6 +115,25 @@ impl Pool {
     pub(super) fn take_changed(&self) -> bool {
         self.changed.swap(false, Ordering::SeqCst)
     }
+
+    /// Whether any worker was warming up since the last call: one delivered
+    /// its first bytes in between, or one is still waiting on them. A worker
+    /// silent for the grace is stuck, not slow to connect, so it no longer
+    /// counts and the ramp can judge (and shed) it.
+    pub(super) fn take_warming(&self) -> bool {
+        self.take_warming_at(Instant::now())
+    }
+
+    /// [`Pool::take_warming`] at `now`.
+    fn take_warming_at(&self, now: Instant) -> bool {
+        let mut lanes = lock(&self.lanes);
+        let warming = lanes
+            .warming_since
+            .iter()
+            .flatten()
+            .any(|&since| now.saturating_duration_since(since) < self.grace);
+        std::mem::take(&mut lanes.warmed) || warming
+    }
 }
 
 /// Whether a worker left an over-target pool, and in whose place.
@@ -111,6 +151,8 @@ pub(super) enum Leave {
 pub(super) struct Slot<'a> {
     pool: &'a Pool,
     held: bool,
+    /// No bytes delivered yet (and still in the pool).
+    warming: bool,
     /// Zero-based; the log shows it one-based.
     pub(super) lane: u8,
 }
@@ -147,7 +189,17 @@ impl Slot<'_> {
         pool.leave(&mut lanes, self.lane);
         lanes.over_since = (live - 1 > pool.target()).then_some(now);
         self.held = false;
+        self.warming = false;
         leave
+    }
+
+    /// The worker delivered bytes: it is no longer warming up.
+    pub(super) fn delivered(&mut self) {
+        if std::mem::take(&mut self.warming) {
+            let mut lanes = lock(&self.pool.lanes);
+            lanes.warming_since[usize::from(self.lane)] = None;
+            lanes.warmed = true;
+        }
     }
 
     /// The lane's number as the log shows it, from 1.
@@ -224,6 +276,51 @@ mod tests {
         assert_eq!(slots[0].try_retire(), Leave::Stay);
         drop(slots);
         assert_eq!(pool.live(), 0);
+    }
+
+    /// A worker warms up from joining until its first bytes, and the window
+    /// those land in still counts; leaving without any isn't a warm-up.
+    #[test]
+    fn a_worker_warms_up_until_its_first_bytes() {
+        let pool = Pool::new(2, SHED_GRACE);
+        assert!(!pool.take_warming(), "no workers yet");
+        let mut first = pool.join(None);
+        let second = pool.join(None);
+        assert!(pool.take_warming());
+        assert!(pool.take_warming(), "still no bytes");
+        first.delivered();
+        drop(second);
+        assert!(pool.take_warming(), "the first warmed up in this window");
+        assert!(!pool.take_warming(), "warm, and the other left");
+        first.delivered();
+        assert!(!pool.take_warming(), "only the first bytes count");
+        drop(pool.join(None));
+        assert!(
+            !pool.take_warming(),
+            "leaving without bytes isn't a warm-up"
+        );
+    }
+
+    /// A worker without bytes for the grace is stuck, not warming up; one that
+    /// retired before any bytes stops warming even though its slot lives on.
+    #[test]
+    fn warming_up_lasts_at_most_the_grace() {
+        let grace = Duration::from_secs(3);
+        let pool = Pool::new(1, grace);
+        let before = Instant::now();
+        let mut first = pool.join(None);
+        let after = Instant::now();
+        assert!(pool.take_warming_at(before + grace - Duration::from_millis(1)));
+        assert!(!pool.take_warming_at(after + grace), "stuck, not warming");
+        first.delivered();
+        assert!(pool.take_warming(), "its late bytes still end a warm-up");
+
+        let mut late = pool.join(None);
+        assert!(pool.take_warming());
+        assert_eq!(late.try_retire(), Leave::Bottom);
+        assert!(!pool.take_warming(), "it left the pool");
+        late.delivered();
+        assert!(!pool.take_warming(), "a retired worker's bytes don't count");
     }
 
     /// The bottom lane is the one shed, so Lane 1 always stays; the others

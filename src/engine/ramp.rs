@@ -67,6 +67,9 @@ pub(crate) struct Window {
     /// Whether fewer workers ran than the pool wants (the work is running
     /// out), so the window doesn't measure the target.
     pub short: bool,
+    /// Whether any worker was still waiting on its first bytes during the
+    /// window (and not yet long enough to count as stuck).
+    pub warming: bool,
 }
 
 /// What the coordinator should do after a window.
@@ -151,10 +154,11 @@ impl Ramp {
         if self.settled {
             self.settled_for = self.settled_for.saturating_add(1);
         }
-        // A pool change means some connection spent part of the window on
-        // setup (incl. the first window's request latency): under-measuring
-        // it would make the next step over-ramp.
-        if w.pool_changed || w.short || w.bytes_per_sec <= 0.0 {
+        // A pool change or a warming connection means some of the window went
+        // on setup (incl. the first window's request latency, or a slow host's
+        // that spills past the window it joined): judging it would under-count
+        // the new connection, so the ramp would stop early.
+        if w.pool_changed || w.warming || w.short || w.bytes_per_sec <= 0.0 {
             return Decision::Hold;
         }
         if w.waited_fraction >= FREEZE_FRACTION {
@@ -317,6 +321,7 @@ mod tests {
             waited_fraction: 0.0,
             pool_changed: false,
             short: false,
+            warming: false,
         }
     }
 
@@ -365,6 +370,23 @@ mod tests {
         assert_eq!(r.target(), 1);
         // Not counted as a judged window: the next one is still the first.
         assert_eq!(r.observe(judged(100.0)), Decision::Add);
+    }
+
+    /// A connection slow to connect keeps windows unjudged past the one it
+    /// joined, so its setup time doesn't read as "no improvement".
+    #[test]
+    fn a_warming_connection_skips_the_window() {
+        let mut r = Ramp::new(4);
+        assert_eq!(r.observe(judged(100.0)), Decision::Add);
+        assert_eq!(r.observe(skipped()), Decision::Hold);
+        let warming = Window {
+            warming: true,
+            ..judged(100.0)
+        };
+        assert_eq!(r.observe(warming), Decision::Hold);
+        assert_eq!(r.observe(warming), Decision::Hold);
+        assert_eq!(r.target(), 2, "neither added nor retired");
+        assert_eq!(r.observe(judged(200.0)), Decision::Add);
     }
 
     #[test]
