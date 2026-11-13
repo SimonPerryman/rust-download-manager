@@ -423,10 +423,12 @@ pub(crate) async fn run(
                         );
                         report(&mut meter, on_progress);
                     }
-                    Decision::Retire => {
+                    Decision::Retire | Decision::Shed => {
                         let over = shared.pool.live() > shared.pool.target();
                         if let Some(bottom) = shared.pool.bottom().filter(|_| over) {
-                            let why = if raised {
+                            let why = if decision == Decision::Shed {
+                                "the download slowed down"
+                            } else if raised {
                                 "its speed limit changed mid-try"
                             } else {
                                 "more lanes didn't speed this up"
