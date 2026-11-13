@@ -5,8 +5,9 @@
 //! Usage: `cargo run --example fixture_server -- [--port N] [--slow-delay-ms N]
 //! [--seg-delay-ms N] [--seg-len BYTES]` (port 0, the default, picks a free
 //! one; the delays are per chunk for `/slow`-style routes and `/seg`
-//! respectively; `--seg-len` sizes the `/seg*` payload). Prints
-//! `listening on <base-url>` once bound.
+//! respectively; `--seg-len` sizes the `/seg*` payload). Also runs the test
+//! HTTP proxy (`tests/common/proxy.rs`) on a free port. Prints `proxy on
+//! <proxy-url>`, then `listening on <base-url>` once bound.
 
 #[path = "../tests/common/mod.rs"]
 mod common;
@@ -30,6 +31,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    let proxy = common::proxy::spawn_http_proxy().await;
+    println!("proxy on {}", proxy.url("http", None));
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
     let addr = listener.local_addr()?;
     println!("listening on http://{addr}");

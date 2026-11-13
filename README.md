@@ -17,6 +17,7 @@ command-line tool and a desktop app.
 - **A queue (GUI):** downloads wait their turn; paste many links at once.
 - **Archive and tags (GUI):** archive finished downloads and filter by tag.
 - **Verified:** optional SHA-256 checksum checked before the file is saved.
+- **Proxies:** the system proxy by default, or your own HTTP or SOCKS5 proxy.
 - **Safe names:** files stay in your folder and never overwrite another.
 - **See it work (GUI):** live connection lanes, a speed graph and a per-download log.
 - **Updates itself (GUI):** offers new versions and installs them when you choose.
@@ -62,6 +63,9 @@ rdm https://example.com/big-file.zip --limit-rate 2M
 
 # Verify the result against a SHA-256 checksum:
 rdm https://example.com/big-file.zip --checksum sha256:<hex>
+
+# Go through a SOCKS5 or HTTP proxy:
+rdm https://example.com/big-file.zip --proxy socks5h://127.0.0.1:1080
 ```
 
 Interrupted, or pressed Ctrl-C? Run the same command again to resume. The

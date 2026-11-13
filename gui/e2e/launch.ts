@@ -71,7 +71,10 @@ export const baseConfig = {
 let fixture: ChildProcess | undefined;
 let tauriDriver: ChildProcess | undefined;
 
-/** Start the fixture server (with `args`) on a free port and resolve its base URL. */
+/**
+ * Start the fixture server (with `args`) on a free port and resolve its base
+ * URL. Its test proxy's URL goes in `RDM_E2E_PROXY_URL`.
+ */
 export function startFixture(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(fixtureBinary, ["--port", "0", ...args], {
@@ -81,6 +84,8 @@ export function startFixture(args: string[]): Promise<string> {
     child.once("error", reject);
     child.once("exit", (code) => reject(new Error(`fixture server exited (${code})`)));
     createInterface({ input: child.stdout! }).on("line", (line) => {
+      const proxy = /^proxy on (\S+)/.exec(line);
+      if (proxy) process.env.RDM_E2E_PROXY_URL = proxy[1];
       const match = /^listening on (\S+)/.exec(line);
       if (match) resolve(match[1]);
     });

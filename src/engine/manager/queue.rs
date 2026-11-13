@@ -18,7 +18,7 @@ impl Inner {
             return;
         }
         let cap = st.settings.max_concurrent;
-        let connections = st.settings.max_connections;
+        let settings = st.settings.clone();
         let running = st.entries.values().filter(|e| e.task.is_some()).count();
         // A lowered cap can leave `running > cap`; nothing is preempted.
         let free = cap.saturating_sub(running);
@@ -51,7 +51,7 @@ impl Inner {
                 self.clone(),
                 &e.record,
                 control,
-                connections,
+                &settings,
                 e.tally.clone(),
             ));
         }

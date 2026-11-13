@@ -173,11 +173,42 @@ turns orange and the Speed column reads the speed against the limit:
 
 **Settings** (the sliders button) holds the theme under **Display**, and
 under **Downloads** the number of concurrent downloads, the global speed
-limit, the max connections per download and whether Remove asks first, and
+limit, the max connections per download, the [proxy](#proxy) and whether
+Remove asks first, and
 under **Updates** this version, **Check for updates** and **Check for updates
 automatically** (see [Updates](#updates)), and, last, **Troubleshooting**
 (see [Logs and troubleshooting](#logs-and-troubleshooting)). The status bar
 shows the total speed, and you can click the global limit there to change it.
+
+### Proxy
+
+**Proxy** chooses how downloads connect:
+
+- **Use system proxy** (the default): the operating system's proxy settings
+  on Windows and macOS (Windows: Settings → Network & internet → Proxy →
+  Manual proxy setup), with their bypass list, and on every OS the
+  `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` environment variables, which
+  take precedence, with the hosts in `NO_PROXY` going direct. Proxy
+  auto-config (a PAC script or WPAD, "Automatically detect settings") isn't
+  supported: with only that set up, downloads connect directly.
+- **No proxy:** always connect directly.
+- **Custom proxy:** an HTTP, HTTPS or SOCKS5 proxy you enter in the field
+  that appears, e.g. `socks5h://127.0.0.1:1080` (`socks5h` has the proxy
+  look up host names too) or `http://user:pass@proxy.example:3128`, for
+  every host. The URL is checked when you press Enter or leave the field;
+  an invalid one shows an error under the field and isn't saved (closing
+  Settings first shows the error as a notice instead).
+
+A change applies to downloads started or resumed after it, not to ones
+already running. The in-app updater always uses the system proxy.
+
+Once saved, the custom proxy's field shows the password as `••••••`. Leave
+the dots to keep the saved password; it's kept only while the scheme, host,
+port and user name stay the same, so the password never goes to a proxy you
+didn't enter it for. To change any of those, type the password again. Logs
+and Copy diagnostics never show the password (diagnostics name only the
+kind of proxy: `proxy system`, `proxy none`, or the scheme, e.g. `proxy
+socks5h`), and only `state.json` keeps it.
 
 ## Updates
 
@@ -250,7 +281,8 @@ Logged URLs and error messages hide a link's secrets but not where it
 points: a login shows only as `<redacted>:<redacted>@` (or `<redacted>@`
 for a user name alone), so you can still tell one was used, a query string
 becomes `?<redacted>`, and a fragment is dropped. Site names and file paths
-stay visible. Only `state.json` keeps download URLs in full.
+stay visible. Only `state.json` keeps download URLs, and the proxy's login,
+in full.
 
 **Settings → Troubleshooting** has two buttons:
 

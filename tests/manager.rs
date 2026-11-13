@@ -910,6 +910,7 @@ async fn settings_and_limits_survive_restart() {
             max_concurrent: 5,
             global_limit: Some(MIB),
             max_connections: 8,
+            proxy: rdm::ProxyMode::System,
         }
     );
     let snap = mgr.snapshot();
@@ -1066,4 +1067,57 @@ async fn cancelling_a_queued_resumed_download_discards_partial() {
 
     server.gate().release_all();
     completed(&mgr, runner).await;
+}
+
+/// A custom proxy setting routes the Manager's downloads through the proxy
+/// and survives a restart (saved in full, login included, in `state.json`);
+/// No proxy connects directly again, and is saved too.
+#[tokio::test]
+async fn proxy_setting_applies_and_survives_restart() {
+    let server = common::spawn().await;
+    let proxy = common::proxy::spawn_socks5_proxy().await;
+    let via: rdm::Proxy = proxy.url("socks5h", Some("user:pw")).parse().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+
+    {
+        let mgr = manager_in(dir.path());
+        mgr.set_proxy(via.clone().into());
+        let id = mgr.add(server.url("/file"), dir.path(), None, None);
+        completed(&mgr, id).await;
+        assert_eq!(proxy.seen().len(), 1, "{:?}", proxy.seen());
+    }
+    let saved = std::fs::read_to_string(dir.path().join("state.json")).unwrap();
+    assert!(saved.contains(via.as_str()), "{saved}");
+
+    let mgr = manager_in(dir.path());
+    assert_eq!(mgr.settings().proxy, rdm::ProxyMode::Custom(via));
+    mgr.set_proxy(rdm::ProxyMode::None);
+    let id = mgr.add(server.url("/named"), dir.path(), None, None);
+    completed(&mgr, id).await;
+    assert_eq!(proxy.seen().len(), 1, "went direct: {:?}", proxy.seen());
+    drop(mgr);
+    assert_eq!(
+        manager_in(dir.path()).settings().proxy,
+        rdm::ProxyMode::None
+    );
+}
+
+/// A proxy set while a download runs leaves that download on its connection;
+/// it applies from the download's next start.
+#[tokio::test]
+async fn proxy_change_spares_a_running_download() {
+    let server = common::spawn().await;
+    let proxy = common::proxy::spawn_http_proxy().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+
+    let id = mgr.add(server.url("/gated"), dir.path(), None, None);
+    assert!(wait_status(&mgr, id, Status::Downloading, T).await);
+    assert!(wait_until(T, || server.stats("/gated").requests() == 1).await);
+    let via: rdm::Proxy = proxy.url("http", None).parse().unwrap();
+    mgr.set_proxy(via.into());
+    server.gate().release_all();
+
+    completed(&mgr, id).await;
+    assert!(proxy.seen().is_empty(), "{:?}", proxy.seen());
 }

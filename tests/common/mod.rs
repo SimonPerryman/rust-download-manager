@@ -93,6 +93,12 @@
 //! - `GET /seg-429-then-drop` — the first ranged request gets 429 (with
 //!   `Retry-After` from [`FixtureConfig::seg_retry_after`]), the second aborts
 //!   after [`FixtureConfig::seg_abort_after`] chunks, the rest are served.
+//! - `GET /seg-429-first` — `/seg`, but the very first request (the probe)
+//!   gets 429 (with `Retry-After` from [`FixtureConfig::seg_retry_after`]).
+//! - `GET /seg-429-window` — serves [`FixtureConfig::seg_window_budget`]
+//!   requests (ranged or not), then answers 429 with `Retry-After` from
+//!   [`FixtureConfig::seg_retry_after`] until that long after the first
+//!   refusal, when the budget refills: a host that limits request *rate*.
 //! - `GET /limited-once` — [`payload`], but the first request gets 429 (with
 //!   `Retry-After` from [`FixtureConfig::seg_retry_after`]).
 //! - `GET /stall`      — no length: one 1 KiB chunk, then the body stalls
@@ -113,6 +119,8 @@
 //! `/slow` so a human-speed UI click can land mid-stream.
 
 #![allow(dead_code)] // Not every test binary uses every helper.
+
+pub mod proxy;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -254,6 +262,8 @@ pub struct FixtureConfig {
     pub seg_refusals: usize,
     /// `/seg-429`: the `Retry-After` seconds sent with a refusal, if any.
     pub seg_retry_after: Option<u64>,
+    /// `/seg-429-window`: requests served before the host refuses.
+    pub seg_window_budget: usize,
     /// `/seg`: hold every response after its first chunk until
     /// [`TestServer::gate`] releases it, so a test can see every lane open
     /// at once.
@@ -270,6 +280,7 @@ impl Default for FixtureConfig {
             seg_abort_after: 1,
             seg_refusals: 3,
             seg_retry_after: None,
+            seg_window_budget: 1,
             seg_hold: false,
         }
     }
@@ -460,6 +471,8 @@ const COUNTED_ROUTES: &[&str] = &[
     "/seg-429",
     "/seg-429-drop",
     "/seg-429-then-drop",
+    "/seg-429-window",
+    "/seg-429-first",
     "/limited-once",
     "/norange",
     "/liar",
@@ -563,6 +576,9 @@ struct AppState {
     /// `/seg-ramp`: the shared link's rate in bytes/s (see
     /// [`TestServer::set_ramp_link`]).
     ramp_link: Arc<AtomicU64>,
+    /// `/seg-429-window`: requests served this window, and when the current
+    /// refusal window ends.
+    rate_window: Mutex<(usize, Option<Instant>)>,
     stats: HashMap<&'static str, Arc<RouteStats>>,
 }
 
@@ -580,6 +596,7 @@ impl AppState {
             gate: Arc::default(),
             ramp_next_free: Arc::new(Mutex::new(tokio::time::Instant::now())),
             ramp_link: Arc::new(AtomicU64::new(SEG_RAMP_CAP)),
+            rate_window: Mutex::new((0, None)),
             stats: COUNTED_ROUTES
                 .iter()
                 .map(|route| (*route, Arc::new(RouteStats::default())))
@@ -589,6 +606,24 @@ impl AppState {
 
     fn stats(&self, route: &str) -> &Arc<RouteStats> {
         &self.stats[route]
+    }
+
+    /// `/seg-429-window`: whether a request arriving now is within budget.
+    fn within_rate_window(&self) -> bool {
+        let mut window = self.rate_window.lock().unwrap();
+        let now = Instant::now();
+        match window.1 {
+            Some(until) if now < until => return false,
+            Some(_) => *window = (0, None),
+            None => {}
+        }
+        if window.0 < self.cfg.seg_window_budget {
+            window.0 += 1;
+            return true;
+        }
+        let secs = self.cfg.seg_retry_after.unwrap_or(0);
+        window.1 = Some(now + Duration::from_secs(secs));
+        false
     }
 }
 
@@ -1023,6 +1058,8 @@ enum Seg {
     RateLimited,
     RateLimitedDrop,
     RateLimitedThenDrop,
+    RateWindow,
+    RateLimitedFirst,
     Gated,
     Stall,
     Hang,
@@ -1052,6 +1089,8 @@ impl Seg {
             Seg::RateLimited => "/seg-429",
             Seg::RateLimitedDrop => "/seg-429-drop",
             Seg::RateLimitedThenDrop => "/seg-429-then-drop",
+            Seg::RateWindow => "/seg-429-window",
+            Seg::RateLimitedFirst => "/seg-429-first",
             Seg::Gated => "/seg-gated",
             Seg::Stall => "/seg-stall",
             Seg::Hang => "/seg-hang",
@@ -1105,6 +1144,8 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg, data: Bytes) -
         (Seg::RateLimited, Some(i)) => i < state.cfg.seg_refusals,
         (Seg::RateLimitedDrop, Some(i)) => i % 2 == 1,
         (Seg::RateLimitedThenDrop, Some(i)) => i == 0,
+        (Seg::RateWindow, _) => !state.within_rate_window(),
+        (Seg::RateLimitedFirst, _) => stats.requests() == 1,
         _ => false,
     };
     if rate_limited {
@@ -1564,6 +1605,8 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/seg-429", seg_route(Seg::RateLimited))
         .route("/seg-429-drop", seg_route(Seg::RateLimitedDrop))
         .route("/seg-429-then-drop", seg_route(Seg::RateLimitedThenDrop))
+        .route("/seg-429-window", seg_route(Seg::RateWindow))
+        .route("/seg-429-first", seg_route(Seg::RateLimitedFirst))
         .route("/limited-once", get(limited_once_handler))
         .route("/stall", get(stall_handler))
         .route("/hang", get(hang_handler))

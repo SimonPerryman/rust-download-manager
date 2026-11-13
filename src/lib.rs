@@ -11,6 +11,7 @@ pub mod platform;
 pub use engine::{
     download, map_urls_in, parse_rate, redact_url, redact_urls_in, AddOptions, Algo, Checksum,
     ChecksumState, ClaimTarget, Control, DownloadRecord, DownloadRequest, DownloadSnapshot,
-    DownloadState, Error, JsonStore, LogLevel, LogLine, Manager, Progress, RateLimiter, Result,
-    RetryPolicy, Segment, Settings, Status, Store, StoreData, Summary, LOG_LINES,
+    DownloadState, Error, JsonStore, LogLevel, LogLine, Manager, Progress, Proxy, ProxyMode,
+    RateLimiter, Result, RetryPolicy, Segment, Settings, Status, Store, StoreData, Summary,
+    LOG_LINES,
 };

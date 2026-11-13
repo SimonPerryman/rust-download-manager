@@ -81,8 +81,6 @@ milestone ticket when it's picked up.
    (e.g. Azure Trusted Signing) and sign and notarise the macOS app (Apple
    Developer Program), so SmartScreen and Gatekeeper stop warning. Has a
    running cost; move it up when rdm is promoted beyond its current users.
-6. **Proxy support** (step 1 of per-app VPN routing, below): `--proxy` plus
-   a GUI setting for SOCKS5/HTTP proxies.
 
 ## Backlog (not yet scheduled — parked on purpose)
 
@@ -113,10 +111,9 @@ unrequested items last.
   drag-and-drop / clipboard-URL add. M2 ships one clean slick design; these are
   deliberately deferred.
 - **Per-app VPN routing** (optional): route only rdm's traffic through a VPN
-  without changing the whole machine. (1) First, SOCKS5/HTTP proxy support
-  (`--proxy` plus a GUI setting; reqwest supports SOCKS): many VPN services
-  expose a SOCKS5 endpoint, and it also helps behind corporate proxies.
-  (2) Optionally, bind to a chosen network interface (e.g. the VPN tunnel
+  without changing the whole machine. (1) Done: SOCKS5/HTTP proxy support
+  (`--proxy` and the GUI's Proxy setting), since many VPN services expose a
+  SOCKS5 endpoint. (2) Optionally, bind to a chosen network interface (e.g. the VPN tunnel
   adapter) with a kill switch: pause downloads rather than fall back to the
   normal connection if that interface goes away. Easier on Linux/macOS;
   Windows needs more work. Out of scope: an embedded VPN client, which is
