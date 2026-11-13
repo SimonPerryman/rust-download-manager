@@ -204,7 +204,10 @@ async fn fetch_segment(
                 seg.done = (seg.done + n).min(seg.len());
                 seg.is_complete()
             };
-            progressed |= n > 0;
+            if n > 0 {
+                progressed = true;
+                slot.delivered();
+            }
 
             // Throttle point: sleeps off rate-limit debt. A sibling's failure
             // raises `stop` without touching `Control`, so watch it too.

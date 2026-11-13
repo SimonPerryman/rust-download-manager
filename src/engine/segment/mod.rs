@@ -67,8 +67,9 @@ pub(crate) const MAX_CONNECTIONS: u8 = 16;
 const LANES: usize = 32;
 
 /// How long the highest-numbered lane gets to leave an over-target pool
-/// before any lane may. Three ramp windows: a lane silent that long is stuck
-/// on the server, and a shed shouldn't wait on it much longer than that.
+/// before any lane may, and the most a new lane counts as warming up. Three
+/// ramp windows: a lane silent that long is stuck on the server, and a shed
+/// shouldn't wait on it much longer than that.
 pub(crate) const SHED_GRACE: Duration = Duration::from_secs(3);
 
 /// How often per-segment progress is made durable in the sidecar.
@@ -393,6 +394,7 @@ pub(crate) async fn run(
                     bytes_per_sec: downloaded.saturating_sub(downloaded_then) as f64 / secs,
                     waited_fraction: waited.saturating_sub(waited_then) as f64 / 1e9 / (secs * live),
                     pool_changed: shared.pool.take_changed(),
+                    warming: shared.pool.take_warming(),
                     // Lanes short with nothing left to hand out: the work is
                     // running out, so the window doesn't measure the target.
                     short: shared.pool.live() < shared.pool.target()

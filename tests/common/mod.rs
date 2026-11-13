@@ -81,7 +81,8 @@
 //!   [`SEG_RAMP_RATE`] per connection and [`SEG_RAMP_CAP`] across all of
 //!   them, like a host whose link saturates at four connections; the link's
 //!   rate can be changed mid-download with [`TestServer::set_ramp_link`],
-//!   or for a set number of chunks with [`TestServer::slow_ramp_link_for`].
+//!   or for a set number of chunks with [`TestServer::slow_ramp_link_for`];
+//!   each ranged response first waits [`FixtureConfig::seg_first_byte_delay`].
 //! - `GET /seg-ramp-stuck` — `/seg-ramp`, but from ranged request
 //!   [`SEG_RAMP_STUCK_FROM`] on, each sends its headers and then no body until
 //!   [`TestServer::gate`] releases it: a lane opened late sits stuck.
@@ -269,6 +270,10 @@ pub struct FixtureConfig {
     /// [`TestServer::gate`] releases it, so a test can see every lane open
     /// at once.
     pub seg_hold: bool,
+    /// `/seg-ramp` only (not `/seg-ramp-stuck`): how long each ranged
+    /// response waits before its first chunk, like a host slow to set up a
+    /// connection.
+    pub seg_first_byte_delay: Duration,
 }
 
 impl Default for FixtureConfig {
@@ -283,6 +288,7 @@ impl Default for FixtureConfig {
             seg_retry_after: None,
             seg_window_budget: 1,
             seg_hold: false,
+            seg_first_byte_delay: Duration::ZERO,
         }
     }
 }
@@ -1257,7 +1263,12 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg, data: Bytes) -
     let body = if kind == Seg::Gated {
         gated_seg_stream(data.slice(start..end), state.gate.enter(), guard)
     } else if kind == Seg::Ramp {
-        paced_stream(data.slice(start..end), link(state), guard)
+        let setup = if ranged {
+            state.cfg.seg_first_byte_delay
+        } else {
+            Duration::ZERO
+        };
+        paced_stream(data.slice(start..end), link(state), setup, guard)
     } else if kind == Seg::RampStuck {
         let hold = ranged_index
             .filter(|&i| i >= SEG_RAMP_STUCK_FROM)
@@ -1308,13 +1319,14 @@ fn link(state: &AppState) -> Link {
     }
 }
 
-/// Stream `data` in [`SEG_RAMP_CHUNK`]s, each one chunk time at
+/// Stream `data` in [`SEG_RAMP_CHUNK`]s, the first `setup` plus one chunk
+/// time after the response started and each next one chunk time at
 /// [`SEG_RAMP_RATE`] after the last one was due, and each in its own slot of
 /// the shared `link` (one chunk per chunk time at its rate, by default
 /// [`SEG_RAMP_CAP`]). Deadlines, not sleeps, so a late timer (Windows'
 /// ~15.6 ms tick) only jitters the pace and never banks a burst.
-fn paced_stream(data: Bytes, link: Link, guard: InFlight) -> Body {
-    Body::from_stream(paced(data, link, guard))
+fn paced_stream(data: Bytes, link: Link, setup: Duration, guard: InFlight) -> Body {
+    Body::from_stream(paced(data, link, setup, guard))
 }
 
 /// [`paced_stream`], but with `hold` it sends nothing until that ticket is
@@ -1326,7 +1338,7 @@ fn held_paced_stream(data: Bytes, link: Link, hold: Option<GateTicket>, guard: I
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
         }
-        paced(data, link, guard)
+        paced(data, link, Duration::ZERO, guard)
     };
     Body::from_stream(futures_util::StreamExt::flatten(
         futures_util::stream::once(start),
@@ -1337,10 +1349,11 @@ fn held_paced_stream(data: Bytes, link: Link, hold: Option<GateTicket>, guard: I
 fn paced(
     data: Bytes,
     link: Link,
+    setup: Duration,
     guard: InFlight,
 ) -> impl futures_util::Stream<Item = Result<Bytes, std::io::Error>> {
     let own_gap = Duration::from_secs_f64(SEG_RAMP_CHUNK as f64 / SEG_RAMP_RATE as f64);
-    let first_due = tokio::time::Instant::now() + own_gap;
+    let first_due = tokio::time::Instant::now() + setup + own_gap;
     let s = futures_util::stream::unfold(
         (data, 0usize, first_due, guard),
         move |(data, offset, due, guard)| {
