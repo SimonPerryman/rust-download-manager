@@ -64,6 +64,8 @@
 //!   until released through [`TestServer::gate`].
 //! - `GET /seg-capped-drop` — `/seg-capped`, and every ranged response it lets
 //!   in aborts after [`FixtureConfig::seg_abort_after`] chunks.
+//! - `GET /seg-capped-429` — `/seg-capped`, but refusing with 429 (no
+//!   `Retry-After`): a cap the host reports as a rate limit.
 //! - `GET /seg-drop`   — every ranged response aborts after
 //!   [`FixtureConfig::seg_abort_after`] chunks.
 //! - `GET /seg-503`    — every ranged request gets 503.
@@ -457,6 +459,7 @@ const COUNTED_ROUTES: &[&str] = &[
     "/seg-capped",
     "/seg-capped-flaky",
     "/seg-capped-drop",
+    "/seg-capped-429",
     "/seg-drop",
     "/seg-503",
     "/seg-403",
@@ -1054,6 +1057,7 @@ enum Seg {
     Capped,
     CappedFlaky,
     CappedDrop,
+    Capped429,
     Drop,
     Unavailable,
     Forbidden,
@@ -1085,6 +1089,7 @@ impl Seg {
             Seg::Capped => "/seg-capped",
             Seg::CappedFlaky => "/seg-capped-flaky",
             Seg::CappedDrop => "/seg-capped-drop",
+            Seg::Capped429 => "/seg-capped-429",
             Seg::Drop => "/seg-drop",
             Seg::Unavailable => "/seg-503",
             Seg::Forbidden => "/seg-403",
@@ -1163,9 +1168,17 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg, data: Bytes) -
             .filter(|_| kind != Seg::RateLimitedDrop);
         return too_many_requests(retry_after);
     }
-    let cap = matches!(kind, Seg::Capped | Seg::CappedFlaky | Seg::CappedDrop).then_some(SEG_CAP);
+    let cap = matches!(
+        kind,
+        Seg::Capped | Seg::CappedFlaky | Seg::CappedDrop | Seg::Capped429
+    )
+    .then_some(SEG_CAP);
     let Some(guard) = InFlight::enter(stats, cap) else {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        return if kind == Seg::Capped429 {
+            too_many_requests(None)
+        } else {
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        };
     };
     let range = parse_range(headers);
     if kind == Seg::Unavailable && range.is_some() {
@@ -1628,6 +1641,7 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/seg-capped", seg_route(Seg::Capped))
         .route("/seg-capped-flaky", seg_route(Seg::CappedFlaky))
         .route("/seg-capped-drop", seg_route(Seg::CappedDrop))
+        .route("/seg-capped-429", seg_route(Seg::Capped429))
         .route("/seg-drop", seg_route(Seg::Drop))
         .route("/seg-503", seg_route(Seg::Unavailable))
         .route("/seg-403", seg_route(Seg::Forbidden))
@@ -1699,10 +1713,57 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Lines {
 }
 
 /// Route this thread's events into `lines`. `#[tokio::test]` polls the
-/// download on this thread, so its events are caught.
+/// download on this thread, so its events are caught. For TRACE events or
+/// event fields, use [`capture_log`].
 pub fn capture(lines: &Lines) -> tracing::subscriber::DefaultGuard {
     tracing::subscriber::set_default(tracing_subscriber::layer::SubscriberExt::with(
         tracing_subscriber::registry(),
         lines.clone(),
     ))
+}
+
+/// Collects formatted log output, fields included, for assertions.
+#[derive(Clone, Default)]
+pub struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Captured {
+    pub fn lines(&self) -> Vec<String> {
+        String::from_utf8_lossy(&self.0.lock().unwrap())
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+}
+
+impl std::io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Captured {
+    type Writer = Captured;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+/// Route this thread's events passing `filter` (an `EnvFilter` directive)
+/// into a [`Captured`] buffer until the guard drops. A download awaited on
+/// this thread is caught whole (its coordinator and lanes run in its own
+/// future); a spawned task is caught only on a current-thread runtime.
+pub fn capture_log(filter: &str) -> (Captured, tracing::subscriber::DefaultGuard) {
+    let captured = Captured::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_env_filter(filter)
+        .with_writer(captured.clone())
+        .finish();
+    (captured, tracing::subscriber::set_default(subscriber))
 }

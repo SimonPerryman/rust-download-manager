@@ -309,11 +309,52 @@ async fn settled_ramp_reprobes_each_interval_and_retires_a_useless_trial() {
     assert!(seen.last().unwrap().downloaded < 16 * MIB);
 }
 
-/// After a host refuses a third connection (503), re-probes, however often,
-/// never go past the two it accepts. (The pool's own cap holds a 503 here;
-/// the ramp's cap, which also covers a 429, is unit-tested in `ramp.rs`.)
-#[tokio::test(flavor = "multi_thread")]
-async fn reprobes_never_exceed_a_host_cap() {
+/// One `ramp window` trace line: what the ramp decided and its new target.
+struct RampWindow {
+    decision: String,
+    target: u8,
+    /// Neither skipped (a pool change, the work running out, a stall) nor
+    /// slowed by a speed limit.
+    judged: bool,
+}
+
+/// The ramp's `ramp window` trace lines, in order, from the first line
+/// containing `from` on.
+fn ramp_windows(log: &[String], from: &str) -> Vec<RampWindow> {
+    let start = log
+        .iter()
+        .position(|l| l.contains(from))
+        .unwrap_or_else(|| panic!("no {from:?} in the log"));
+    let field = |line: &str, name: &str| -> String {
+        let at = line.find(name).expect("traced field") + name.len();
+        line[at..]
+            .chars()
+            .take_while(char::is_ascii_alphanumeric)
+            .collect()
+    };
+    log[start..]
+        .iter()
+        .filter(|l| l.contains("ramp window"))
+        .map(|l| RampWindow {
+            decision: field(l, " decision="),
+            target: field(l, " target=").parse().expect("numeric target"),
+            judged: [
+                "waited_fraction: 0.0,",
+                "pool_changed: false",
+                "short: false",
+            ]
+            .iter()
+            .all(|f| l.contains(f))
+                && !l.contains("bytes_per_sec: 0.0,"),
+        })
+        .collect()
+}
+
+/// After a host refuses a third connection on `route`, re-probes, however
+/// often, never go past the two it accepts: a re-probe comes due again and
+/// again while capped, and the ramp declines each one.
+async fn reprobes_stay_at_the_cap(route: &str) {
+    let (log, _guard) = common::capture_log("rdm=trace");
     // ~1 MiB/s per connection: 16 MiB on two outlasts many re-probe intervals.
     let server = common::spawn_with(FixtureConfig {
         seg_len: 16 * MIB as usize,
@@ -321,14 +362,15 @@ async fn reprobes_never_exceed_a_host_cap() {
         ..FixtureConfig::default()
     })
     .await;
-    let stats = server.stats("/seg-capped");
+    let stats = server.stats(route);
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("capped.bin");
 
-    let req = DownloadRequest::to_path(server.url("/seg-capped"), &out)
+    let reprobe_after = 2;
+    let req = DownloadRequest::to_path(server.url(route), &out)
         .with_connections(4)
         .with_ramp(Ramping::Window(WINDOW))
-        .with_reprobe_interval(WINDOW * 2);
+        .with_reprobe_interval(WINDOW * reprobe_after);
     let mut seen = Vec::new();
     download(&req, &Control::new(), |p| seen.push(p))
         .await
@@ -336,12 +378,43 @@ async fn reprobes_never_exceed_a_host_cap() {
 
     assert!(stats.refused() >= 1, "the cap was never hit");
     assert_eq!(peak(&seen), 3, "the refused trial connection");
-    let later: Vec<u8> = after_peak(&seen, 3).iter().map(|p| p.connections).collect();
+    let later = runs(after_peak(&seen, 3));
     assert!(
         later.iter().all(|&c| c <= 2),
         "re-probed past the cap: {later:?}"
     );
+    // The pool's own clamp can hide a ramp that asks past the cap, so check
+    // the ramp itself: once settled past the interval, each judged window
+    // that isn't slow is a re-probe point, and not one window aimed past 2.
+    let windows = ramp_windows(&log.lines(), "Lane 3 failed");
+    let judged = windows.iter().filter(|w| w.judged).count();
+    assert!(
+        judged >= 3 * reprobe_after as usize,
+        "only {judged} judged windows while capped"
+    );
+    let past_cap: Vec<_> = windows
+        .iter()
+        .filter(|w| w.target > 2)
+        .map(|w| (w.decision.as_str(), w.target))
+        .collect();
+    assert!(
+        past_cap.is_empty(),
+        "the ramp aimed past the cap: {past_cap:?}"
+    );
     assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
+}
+
+/// A 503 cap, which the pool also clamps.
+#[tokio::test(flavor = "multi_thread")]
+async fn reprobes_never_exceed_a_host_cap() {
+    reprobes_stay_at_the_cap("/seg-capped").await;
+}
+
+/// A 429 with lanes still live is a rate limit, not a pool clamp: only the
+/// ramp's own cap keeps a re-probe from asking again.
+#[tokio::test(flavor = "multi_thread")]
+async fn reprobes_never_exceed_a_host_cap_sent_as_a_429() {
+    reprobes_stay_at_the_cap("/seg-capped-429").await;
 }
 
 /// What a running download last reported, for a test that changes the
@@ -428,13 +501,21 @@ async fn a_sustained_slowdown_sheds_a_connection_and_a_brief_one_does_not() {
     );
 }
 
-/// Settled at 4, a download held to half of that by its own speed limit
-/// never sheds: those windows say nothing about the host.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_download_held_down_by_its_speed_limit_never_sheds() {
+/// Who halves a settled download's speed.
+#[derive(Debug, Clone, Copy)]
+enum Halved {
+    /// Its own speed limit.
+    ByItsLimit,
+    /// The host's link.
+    ByTheHost,
+}
+
+/// Settle a download at 4 (the ceiling), halve its speed for twelve windows,
+/// and return the connection counts reported from the settle on.
+async fn halve_a_settled_download(by: Halved) -> Vec<u8> {
     let server = ramp_server(32 * MIB).await;
     let dir = tempfile::tempdir().unwrap();
-    let out = dir.path().join("held.bin");
+    let out = dir.path().join("halved.bin");
     let req = ramping(server.url("/seg-ramp"), &out, 4);
 
     let limiter = Arc::new(RateLimiter::new(None));
@@ -446,7 +527,10 @@ async fn a_download_held_down_by_its_speed_limit_never_sheds() {
         let settled = watch.reports();
         // Past the window that settles it at 4, even on a late timer.
         tokio::time::sleep(WINDOW * 4).await;
-        limiter.set_rate(Some(SEG_RAMP_CAP / 2));
+        match by {
+            Halved::ByItsLimit => limiter.set_rate(Some(SEG_RAMP_CAP / 2)),
+            Halved::ByTheHost => server.set_ramp_link(SEG_RAMP_CAP / 2),
+        }
         tokio::time::sleep(WINDOW * 12).await;
         control.cancel();
         (settled, watch.reports())
@@ -456,12 +540,24 @@ async fn a_download_held_down_by_its_speed_limit_never_sheds() {
         drive
     );
 
-    assert!(matches!(result, Err(Error::Cancelled)), "got {result:?}");
-    assert_eq!(
-        runs(&seen[settled..stopped]),
-        [4],
-        "shed under its own limit"
+    assert!(
+        matches!(result, Err(Error::Cancelled)),
+        "{by:?}: got {result:?}"
     );
+    runs(&seen[settled..stopped])
+}
+
+/// Settled at 4, a download held to half of that by its own speed limit
+/// never sheds: those windows say nothing about the host. The control, the
+/// same halving by the host, sheds, so it's the limit that holds it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_download_held_down_by_its_speed_limit_never_sheds() {
+    // One after the other: nextest's `ramping` group counts this as one
+    // download, so two at once would load the runner past what it allows.
+    let slowed = halve_a_settled_download(Halved::ByTheHost).await;
+    let limited = halve_a_settled_download(Halved::ByItsLimit).await;
+    assert_eq!(slowed, [4, 3], "the control: a slow host sheds one");
+    assert_eq!(limited, [4], "shed under its own limit");
 }
 
 /// A host that slows to half costs a settled download one connection; once
