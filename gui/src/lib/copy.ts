@@ -244,7 +244,11 @@ export function removedMissingMessage(d: DownloadSnapshot): string {
   return `Removed ${d.filename} from the list.`;
 }
 
+/** The toast when Open fails; a file that is gone points at Locate… instead of the raw error. */
 export function openFailedMessage(d: DownloadSnapshot, error: unknown): string {
+  if (/no longer on disk/i.test(String(error))) {
+    return `${d.filename} is no longer on disk. Use Locate… to find it.`;
+  }
   return `Couldn't open ${d.filename}. ${error}`;
 }
 
