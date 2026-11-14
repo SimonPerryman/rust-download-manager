@@ -86,9 +86,9 @@ describe("copy", () => {
   });
 
   it("words a relink by what changed: the folder if the name held, else the name", () => {
-    expect(relinkedMessage(String.raw`C:\Users\me\Downloads\a.zip`, String.raw`D:\Backup\Old\a.zip`)).toBe(
-      "Relinked a.zip (now in Old)",
-    );
+    expect(
+      relinkedMessage(String.raw`C:\Users\me\Downloads\a.zip`, String.raw`D:\Backup\Old\a.zip`),
+    ).toBe("Relinked a.zip (now in Old)");
     expect(relinkedMessage("/old/a.zip", "/new/b-copy.zip")).toBe(
       "Relinked a.zip, now named b-copy.zip",
     );
