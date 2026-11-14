@@ -85,9 +85,11 @@
 //!   rate can be changed mid-download with [`TestServer::set_ramp_link`],
 //!   or for a set number of chunks with [`TestServer::slow_ramp_link_for`];
 //!   each ranged response first waits [`FixtureConfig::seg_first_byte_delay`].
-//! - `GET /seg-ramp-stuck` — `/seg-ramp`, but from ranged request
-//!   [`SEG_RAMP_STUCK_FROM`] on, each sends its headers and then no body until
-//!   [`TestServer::gate`] releases it: a lane opened late sits stuck.
+//! - `GET /seg-ramp-stuck` — `/seg-ramp`, but a ranged request that arrives
+//!   while the link is already saturated ([`SEG_RAMP_LANES`] responses
+//!   streaming) sends its headers and then no body until [`TestServer::gate`]
+//!   releases it: the lane a ramp tries past the saturation point sits stuck,
+//!   however the ramp got there.
 //! - `GET /seg-429`    — the first [`FixtureConfig::seg_refusals`] ranged
 //!   requests get 429 (with `Retry-After` from
 //!   [`FixtureConfig::seg_retry_after`]), like a per-IP rate limit.
@@ -125,6 +127,7 @@
 #![allow(dead_code)] // Not every test binary uses every helper.
 
 pub mod proxy;
+pub mod ramp;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -212,9 +215,8 @@ pub const SEG_RAMP_RATE: u64 = 256 * 1024;
 /// `/seg-ramp`: the most all connections together are served, in bytes/s.
 pub const SEG_RAMP_CAP: u64 = 4 * SEG_RAMP_RATE;
 
-/// `/seg-ramp-stuck`: the first ranged request (0-based) held without a body;
-/// the ones before it serve the second to fourth lanes.
-pub const SEG_RAMP_STUCK_FROM: usize = 3;
+/// `/seg-ramp`: the connections that saturate the link.
+pub const SEG_RAMP_LANES: usize = (SEG_RAMP_CAP / SEG_RAMP_RATE) as usize;
 
 /// How long an aborting body waits after its prefix before erroring.
 pub const ABORT_GRACE: Duration = Duration::from_millis(25);
@@ -518,6 +520,18 @@ impl Gate {
             .find(|seq| !st.released.contains(seq))?;
         st.released.insert(seq);
         Some(seq)
+    }
+
+    /// How many still-connected requests it holds.
+    pub fn holding(&self) -> usize {
+        let st = self.0.lock().unwrap();
+        if st.release_all {
+            return 0;
+        }
+        st.live
+            .iter()
+            .filter(|seq| !st.released.contains(seq))
+            .count()
     }
 
     /// Release every current and future request.
@@ -1283,9 +1297,10 @@ fn seg_response(state: &AppState, headers: &HeaderMap, kind: Seg, data: Bytes) -
         };
         paced_stream(data.slice(start..end), link(state), setup, guard)
     } else if kind == Seg::RampStuck {
-        let hold = ranged_index
-            .filter(|&i| i >= SEG_RAMP_STUCK_FROM)
-            .map(|_| state.gate.enter());
+        // In flight counts this request and the held ones, which stream nothing.
+        let streaming = (stats.in_flight() - 1).saturating_sub(state.gate.holding());
+        let hold =
+            (ranged_index.is_some() && streaming >= SEG_RAMP_LANES).then(|| state.gate.enter());
         held_paced_stream(data.slice(start..end), link(state), hold, guard)
     } else if kind == Seg::Stall && ranged {
         stalled_stream(guard)

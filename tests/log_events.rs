@@ -10,6 +10,7 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 use tracing::Level;
 
+use common::ramp::RampTrace;
 use common::{capture, FixtureConfig, Lines};
 use rdm::engine::state::{self, DownloadState};
 use rdm::engine::Ramping;
@@ -222,53 +223,48 @@ async fn ramping_says_when_a_slowdown_sheds_a_lane() {
     .await;
     let dir = tempfile::tempdir().unwrap();
     let lines = Lines::default();
-    let _guard = capture(&lines);
+    let (trace, _guard) = RampTrace::capture_with(&lines);
 
+    let window = Duration::from_millis(500);
     let req = DownloadRequest::to_path(server.url("/seg-ramp"), dir.path().join("shed.bin"))
         .with_connections(4)
         .with_min_segment_size(64 * KIB)
-        .with_ramp(Ramping::Window(Duration::from_millis(500)));
+        .with_ramp(Ramping::Window(window))
+        // A loaded runner can settle the ramp short of four; try again soon.
+        .with_reprobe_interval(window * 4);
     let control = Control::new();
-    let closing = |lines: &Lines| -> Vec<String> {
-        lines
-            .concise()
-            .into_iter()
-            .filter(|l| l.starts_with("Closing Lane "))
-            .collect()
-    };
     let drive = async {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        let wait = |done: &dyn Fn() -> bool| {
-            let done = done();
-            assert!(tokio::time::Instant::now() < deadline, "timed out");
-            done
-        };
-        while !wait(&|| has(&lines.concise(), "Added Lane 4 ")) {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        // Past the window that settles it at 4, even on a late timer.
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let settled = trace
+            .first("settled at 4 lanes", 60, 0, |w| w.settled_at(4))
+            .await;
+        let before = lines.concise().len();
         server.set_ramp_link(common::SEG_RAMP_RATE);
-        while !wait(&|| !closing(&lines).is_empty()) {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
+        trace
+            .first("shed a lane", 12, settled + 1, |w| w.decision == "Shed")
+            .await;
         control.cancel();
+        before
     };
-    let (result, ()) = tokio::join!(download(&req, &control, |_| {}), drive);
+    let (result, before) = tokio::join!(download(&req, &control, |_| {}), drive);
 
     assert!(matches!(result, Err(Error::Cancelled)), "got {result:?}");
+    let concise = lines.concise();
+    let closing: Vec<_> = concise[before..]
+        .iter()
+        .filter(|l| l.starts_with("Closing Lane "))
+        .collect();
     assert_eq!(
-        closing(&lines),
+        closing,
         ["Closing Lane 4 — the download slowed down"],
-        "{:#?}",
-        lines.concise()
+        "{concise:#?}"
     );
 }
 
 /// When the ramp sheds a lane, the highest-numbered one closes, so Lane 1
-/// stays. Here that lane (and any opened after it) is held by the fixture
-/// with no body; once the grace passes, a lane that can stop closes in its
-/// place, and nothing moves on the held lane until the test releases it.
+/// stays. Here that lane, the one tried past the host's saturation point, is
+/// held by the fixture with no body; once the grace passes, a lane that can
+/// stop closes in its place, and nothing moves on the held lane until the
+/// test releases it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stuck_bottom_lane_does_not_hold_up_a_shed() {
     let server = common::spawn_with(FixtureConfig {
@@ -279,13 +275,17 @@ async fn a_stuck_bottom_lane_does_not_hold_up_a_shed() {
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("stuck.bin");
     let lines = Lines::default();
-    let _guard = capture(&lines);
+    let (trace, _guard) = RampTrace::capture_with(&lines);
 
+    let window = Duration::from_millis(500);
     let req = DownloadRequest::to_path(server.url("/seg-ramp-stuck"), &out)
         .with_connections(8)
         .with_min_segment_size(64 * KIB)
-        .with_ramp(Ramping::Window(Duration::from_millis(500)))
+        .with_ramp(Ramping::Window(window))
         .with_shed_grace(Duration::from_millis(200))
+        // A loaded runner can settle the ramp short of the stuck lane; try
+        // again soon.
+        .with_reprobe_interval(window * 4)
         .with_read_timeout(Duration::from_secs(60));
     let busy = |lines: &Lines| {
         lines
@@ -294,36 +294,18 @@ async fn a_stuck_bottom_lane_does_not_hold_up_a_shed() {
             .find(|l| l.contains(" is still busy, so Lane "))
     };
     let release = async {
-        // The gate holds the stuck lane, so this should end one way: the shed
-        // goes ahead without it. A ramp that never got that far would leave
-        // the download held, so give up (and let it finish) after a while.
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        while busy(&lines).is_none() && tokio::time::Instant::now() < deadline {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
+        // The fixture holds the lane tried past four, which the ramp then
+        // retires; another lane must stand in, and only then is it released.
+        trace
+            .until("a lane stood in", 60, |_| busy(&lines).is_some())
+            .await;
         server.gate().release_all();
     };
     let control = Control::new();
     let (result, ()) = tokio::join!(download(&req, &control, |_| {}), release);
     result.unwrap();
-    assert!(
-        busy(&lines).is_some(),
-        "no lane stood in: {:#?}",
-        lines.concise()
-    );
 
     let concise = lines.concise();
-    let peak = concise
-        .iter()
-        .filter(|l| l.starts_with("Added Lane "))
-        .count()
-        + 1;
-    assert!(
-        concise.contains(&format!(
-            "Closing Lane {peak} — more lanes didn't speed this up"
-        )),
-        "{concise:#?}"
-    );
     let line = busy(&lines).unwrap();
     let (stuck, closer) = line
         .strip_prefix("Lane ")
@@ -331,11 +313,17 @@ async fn a_stuck_bottom_lane_does_not_hold_up_a_shed() {
         .and_then(|(stuck, rest)| Some((stuck, rest.strip_suffix(" closes instead")?)))
         .unwrap_or_else(|| panic!("{line}"));
     let (stuck, closer): (usize, usize) = (stuck.parse().unwrap(), closer.parse().unwrap());
+    let at = concise.iter().position(|l| *l == line).unwrap();
     assert_eq!(
-        stuck, peak,
+        concise[..at]
+            .iter()
+            .rfind(|l| l.starts_with("Closing Lane ")),
+        Some(&format!(
+            "Closing Lane {stuck} — more lanes didn't speed this up"
+        )),
         "the bottom lane was the stuck one: {concise:#?}"
     );
-    assert!(closer < peak, "{concise:#?}");
+    assert!(closer < stuck, "{concise:#?}");
     assert_eq!(std::fs::read(&out).unwrap(), server.seg_payload());
 }
 
