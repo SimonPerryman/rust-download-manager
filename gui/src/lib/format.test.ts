@@ -30,9 +30,9 @@ describe("formatBytes", () => {
 
 describe("statusCountsLine", () => {
   it("names what's downloading and waiting, or says nothing is", () => {
-    expect(statusCountsLine(2, 1)).toBe("2 downloading, 1 waiting");
+    expect(statusCountsLine(2, 1)).toBe("2 downloading, 1 queued");
     expect(statusCountsLine(1, 0)).toBe("1 downloading");
-    expect(statusCountsLine(0, 1)).toBe("1 waiting");
+    expect(statusCountsLine(0, 1)).toBe("1 queued");
     expect(statusCountsLine(0, 0)).toBe("Nothing downloading");
   });
 });

@@ -54,7 +54,7 @@ Under **More options** you can give a SHA-256 checksum and a speed limit.
 
 Downloads beyond the concurrency limit ([Settings](#settings); see
 [how the queue works](how-it-works.md#the-queue-and-speed-limits)) wait, and
-the first waiting one says **Next up**. To reorder, drag a waiting row by its
+the first queued one says **Next up**. To reorder, drag a queued row by its
 handle, press Alt+↑/Alt+↓, or use **Start next**, **Move up** and **Move
 down** from its menu or the details pane.
 
@@ -70,7 +70,7 @@ turns orange and the Speed column reads the speed against the limit:
 
 - **Downloading:** `49.8 / 50 KB/s`, the live speed with the limit in grey,
   or `– / 50 KB/s` until the first reading.
-- **Paused or waiting:** `≤ 50 KB/s`.
+- **Paused or queued:** `≤ 50 KB/s`.
 - In a window narrower than about 760 px the limit shortens to the form you
   type in the editor: `49.8 / 50K`.
 

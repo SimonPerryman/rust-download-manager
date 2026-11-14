@@ -23,7 +23,7 @@ export function formatSpeed(bytesPerSec: number): string {
 export function statusCountsLine(downloading: number, waiting: number): string {
   const parts = [];
   if (downloading > 0) parts.push(`${downloading} downloading`);
-  if (waiting > 0) parts.push(`${waiting} waiting`);
+  if (waiting > 0) parts.push(`${waiting} queued`);
   return parts.length ? parts.join(", ") : "Nothing downloading";
 }
 

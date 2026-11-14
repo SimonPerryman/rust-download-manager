@@ -30,7 +30,7 @@ describe("viewTitle", () => {
 
   it("names each status view", () => {
     expect(viewTitle({ kind: "status", status: "all" }, folders)).toBe("All downloads");
-    expect(viewTitle({ kind: "status", status: "waiting" }, folders)).toBe("Waiting");
+    expect(viewTitle({ kind: "status", status: "waiting" }, folders)).toBe("Queued");
     expect(viewTitle({ kind: "status", status: "stopped" }, folders)).toBe("Stopped");
   });
 
@@ -208,7 +208,7 @@ describe("bulk and queue copy", () => {
 
   it("names a waiting row's place", () => {
     expect(queuePlace(0)).toBe("Starts next");
-    expect(queuePlace(1)).toBe("Waiting behind 1 other");
-    expect(queuePlace(3)).toBe("Waiting behind 3 others");
+    expect(queuePlace(1)).toBe("Queued behind 1 other");
+    expect(queuePlace(3)).toBe("Queued behind 3 others");
   });
 });

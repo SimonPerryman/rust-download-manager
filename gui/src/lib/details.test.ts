@@ -69,7 +69,7 @@ describe("statePhrase", () => {
       "42.1% of 1000 B",
     );
     expect(statePhrase(snap({ status: "downloading", downloaded: 2048 }))).toBe("2.00 KB so far");
-    expect(statePhrase(snap({ status: "queued" }))).toBe("Waiting for a free slot");
+    expect(statePhrase(snap({ status: "queued" }))).toBe("Queued for a free slot");
     expect(statePhrase(snap({ status: "paused" }))).toBe("Paused");
     expect(statePhrase(snap({ status: "completed" }))).toBe("Completed");
     expect(statePhrase(snap({ status: "failed" }))).toBe("Failed");

@@ -84,7 +84,7 @@ function Stats({ d, spot, onMove }: Pick<Props, "d" | "spot" | "onMove">) {
     case "queued":
       return (
         <div className="stats">
-          <Stat big="Waiting for a free slot" />
+          <Stat big="Queued for a free slot" />
           <span className="text-g600">
             {spot ? queuePlace(spot.index) : "Starts when a running download finishes."}
           </span>

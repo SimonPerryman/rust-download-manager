@@ -250,7 +250,7 @@ export function rowsHead(d: DownloadSnapshot, w: LaneWork): { lead: string; rest
     case "paused":
       return { lead: "Paused", rest: "" };
     case "queued":
-      return { lead: "Waiting", rest: "" };
+      return { lead: "Queued", rest: "" };
     default:
       return { lead: "Stopped", rest: `${formatBytes(d.downloaded)} kept` };
   }

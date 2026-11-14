@@ -50,7 +50,7 @@ export function statePhrase(d: DownloadSnapshot): string {
       return `${pct.toFixed(1)}% of ${formatBytes(d.total)}`;
     }
     case "queued":
-      return "Waiting for a free slot";
+      return "Queued for a free slot";
     case "paused":
       return "Paused";
     case "completed":

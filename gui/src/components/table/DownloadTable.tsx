@@ -37,7 +37,7 @@ type Props = {
   selection: Selection;
   /** The waiting order, first to start first. */
   queue: readonly number[];
-  /** The Waiting view: every waiting row shows its drag handle. */
+  /** The Queued view: every waiting row shows its drag handle. */
   queueView: boolean;
   onSelect: (id: number, mods: Modifiers) => void;
   onMenu: (id: number, x: number, y: number) => void;

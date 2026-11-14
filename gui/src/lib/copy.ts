@@ -29,7 +29,7 @@ const EMPTY: Record<Extract<ViewFilter, { kind: "status" }>["status"], [string, 
   all: ["No downloads yet", "Paste a link anywhere with Ctrl+V, or use Add."],
   downloading: ["Nothing downloading", "Resume something paused or add a new link to get going."],
   waiting: [
-    "Nothing waiting",
+    "Nothing queued",
     "Downloads wait here when the most allowed at once are already running.",
   ],
   paused: ["Nothing paused", "Pause a download to free its slot for something else."],
@@ -235,5 +235,5 @@ export function copiedMessage(n: number): string {
 /** A waiting row's place in the queue, for its tooltip. */
 export function queuePlace(index: number): string {
   if (index <= 0) return "Starts next";
-  return `Waiting behind ${index} other${index === 1 ? "" : "s"}`;
+  return `Queued behind ${index} other${index === 1 ? "" : "s"}`;
 }
