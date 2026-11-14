@@ -37,6 +37,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M8 | Diagnostics — finding the bug when rdm crashes | done | [[milestone-08-diagnostics]] |
 | M9 | In-app updater | done | [[milestone-09-in-app-updater]] |
 | M10 | Smarter connections | done | [[milestone-10-smarter-connections]] |
+| M11 | Missing and moved files | todo | [[milestone-11-missing-and-moved-files]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 
@@ -53,9 +54,12 @@ order.
 ## Up next (in priority order)
 
 Pick from the top. Items 2–3 need the owner before any code: live
-measurements, a design chat and a paid account respectively.
+measurements and a paid account respectively.
 
-1. **Ramp window tuning** (M10 follow-up): with the 1 s window a download
+1. **Missing and moved files** ([[milestone-11-missing-and-moved-files]]):
+   spot a finished download whose file was deleted or moved, keep its
+   record, and let the user relink it (Locate…, or Find it) or remove it.
+2. **Ramp window tuning** (M10 follow-up): with the 1 s window a download
    needs ~7 s to reach 4 connections. Parked, low value: shrinking it saves
    a fixed ~2-3 s per download, which only shows on 100 MB to 1 GB files
    from hosts that cap each connection. A live run on 2026-11-14 (Ubuntu
@@ -67,10 +71,6 @@ measurements, a design chat and a paid account respectively.
    time to 4 lanes, final speed and total time, over several runs. The
    window is the `RAMP_WINDOW` constant in `src/engine/ramp.rs`, so each
    variant is a rebuild.
-2. **Missing and moved files**: spot a finished download whose file was
-   deleted or moved, relink it ("Update file reference"), or move files
-   through rdm so the record follows them; keep a record whose file is gone
-   as a note of what was downloaded. Starts with a design chat.
 3. **Code signing** (cut from M6): sign the Windows binaries and installers
    (e.g. Azure Trusted Signing) and sign and notarise the macOS app (Apple
    Developer Program), so SmartScreen and Gatekeeper stop warning. Has a
@@ -96,8 +96,10 @@ unrequested items last.
   executable, or `.mp4.exe`); warn when an archive holds executables or
   scripts; a user-configured post-download command (e.g. a scanner).
 - **Archive and tag automation (cut from M7)**: auto-archive finished
-  downloads after N days; auto-tag rules by host or file type; tag rename,
-  merge and colours.
+  downloads after N days; auto-tag rules by host or file type; tag suggestions
+  that propose tags for everything already in the list, with a dry-run
+  view of which tag each file would get and which files fall under each
+  tag, before anything is applied; tag rename, merge and colours.
 - **Updater extras (cut from M9)**: "Skip this version" in the update
   notice; in-app updates for `.deb` installs (the plugin can, but it needs
   an admin password prompt that not every desktop has).
@@ -155,3 +157,10 @@ ramping follow-ups shipped in M10; window tuning is in "Up next". These are low 
 `reqwest` (HTTP), `tokio` (async), `futures` (concurrency), `clap` (CLI),
 `indicatif` (CLI progress), `serde` (config/state), `sqlx`/`rusqlite`
 (persistence), `sha2` (checksums). GUI: Tauri (chosen at M2).
+- **Say "Queued", not "Waiting"** (GUI copy): the row, filter, details pane
+  and view title call a queued download "Waiting". "Queued" is the term for
+  it. The "Next up" pill stays. Touches `rowView`, `laneWork`, `details`,
+  `copy` and `filters` plus their tests, the e2e specs and the screenshots.
+- **Show the queue order** (GUI): make a queued download's place in the
+  queue visible at a glance (for example a position number or a quiet
+  ordinal), designed with the Refactoring UI principles.
