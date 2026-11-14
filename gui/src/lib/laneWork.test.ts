@@ -349,7 +349,7 @@ describe("rowsHead", () => {
 
   it("names the state when no lane is live, and what's kept when stopped", () => {
     expect(rowsHead(at(pieces, [], "paused"), EMPTY_WORK)).toEqual({ lead: "Paused", rest: "" });
-    expect(rowsHead(at(pieces, [], "queued"), EMPTY_WORK)).toEqual({ lead: "Waiting", rest: "" });
+    expect(rowsHead(at(pieces, [], "queued"), EMPTY_WORK)).toEqual({ lead: "Queued", rest: "" });
     expect(rowsHead(at(pieces, [], "failed"), EMPTY_WORK)).toEqual({
       lead: "Stopped",
       rest: "250 B kept",

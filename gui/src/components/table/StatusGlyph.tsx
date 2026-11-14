@@ -16,7 +16,7 @@ const GLYPH = {
   stopped: Stop,
 };
 
-/** The UI word for an engine status ("Waiting" for queued, "Stopped" for cancelled). */
+/** The UI word for an engine status ("Stopped" for cancelled, "Queued" for queued). */
 export const statusLabel = (status: Status) =>
   STATUS_FILTERS.find((f) => f.key === filterKeyOf(status))!.label;
 

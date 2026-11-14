@@ -59,7 +59,7 @@ describe("progressView", () => {
   });
 
   it("uses a word for rows that aren't moving", () => {
-    expect(progressView(snap({ status: "queued" }))).toMatchObject({ text: "Waiting" });
+    expect(progressView(snap({ status: "queued" }))).toMatchObject({ text: "Queued" });
     expect(progressView(snap({ status: "paused" }))).toMatchObject({ text: "Paused" });
     expect(progressView(snap({ status: "completed" }))).toMatchObject({
       text: "Completed",

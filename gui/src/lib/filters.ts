@@ -32,7 +32,7 @@ export function isArchivedView(f: ViewFilter): boolean {
 export const STATUS_FILTERS: readonly { key: StatusFilter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "downloading", label: "Downloading" },
-  { key: "waiting", label: "Waiting" },
+  { key: "waiting", label: "Queued" },
   { key: "paused", label: "Paused" },
   { key: "done", label: "Completed" },
   { key: "failed", label: "Failed" },

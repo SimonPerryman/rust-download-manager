@@ -1,5 +1,5 @@
 // The README screenshots: one session with downloads in every state (done,
-// downloading, waiting, paused, failed), captured in the light and dark
+// downloading, queued, paused, failed), captured in the light and dark
 // themes, then the details pane of a running download. Run with
 // `pnpm screenshots` (see wdio.screenshots.conf.ts); not part of the e2e suite.
 

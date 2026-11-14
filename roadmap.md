@@ -157,10 +157,6 @@ ramping follow-ups shipped in M10; window tuning is in "Up next". These are low 
 `reqwest` (HTTP), `tokio` (async), `futures` (concurrency), `clap` (CLI),
 `indicatif` (CLI progress), `serde` (config/state), `sqlx`/`rusqlite`
 (persistence), `sha2` (checksums). GUI: Tauri (chosen at M2).
-- **Say "Queued", not "Waiting"** (GUI copy): the row, filter, details pane
-  and view title call a queued download "Waiting". "Queued" is the term for
-  it. The "Next up" pill stays. Touches `rowView`, `laneWork`, `details`,
-  `copy` and `filters` plus their tests, the e2e specs and the screenshots.
 - **Show the queue order** (GUI): make a queued download's place in the
   queue visible at a glance (for example a position number or a quiet
   ordinal), designed with the Refactoring UI principles.
