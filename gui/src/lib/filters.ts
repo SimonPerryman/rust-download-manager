@@ -14,6 +14,7 @@ export type StatusFilter =
   | "paused"
   | "done"
   | "failed"
+  | "missing"
   | "stopped";
 
 export type ViewFilter =
@@ -36,10 +37,11 @@ export const STATUS_FILTERS: readonly { key: StatusFilter; label: string }[] = [
   { key: "paused", label: "Paused" },
   { key: "done", label: "Completed" },
   { key: "failed", label: "Failed" },
+  { key: "missing", label: "Missing" },
   { key: "stopped", label: "Stopped" },
 ];
 
-const KEY_OF: Record<Status, Exclude<StatusFilter, "all">> = {
+const KEY_OF: Record<Status, Exclude<StatusFilter, "all" | "missing">> = {
   queued: "waiting",
   downloading: "downloading",
   paused: "paused",
@@ -49,8 +51,13 @@ const KEY_OF: Record<Status, Exclude<StatusFilter, "all">> = {
 };
 
 /** The one status filter (besides All) an engine status belongs to. */
-export function filterKeyOf(status: Status): Exclude<StatusFilter, "all"> {
+export function filterKeyOf(status: Status): Exclude<StatusFilter, "all" | "missing"> {
   return KEY_OF[status];
+}
+
+/** A finished download whose file has gone missing. */
+export function isMissing(d: DownloadSnapshot): boolean {
+  return d.status === "completed" && d.file_missing;
 }
 
 export function matchesFilter(d: DownloadSnapshot, f: ViewFilter): boolean {
@@ -63,6 +70,8 @@ export function matchesFilter(d: DownloadSnapshot, f: ViewFilter): boolean {
     case "folder":
       return folderOf(d.target) === f.dir;
     case "status":
+      // Missing is an overlay on Completed: such a row also shows under Completed.
+      if (f.status === "missing") return isMissing(d);
       return f.status === "all" || filterKeyOf(d.status) === f.status;
   }
 }
@@ -84,9 +93,13 @@ export function statusCounts(ds: readonly DownloadSnapshot[]): Record<StatusFilt
     paused: 0,
     done: 0,
     failed: 0,
+    missing: 0,
     stopped: 0,
   };
-  for (const d of live) counts[filterKeyOf(d.status)] += 1;
+  for (const d of live) {
+    counts[filterKeyOf(d.status)] += 1;
+    if (isMissing(d)) counts.missing += 1;
+  }
   return counts;
 }
 

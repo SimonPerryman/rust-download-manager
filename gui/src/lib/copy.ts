@@ -38,6 +38,10 @@ const EMPTY: Record<Extract<ViewFilter, { kind: "status" }>["status"], [string, 
     "No failed downloads",
     "When a download fails, the reason and a Retry button show up here.",
   ],
+  missing: [
+    "No missing files",
+    "When a finished download's file is deleted or moved, it shows up here so you can find it again.",
+  ],
   stopped: [
     "Nothing stopped",
     "Stopped downloads stay here. If you kept the partial file, you can resume them.",
@@ -186,6 +190,19 @@ export function retryAllMessage(failed: readonly DownloadSnapshot[]): string {
   return failed.length === 1
     ? `Retrying ${failed[0].filename}`
     : `Retrying ${failed.length} failed downloads`;
+}
+
+/** The details banner's heading for a finished download whose file is gone. */
+export const missingBannerText = "This file is no longer where it was saved.";
+
+/** The toast after Locate… relinked a download to the file the user chose. */
+export function relinkedMessage(d: DownloadSnapshot): string {
+  return `Relinked ${d.filename} to the file you chose.`;
+}
+
+/** Remove from list's toast for a missing download: only the record goes. */
+export function removedMissingMessage(d: DownloadSnapshot): string {
+  return `Removed ${d.filename} from the list.`;
 }
 
 export function openFailedMessage(d: DownloadSnapshot, error: unknown): string {

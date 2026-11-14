@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { filterKeyOf } from "../../lib/filters";
+import { filterKeyOf, isMissing } from "../../lib/filters";
 import { focusIsFree } from "../../lib/focus";
 import { queuePlace } from "../../lib/copy";
 import { formatAdded, formatLeft, host } from "../../lib/format";
@@ -8,6 +8,7 @@ import { sizeText } from "../../lib/rowView";
 import type { DownloadSnapshot } from "../../lib/types";
 import { useLimitEditor } from "../../lib/useLimitEditor";
 import { Grip } from "../icons/Grip";
+import { MissingFlag } from "./MissingFlag";
 import { ProgressCell } from "./ProgressCell";
 import { RowActions } from "./RowActions";
 import type { RowHandlers } from "./rowHandlers";
@@ -67,6 +68,7 @@ export function TableRow({
   const editor = useLimitEditor(d);
   const ref = useRef<HTMLTableRowElement>(null);
   const downloading = d.status === "downloading";
+  const missing = isMissing(d);
   const fresh = lingering && freshAt != null;
   // Fixed per mount: re-setting animation-delay on a running animation re-times it,
   // so a fresh value every render would run the tint ahead of the clock.
@@ -105,10 +107,11 @@ export function TableRow({
       data-partial-kept={String(d.partial_kept)}
       data-finished-at={d.finished_at ?? ""}
       data-archived={d.archived ? "true" : undefined}
+      data-missing={missing ? "true" : undefined}
       data-tags={d.tags.join(",")}
       data-selected={details ? "true" : undefined}
       data-next-up={queueIndex === 0 ? "true" : undefined}
-      className={`row st-${filterKeyOf(d.status)}${lingering ? " linger" : ""}${fresh ? " fresh" : ""}${selected ? " selected" : ""}${cursor ? " cursor" : ""}${drag ? ` ${drag}` : ""}`}
+      className={`row st-${filterKeyOf(d.status)}${lingering ? " linger" : ""}${missing ? " missing" : ""}${fresh ? " fresh" : ""}${selected ? " selected" : ""}${cursor ? " cursor" : ""}${drag ? ` ${drag}` : ""}`}
       // A negative delay resumes the tint mid-way when the row remounts (a filter change).
       style={fresh ? ({ "--fresh-delay": freshDelay } as React.CSSProperties) : undefined}
       onMouseDown={(e) => {
@@ -175,13 +178,22 @@ export function TableRow({
         </div>
       </td>
       <td className="c-size num">{sizeText(d)}</td>
-      <td className="c-prog" title={queueIndex >= 0 ? queuePlace(queueIndex) : undefined}>
-        <ProgressCell d={d} nextUp={queueIndex === 0} />
-      </td>
-      <td className="c-speed num">
-        <SpeedCell d={d} editor={editor} />
-      </td>
-      <td className="c-left num">{downloading ? formatLeft(d.eta_secs) : ""}</td>
+      {missing ? (
+        // The flag takes the Progress, Speed and Time left cells' place.
+        <td className="c-prog" colSpan={3}>
+          <MissingFlag />
+        </td>
+      ) : (
+        <>
+          <td className="c-prog" title={queueIndex >= 0 ? queuePlace(queueIndex) : undefined}>
+            <ProgressCell d={d} nextUp={queueIndex === 0} />
+          </td>
+          <td className="c-speed num">
+            <SpeedCell d={d} editor={editor} />
+          </td>
+          <td className="c-left num">{downloading ? formatLeft(d.eta_secs) : ""}</td>
+        </>
+      )}
       <td className="c-conn num">
         {downloading && (
           <span data-testid="row-connections" aria-label={connectionsLabel(d.connections)}>

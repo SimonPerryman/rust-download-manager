@@ -105,6 +105,11 @@ export const defaultDownloadDir = () => invoke<string>("default_download_dir");
 export const pickFolder = () => invoke<string | null>("pick_folder");
 /** Open a completed download's file. By id: the backend resolves the path, so the webview can't name one. */
 export const openDownload = (id: number) => invoke<void>("open_download", { id });
+/**
+ * Ask the user for the file of a missing download in the OS file picker and relink the record to
+ * it. Resolves true once relinked, false if they cancelled. By id, so the webview names no path.
+ */
+export const locateDownload = (id: number) => invoke<boolean>("locate_download", { id });
 /** Show a completed download's file in its folder (by id, like `openDownload`). */
 export const revealDownload = (id: number) => invoke<void>("reveal_download", { id });
 

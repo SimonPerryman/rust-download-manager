@@ -5,6 +5,8 @@ import {
   deletedPartialMessage,
   emptyCopy,
   openFailedMessage,
+  relinkedMessage,
+  removedMissingMessage,
   removeSelectedTitle,
   retryAllMessage,
 } from "./lib/copy";
@@ -144,6 +146,26 @@ export default function App() {
     [fail],
   );
 
+  const locateDownload = useCallback(
+    (d: DownloadSnapshot) => {
+      api
+        .locateDownload(d.id)
+        .then((relinked) => relinked && notify(relinkedMessage(d)))
+        .catch(fail);
+    },
+    [notify, fail],
+  );
+  // Only the record: the file is already gone, so there is nothing to ask about.
+  const forgetMissing = useCallback(
+    (d: DownloadSnapshot) => {
+      api
+        .remove(d.id)
+        .then(() => notify(removedMissingMessage(d)))
+        .catch(fail);
+    },
+    [notify, fail],
+  );
+
   const retryAll = useCallback(() => {
     const message = retryAllMessage(failed);
     api
@@ -170,6 +192,8 @@ export default function App() {
       stop: (d) => setStopIds([d.id]),
       open: openDownload,
       reveal: revealDownload,
+      locate: locateDownload,
+      forget: forgetMissing,
       remove: (d) => askRemove([d]),
       archive: (d) => archiver.archive([d]),
       deletePartial: (d) =>
@@ -179,7 +203,17 @@ export default function App() {
           .catch(fail),
       retryAll,
     }),
-    [fail, notify, openDownload, revealDownload, retryAll, askRemove, archiver.archive],
+    [
+      fail,
+      notify,
+      openDownload,
+      revealDownload,
+      locateDownload,
+      forgetMissing,
+      retryAll,
+      askRemove,
+      archiver.archive,
+    ],
   );
 
   const run = useBulkCommands({
@@ -189,6 +223,8 @@ export default function App() {
     fail,
     open: openDownload,
     reveal: revealDownload,
+    locate: locateDownload,
+    forget: forgetMissing,
     retryAll,
     askStop: setStopIds,
     askRemove,
@@ -360,6 +396,8 @@ export default function App() {
             samples={history.byId.get(detailsRow.id) ?? []}
             globalLimit={settings?.global_limit ?? null}
             onReveal={revealDownload}
+            onLocate={locateDownload}
+            onForget={forgetMissing}
             spot={
               detailsRow.status === "queued" && queue.includes(detailsRow.id)
                 ? { index: queue.indexOf(detailsRow.id), count: queue.length }

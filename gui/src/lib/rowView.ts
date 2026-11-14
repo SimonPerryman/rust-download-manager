@@ -1,6 +1,7 @@
 // What each table row shows for its snapshot: the progress cell, the size and
 // the actions. Pure presentation; the engine's status decides everything.
 
+import { isMissing } from "./filters";
 import { formatBytes, formatSpeed } from "./format";
 import { limitText, rateDraft, speedIn } from "./rate";
 import type { DownloadSnapshot } from "./types";
@@ -88,6 +89,7 @@ export type RowActionKey =
   | "resume"
   | "stop"
   | "open"
+  | "locate"
   | "reveal"
   | "remove"
   | "archive"
@@ -123,6 +125,8 @@ export function rowActions(d: DownloadSnapshot, lingering: boolean): RowAction[]
     case "paused":
       return [LIMIT, icon("resume", "Resume"), STOP];
     case "completed":
+      // A missing file can't be opened or shown: Locate… is the way forward.
+      if (isMissing(d)) return [{ key: "locate", label: "Locate…", style: "soft" }, lastAction];
       return [
         lingering ? { key: "open", label: "Open", style: "primary" } : icon("open", "Open"),
         REVEAL,

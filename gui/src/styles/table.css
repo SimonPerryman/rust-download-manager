@@ -290,6 +290,14 @@
   .st-done td.num {
     color: var(--g400);
   }
+  /* A finished row whose file is gone: a faint warm tint, the icon and the words. */
+  .row.missing td {
+    background: var(--warn-soft);
+  }
+  .missing-flag {
+    @apply inline-flex items-center gap-1 text-xs font-medium;
+    color: var(--warn-ink);
+  }
   .st-ico {
     color: var(--g400);
   }

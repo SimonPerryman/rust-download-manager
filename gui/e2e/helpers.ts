@@ -53,6 +53,7 @@ export interface EngineRow {
   archived: boolean;
   tags: string[];
   paused_for_update: boolean;
+  file_missing: boolean;
 }
 
 /** Waits until nothing matches `selector`. */

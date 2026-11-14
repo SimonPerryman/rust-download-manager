@@ -13,6 +13,7 @@ import { ListRemove } from "../icons/ListRemove";
 import { Pause } from "../icons/Pause";
 import { Play } from "../icons/Play";
 import { Retry } from "../icons/Retry";
+import { Search } from "../icons/Search";
 import { Stop } from "../icons/Stop";
 import { Tag } from "../icons/Tag";
 import { Trash } from "../icons/Trash";
@@ -20,6 +21,8 @@ import { Trash } from "../icons/Trash";
 const ICON: Record<MenuCommand, (p: { size?: number }) => React.ReactNode> = {
   open: ExternalLink,
   reveal: Folder,
+  locate: Search,
+  forget: ListRemove,
   pause: Pause,
   resume: Play,
   startNext: ChevronsUp,

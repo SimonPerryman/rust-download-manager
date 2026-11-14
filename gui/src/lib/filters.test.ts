@@ -31,7 +31,8 @@ describe("filterKeyOf", () => {
   });
 
   it("covers every status filter but All, once each", () => {
-    const keys = STATUS_FILTERS.map((f) => f.key).filter((k) => k !== "all");
+    // Missing is an overlay on Completed, not a status of its own.
+    const keys = STATUS_FILTERS.map((f) => f.key).filter((k) => k !== "all" && k !== "missing");
     expect(new Set(STATUSES.map(filterKeyOf))).toEqual(new Set(keys));
     expect(STATUS_FILTERS[0]).toEqual({ key: "all", label: "All" });
   });
@@ -88,8 +89,46 @@ describe("statusCounts", () => {
     expect(counts.all).toBe(7);
     expect(counts.done).toBe(2);
     expect(counts.waiting).toBe(1);
-    const keys: StatusFilter[] = STATUS_FILTERS.map((f) => f.key).filter((k) => k !== "all");
+    const keys: StatusFilter[] = STATUS_FILTERS.map((f) => f.key).filter(
+      (k) => k !== "all" && k !== "missing",
+    );
     expect(keys.reduce((sum, k) => sum + counts[k], 0)).toBe(counts.all);
+  });
+});
+
+describe("the Missing filter", () => {
+  const missingFilter: ViewFilter = { kind: "status", status: "missing" };
+  const gone = snap({ id: 1, status: "completed", file_missing: true });
+  const fine = snap({ id: 2, status: "completed" });
+
+  it("sits between Failed and Stopped", () => {
+    const keys = STATUS_FILTERS.map((f) => f.key);
+    expect(keys.indexOf("missing")).toBe(keys.indexOf("failed") + 1);
+    expect(keys.indexOf("stopped")).toBe(keys.indexOf("missing") + 1);
+  });
+
+  it("shows a missing row under both Completed and Missing", () => {
+    expect(matchesFilter(gone, missingFilter)).toBe(true);
+    expect(matchesFilter(gone, { kind: "status", status: "done" })).toBe(true);
+    expect(matchesFilter(gone, { kind: "status", status: "all" })).toBe(true);
+    expect(matchesFilter(fine, missingFilter)).toBe(false);
+  });
+
+  it("ignores the flag on a download that isn't finished", () => {
+    expect(matchesFilter(snap({ status: "downloading", file_missing: true }), missingFilter)).toBe(
+      false,
+    );
+  });
+
+  it("counts a missing row under Completed and Missing, once under All", () => {
+    const counts = statusCounts([gone, fine]);
+    expect(counts.all).toBe(2);
+    expect(counts.done).toBe(2);
+    expect(counts.missing).toBe(1);
+  });
+
+  it("leaves archived rows out of the count", () => {
+    expect(statusCounts([{ ...gone, archived: true }]).missing).toBe(0);
   });
 });
 

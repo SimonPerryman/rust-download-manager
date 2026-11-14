@@ -14,6 +14,7 @@ import { ArrowDown } from "../icons/ArrowDown";
 import { CheckCircle } from "../icons/CheckCircle";
 import { Clock } from "../icons/Clock";
 import { DownloadMark } from "../icons/DownloadMark";
+import { FileQuestion } from "../icons/FileQuestion";
 import { Folder } from "../icons/Folder";
 import { List } from "../icons/List";
 import { Pause } from "../icons/Pause";
@@ -29,6 +30,7 @@ const ICONS: Record<StatusFilter, React.ReactNode> = {
   paused: <Pause />,
   done: <CheckCircle />,
   failed: <AlertTriangle />,
+  missing: <FileQuestion />,
   stopped: <Stop />,
 };
 
@@ -97,6 +99,7 @@ export function Sidebar({
                   count={counts[f.key]}
                   selected={sameFilter(filter, view)}
                   alert={f.key === "failed" && counts.failed > 0}
+                  warn={f.key === "missing" && counts.missing > 0}
                   countRef={f.key === "done" ? doneCount : undefined}
                   onClick={() => onFilter(view)}
                 />

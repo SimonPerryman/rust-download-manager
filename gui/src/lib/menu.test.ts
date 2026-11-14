@@ -10,6 +10,21 @@ const labels = (entries: MenuEntry[]) =>
 const menu = (list: DownloadSnapshot[], queue: number[] = [], failed = 0, archived = false) =>
   labels(menuItems(list, queue, failed, archived));
 
+describe("menuItems for a missing file", () => {
+  it("offers Locate… and Remove from list in place of Open and Show in folder", () => {
+    expect(menu([snap({ status: "completed", file_missing: true })])).toEqual([
+      "Locate…",
+      "-",
+      "Copy link",
+      "Download again",
+      "Tags…",
+      "-",
+      "Archive",
+      "Remove from list",
+    ]);
+  });
+});
+
 describe("menuItems", () => {
   it("fits a finished download", () => {
     expect(menu([snap({ status: "completed" })])).toEqual([

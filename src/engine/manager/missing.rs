@@ -150,6 +150,42 @@ impl Manager {
         Ok(st.entries.get(&id).is_some_and(|e| e.file_missing))
     }
 
+    /// Point completed download `id` at `file`, a file the user located after
+    /// the original went missing: the record's path (and shown name) follow
+    /// it, the missing flag clears and subscribers get a [`MissingChange`].
+    /// Errors, leaving the record as it was, if `id` is unknown or not
+    /// completed, or `file` isn't an existing file.
+    pub fn relink(&self, id: u64, file: &Path) -> crate::engine::Result<()> {
+        if !file.is_file() {
+            return Err(Error::InvalidRequest(format!(
+                "{} isn't a file on disk",
+                file.display()
+            )));
+        }
+        let st = &mut *lock(&self.inner.state);
+        let e = st
+            .entries
+            .get_mut(&id)
+            .ok_or_else(|| Error::InvalidRequest(format!("no download with id {id}")))?;
+        if e.record.status != Status::Completed {
+            return Err(Error::InvalidRequest(format!(
+                "download {id} hasn't completed"
+            )));
+        }
+        e.record.final_path = Some(file.to_path_buf());
+        e.record.target = file.to_path_buf();
+        let was_missing = std::mem::replace(&mut e.file_missing, false);
+        if was_missing {
+            let _ = self
+                .inner
+                .missing_tx
+                .send(MissingChange { id, missing: false });
+        }
+        self.inner.persist(st);
+        self.inner.publish(st);
+        Ok(())
+    }
+
     /// `(id, final path)` of completed downloads that have one: just `only`
     /// if given, else all.
     fn completed_files(&self, only: Option<u64>) -> Vec<(u64, PathBuf)> {
@@ -339,6 +375,76 @@ mod tests {
         assert!(mgr.check_missing_one(1).await.unwrap());
         assert!(flag(&mgr, 1));
         assert!(!flag(&mgr, 2), "other downloads are left unchecked");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn relink_repoints_clears_flag_and_persists() {
+        let dir = temp_dir("relink");
+        let old = dir.join("old.bin");
+        let new = dir.join("moved").join("renamed.bin");
+        std::fs::create_dir_all(new.parent().unwrap()).unwrap();
+        std::fs::write(&new, b"x").unwrap();
+        let mgr = manager(vec![rec(1, Status::Completed, &old)]);
+        mgr.check_missing().await.unwrap();
+        assert!(flag(&mgr, 1));
+        let mut events = mgr.subscribe_missing();
+
+        mgr.relink(1, &new).unwrap();
+        let snap = mgr.snapshot().remove(0);
+        assert!(!snap.file_missing);
+        assert_eq!(snap.final_path.as_deref(), Some(new.as_path()));
+        assert_eq!(snap.filename, "renamed.bin");
+        assert_eq!(snap.status, Status::Completed);
+        assert_eq!(
+            events.try_recv().unwrap(),
+            MissingChange {
+                id: 1,
+                missing: false
+            }
+        );
+        // A later check agrees with the new link.
+        mgr.check_missing().await.unwrap();
+        assert!(!flag(&mgr, 1));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn relink_rejects_bad_requests_and_changes_nothing() {
+        let dir = temp_dir("relink-bad");
+        let old = dir.join("old.bin");
+        let real = dir.join("real.bin");
+        std::fs::write(&real, b"x").unwrap();
+        let mgr = manager(vec![
+            rec(1, Status::Completed, &old),
+            rec(2, Status::Paused, &old),
+        ]);
+        mgr.check_missing().await.unwrap();
+        assert!(mgr.relink(1, &dir.join("nope.bin")).is_err());
+        assert!(mgr.relink(1, &dir).is_err(), "a folder isn't a file");
+        assert!(mgr.relink(2, &real).is_err());
+        assert!(mgr.relink(99, &real).is_err());
+        let snap = mgr.snapshot().remove(0);
+        assert!(snap.file_missing);
+        assert_eq!(snap.final_path.as_deref(), Some(old.as_path()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn removing_a_missing_record_drops_only_the_record() {
+        let dir = temp_dir("remove-missing");
+        let old = dir.join("old.bin");
+        let other = dir.join("other.bin");
+        std::fs::write(&other, b"x").unwrap();
+        let mgr = manager(vec![
+            rec(1, Status::Completed, &old),
+            rec(2, Status::Completed, &other),
+        ]);
+        mgr.check_missing().await.unwrap();
+        mgr.remove(1);
+        let ids: Vec<u64> = mgr.snapshot().iter().map(|s| s.id).collect();
+        assert_eq!(ids, [2]);
+        assert!(other.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

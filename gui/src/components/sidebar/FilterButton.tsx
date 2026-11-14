@@ -10,6 +10,8 @@ type Props = {
   selected: boolean;
   /** Draw the count as a warning (Failed, when anything has). */
   alert?: boolean;
+  /** Draw the count as a caution (Missing, when anything is). */
+  warn?: boolean;
   countRef?: React.Ref<HTMLSpanElement>;
   onClick: () => void;
 };
@@ -25,6 +27,7 @@ export function FilterButton({
   count,
   selected,
   alert,
+  warn,
   countRef,
   onClick,
 }: Props) {
@@ -41,7 +44,11 @@ export function FilterButton({
     >
       <span className="f-icon shrink-0">{icon}</span>
       <span className="f-label min-w-0 flex-1 truncate">{label}</span>
-      <span ref={countRef} data-testid="filter-count" className={`f-count${alert ? " alert" : ""}`}>
+      <span
+        ref={countRef}
+        data-testid="filter-count"
+        className={`f-count${alert ? " alert" : ""}${warn ? " warn" : ""}`}
+      >
         {count}
       </span>
     </button>
