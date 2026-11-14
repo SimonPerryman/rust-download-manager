@@ -103,6 +103,8 @@ impl Manager {
             closed: AtomicBool::new(false),
             global,
             logs: Arc::default(),
+            missing_tx: tokio::sync::broadcast::channel(64).0,
+            missing_busy: Mutex::default(),
             state: Mutex::new(st),
         });
         // Prime the channel with the restored list.
