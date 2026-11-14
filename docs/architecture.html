@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rdm Architecture</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Architects+Daughter&display=swap">
+<style>
+  :root {
+    --bg: #fdfdfb;
+    --ink: #1e1e1e;
+    --muted: #868e96;
+    --hot: #e03131;
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Architects Daughter", "Comic Sans MS", cursive;
+    display: flex; flex-direction: column;
+  }
+  header { padding: 16px 24px 0; }
+  h1 { margin: 0; font-size: 28px; font-weight: 400; }
+  .sub { color: var(--muted); font-size: 16px; margin-top: 4px; max-width: 110ch; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 8px; font-size: 15px; }
+  .legend i { display: inline-block; width: 22px; height: 14px; border: 2px solid var(--ink); border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+  .steps { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+  .steps button, .zoom {
+    font: inherit; font-size: 16px; color: var(--ink); background: #fff;
+    border: 2px solid var(--ink); border-radius: 8px 12px 9px 11px; padding: 3px 12px; cursor: pointer;
+  }
+  .steps button[aria-pressed="true"] { background: #fff3bf; border-color: #f08c00; }
+  .zoom { margin-left: auto; border-style: dashed; }
+  .stage { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; padding: 8px 24px 16px; }
+  .scroll { min-height: 0; overflow: auto; }
+  svg { display: block; width: 100%; height: 100%; }
+  body.full .scroll svg { width: auto; height: auto; min-width: 1500px; }
+  svg text { font-family: "Architects Daughter", "Comic Sans MS", cursive; fill: var(--ink); }
+  .panel { overflow-y: auto; font-size: 17px; border-left: 2px dashed #dee2e6; padding-left: 16px; }
+  .about { margin: 4px 0 12px; }
+  .about b { font-weight: 400; color: var(--hot); }
+  code { font-size: 15px; }
+  ol.walk { list-style: none; padding: 0; margin: 0; }
+  ol.walk li { display: flex; gap: 10px; padding: 6px 4px; border-radius: 8px; cursor: default; }
+  ol.walk li:hover, ol.walk li.on { background: #fff3bf; }
+  ol.walk .n { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--hot); color: #fff;
+               display: grid; place-items: center; font-size: 15px; margin-top: 1px; }
+  .badge { transition: transform .15s; transform-box: fill-box; transform-origin: center; }
+  .badge.on { transform: scale(1.45); }
+  footer { color: var(--muted); font-size: 14px; margin-top: 16px; }
+  @media (max-width: 1000px) {
+    body { display: block; }
+    .stage { display: block; padding: 8px 16px; }
+    .scroll svg { width: auto; height: auto; min-width: 1100px; }
+    .panel { border-left: 0; padding-left: 0; margin-top: 12px; }
+    .zoom { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>rdm: system architecture</h1>
+  <div class="sub">Left: the two frontends. Middle: the engine library they share, which holds all the download logic. Right and bottom: what rdm reads and writes. Pick a flow to walk one request through it, step by numbered step.</div>
+  <div class="legend">
+    <span><i style="background:#ffffff;border-color:#1e1e1e"></i>frontend</span>
+    <span><i style="background:#b2f2bb;border-color:#2f9e44"></i>engine</span>
+    <span><i style="background:#a5d8ff;border-color:#1971c2"></i>on disk</span>
+    <span><i style="background:#ffd8a8;border-color:#e8590c"></i>network</span>
+    <span><i style="background:#fff;border-color:#e03131;border-width:3px"></i>part of this flow</span>
+  </div>
+  <div class="steps" id="steps"><button class="zoom" id="zoom">Full size</button></div>
+</header>
+
+<div class="stage">
+  <div class="scroll">
+    <svg id="diagram" viewBox="-20 -70 1540 1080" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+  <div class="panel">
+    <div class="about" id="about"></div>
+    <ol class="walk" id="walk"></ol>
+    <footer>Hand-drawn look via rough.js. Layout lives in the <code>boxes</code> and <code>arrows</code> lists in this file's script; each flow lists the boxes and arrows it lights up and its numbered <code>steps</code>. When a component moves or a new one lands, update it here too.</footer>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/roughjs@4.6.6/bundled/rough.js"></script>
+<script>
+const C = {
+  ink: "#1e1e1e", grey: "#868e96", hot: "#e03131",
+  front: ["#ffffff", "#1e1e1e"], engine: ["#b2f2bb", "#2f9e44"], disk: ["#a5d8ff", "#1971c2"],
+  net: ["#ffd8a8", "#e8590c"], engineFrame: ["#ebfbee", "#2f9e44"], appFrame: ["#f8f9fa", "#868e96"],
+};
+
+// id: [x, y, w, h, label, style, dashed]. Frames have no label; their title is in `frameTitles`.
+const boxes = {
+  engineFrame: [285, -10, 855, 830, "", "engineFrame"],
+  appFrame:    [-12, 205, 244, 350, "", "appFrame"],
+  cli:       [0, 30, 220, 140, "rdm CLI\nsrc/main.rs\nclap flags · progress bar\n1st Ctrl-C pauses; run the\nsame command to resume", "front"],
+  webview:   [0, 245, 220, 130, "React UI\ngui/src (webview)\ntable · sidebar · details\nlanes · speed graph · log\nprefs in localStorage", "front"],
+  tauri:     [0, 425, 220, 115, "Tauri shell\ngui/src-tauri\ncommands in · events out\nfolders · open · reveal", "front"],
+  download:  [600, 30, 360, 150, "download()\nengine/mod.rs · attempt.rs\n\nprobe the server, resume from\nthe sidecar or start fresh\nretry with backoff · Retry-After", "engine"],
+  manager:   [310, 240, 240, 290, "Manager\nengine/manager/\n\nqueue: 3 at once by default\nadd · pause · resume · stop\nlimits: global + per download\nsnapshots at ~10 Hz\narchive · tags · verify\nper-download log", "engine"],
+  single:    [600, 240, 180, 150, "One connection\nsingle.rs\n\nsmall file, or\nno range support\nresume from .part size", "engine"],
+  segmented: [810, 240, 310, 210, "Segmented, in parallel\nsegment/ · ramp.rs\n\nstart on 1 lane, add more\nwhile speed keeps rising\nidle lane steals half of\nthe largest remaining range\ncheckpoint progress", "engine"],
+  control:   [310, 590, 240, 170, "Control\ncontrol.rs · limit.rs\n\none per download, cloned\nby whoever steers it\npause · cancel flags\nRateLimiter token buckets", "engine"],
+  chunk:     [600, 510, 520, 120, "Chunk loop\nhttp.rs · reqwest + rustls\nbefore each chunk: pause? cancel?   after it: throttle\nwrite at offset · timeouts · classify errors for retry", "engine"],
+  finish:    [600, 690, 520, 110, "Finish\nfinish.rs · integrity.rs · filename.rs\nsize check and optional SHA-256, then rename .part → file\nsafe name inside the folder; never overwrites: name (1).ext", "engine"],
+  part:      [1200, 240, 300, 180, "<file>.part + <file>.rdm\npartial data + JSON sidecar\n\nv1: offset = .part size\nv2: per-segment checkpoints\nETag / Last-Modified pin\nthe bytes on resume", "disk"],
+  server:    [1200, 500, 300, 140, "HTTP(S) server\nthe file you're downloading\n\nRange requests · ETag\nmay rate-limit: 429 / 503", "net"],
+  final:     [1200, 690, 300, 110, "<file>\nthe finished download,\nin your folder", "disk"],
+  state:     [310, 870, 240, 110, "~/.rdm/state.json\ndownload list · settings\ntags · archive\n(the app only)", "disk"],
+  logs:      [600, 870, 300, 110, "Logs\napp: rdm.<date>.log, 7 kept\nCLI: stderr, set by RUST_LOG", "disk"],
+};
+
+const frameTitles = {
+  engineFrame: [297, 14, "Engine · the rdm library (src/engine)", "#2f9e44"],
+  appFrame: [0, 228, "Desktop app", "#868e96"],
+};
+
+// id: [from, side, offset, to, side, offset, label, opts]  side: l r t b
+// opts.via: [x, y] bends the arrow through a quadratic control point.
+const arrows = {
+  cliCall:  ["cli", "r", .5, "download", "l", .47, "download(request, control)"],
+  invoke:   ["webview", "b", .25, "tauri", "t", .25, "invoke"],
+  events:   ["tauri", "t", .75, "webview", "b", .75, "events"],
+  commands: ["tauri", "r", .5, "manager", "l", .83, "calls · snapshots", { both: true }],
+  task:     ["manager", "t", .75, "download", "l", .85, "runs · progress", { both: true }],
+  toSingle: ["download", "b", .25, "single", "t", .5, "small / no ranges"],
+  toSeg:    ["download", "b", .97, "segmented", "t", .45, "big + ranges"],
+  singleIO: ["single", "b", .5, "chunk", "t", .17],
+  segIO:    ["segmented", "b", .5, "chunk", "t", .7, "per lane"],
+  owns:     ["manager", "b", .5, "control", "t", .5, "owns"],
+  steer:    ["control", "r", .4, "chunk", "l", .7],
+  fetch:    ["chunk", "r", .5, "server", "l", .5, "GET · Range", { both: true }],
+  write:    ["chunk", "r", .15, "part", "l", .9, "write"],
+  ckpt:     ["segmented", "r", .45, "part", "l", .5, "checkpoint"],
+  sidecar:  ["part", "t", .3, "download", "r", .6, "resume state", { both: true }],
+  done:     ["chunk", "b", .5, "finish", "t", .5, "body complete"],
+  rename:   ["finish", "r", .5, "final", "l", .5, "rename"],
+  persist:  ["manager", "l", .95, "state", "l", .5, "load · save", { both: true, via: [240, 760] }],
+  trace:    ["finish", "b", .13, "logs", "t", .23, "tracing events", { dashed: true }],
+};
+
+const headings = [
+  [0, -30, "FRONTENDS"], [1200, -30, "DISK & NETWORK"], [310, 855, "STATE & LOGS"],
+];
+
+// Each flow lights up a path; everything else fades back. `steps` are [box or arrow id, what happens there],
+// numbered on the diagram in order.
+const flows = [
+  { name: "Everything", about: "Two thin frontends over one engine. Neither frontend fetches anything itself: they build a request, steer it through a <b>Control</b>, and draw what the engine reports. Pick a flow above to walk through it step by step." },
+  { name: "1 · CLI download", boxes: ["cli", "download", "single", "segmented", "control", "chunk", "server", "part", "finish", "final", "logs"],
+    arrows: ["cliCall", "toSingle", "toSeg", "singleIO", "segIO", "steer", "fetch", "write", "ckpt", "done", "rename", "trace"],
+    about: "<code>rdm &lt;url&gt;</code>: one command, one download, no Manager.",
+    steps: [
+      ["cli", "You run <code>rdm &lt;url&gt;</code>. The CLI reads your flags and makes its own <b>Control</b>, with a speed limit if you passed <code>--limit-rate</code>."],
+      ["cliCall", "It calls <b>download()</b> directly. There's no Manager, no queue and no state.json."],
+      ["download", "download() asks the server about the file, and looks for a <code>.part</code> and sidecar left by an earlier run."],
+      ["toSeg", "A big file on a server that sends pieces is split into lanes; anything else takes one connection."],
+      ["chunk", "The chunk loop reads a chunk, checks the Control (pause? cancel?), writes it, then waits if over the speed limit."],
+      ["fetch", "Each chunk comes from the server, a byte range at a time."],
+      ["part", "Bytes land in <code>.part</code>, and progress is noted in the <code>.rdm</code> sidecar."],
+      ["finish", "When the last byte arrives: size check, optional SHA-256 check, and a safe file name."],
+      ["final", "<code>.part</code> is renamed to the real file. The sidecar is deleted."],
+      ["logs", "What happened goes to stderr; <code>-v</code> or <code>RUST_LOG</code> shows more."],
+    ] },
+  { name: "2 · Add in the app", boxes: ["webview", "tauri", "manager", "state", "download", "segmented", "chunk", "server", "part", "finish", "final"],
+    arrows: ["invoke", "commands", "persist", "task", "toSeg", "segIO", "fetch", "write", "ckpt", "done", "rename", "events"],
+    about: "Pasting a link into the app's Add dialog, through to the finished file.",
+    steps: [
+      ["webview", "You paste a link and click Add. The UI <b>invokes</b> <code>add_download</code>."],
+      ["tauri", "The Tauri shell turns that into a call on the Manager."],
+      ["manager", "The Manager gives it an id. If 3 downloads are already running, it waits in the queue."],
+      ["persist", "The list is saved to <code>state.json</code>, so it survives closing the app."],
+      ["task", "When a slot is free, the Manager runs <b>download()</b> on its own background task."],
+      ["segmented", "A big file is split into lanes that fetch in parallel."],
+      ["chunk", "Each lane's chunk loop fetches from the server and writes into <code>.part</code>."],
+      ["ckpt", "Progress is checkpointed to the sidecar as it goes."],
+      ["finish", "Verified, then renamed into place in your folder."],
+      ["events", "Every change reaches the screen as a <code>downloads-changed</code> event."],
+    ] },
+  { name: "3 · Pause & resume", boxes: ["webview", "tauri", "manager", "control", "chunk", "download", "part"],
+    arrows: ["invoke", "commands", "owns", "steer", "task", "sidecar"],
+    about: "Stopping mid-download and carrying on later, without starting over.",
+    steps: [
+      ["webview", "You click Pause. The UI invokes <code>pause</code>."],
+      ["manager", "The Manager finds that download's Control."],
+      ["control", "It flips the <b>pause flag</b>. That's all pausing is."],
+      ["chunk", "Before its next chunk, the loop sees the flag, flushes to disk, saves progress and stops."],
+      ["task", "You click Resume. The Manager simply runs <b>download()</b> again on a new task."],
+      ["sidecar", "download() reads the sidecar, checks the server's ETag or Last-Modified still matches, and fetches only the missing bytes. If the file changed, it starts fresh."],
+    ] },
+  { name: "4 · Speed limits", boxes: ["cli", "webview", "tauri", "manager", "control", "chunk"],
+    arrows: ["cliCall", "invoke", "commands", "owns", "steer"],
+    about: "How a speed limit actually slows a download down.",
+    steps: [
+      ["webview", "You set a limit: a global one in the status bar, or one on a single row."],
+      ["manager", "The Manager holds a <b>token bucket</b> for the global limit and one per download, and changes their rate live."],
+      ["control", "Each download's Control carries both buckets, shared by all of its lanes."],
+      ["chunk", "After every chunk the loop takes tokens. A chunk that overspends puts the bucket in debt, and the next chunk waits until it refills."],
+      ["cli", "On the CLI, <code>--limit-rate</code> puts one bucket on its Control. Same mechanism."],
+    ] },
+  { name: "5 · Ramping & stealing", boxes: ["download", "segmented", "chunk", "server", "part"],
+    arrows: ["toSeg", "segIO", "fetch", "write", "ckpt"],
+    about: "How a big file gets faster by splitting across connections.",
+    steps: [
+      ["toSeg", "Only a file of 2 MiB or more, on a server that sends byte ranges and gives an ETag, is split."],
+      ["segmented", "It starts on <b>Lane 1</b>. Every second it adds a lane while total speed keeps rising (up to 4 by default, 16 at most), and closes one when more stop helping."],
+      ["segIO", "Each lane runs its own chunk loop on its own piece of the file."],
+      ["fetch", "If the server says \"slow down\" (429 / 503), rdm backs off instead of adding lanes."],
+      ["segmented", "A lane that finishes <b>steals</b> the back half of the biggest piece left, so the end doesn't crawl."],
+      ["ckpt", "Each lane's progress is checkpointed, but only after its bytes are safely on disk."],
+    ] },
+  { name: "6 · Crash & restart", boxes: ["tauri", "manager", "state", "download", "part", "single", "segmented"],
+    arrows: ["commands", "persist", "task", "sidecar", "toSingle", "toSeg"],
+    about: "The power went out mid-download. What happens when you reopen the app.",
+    steps: [
+      ["tauri", "The app starts and builds the Manager."],
+      ["persist", "The Manager loads <code>state.json</code>. Anything that was running comes back <b>paused</b>, so opening the app never starts traffic by itself."],
+      ["task", "You click Resume, and <b>download()</b> runs on a new task."],
+      ["sidecar", "It reads the <code>.part</code> and sidecar. If they don't agree, or the server's file changed, it starts fresh."],
+      ["toSingle", "A one-connection download continues from the <code>.part</code> file's size."],
+      ["toSeg", "A segmented one re-fetches only the ranges its checkpoints don't cover."],
+    ] },
+  { name: "7 · Live view", boxes: ["single", "segmented", "chunk", "download", "manager", "tauri", "webview"],
+    arrows: ["singleIO", "segIO", "task", "commands", "events"],
+    about: "How the screen keeps up without being flooded.",
+    steps: [
+      ["chunk", "Every chunk just bumps a few counters: bytes so far, speed. Cheap."],
+      ["task", "That progress flows back up to the Manager."],
+      ["manager", "The Manager sends a <b>snapshot</b> of every download at most ~10 times a second. Big changes (finished, failed, paused) go out at once."],
+      ["tauri", "The Tauri shell is listening, and forwards each snapshot."],
+      ["events", "...as a <code>downloads-changed</code> event."],
+      ["webview", "React redraws the table, the lanes and the speed graph from it. The screen never asks; it's told."],
+    ] },
+];
+
+const svg = document.getElementById("diagram");
+const rc = rough.svg(svg);
+const NS = "http://www.w3.org/2000/svg";
+
+function addText(parent, x, y, str, { size = 16, anchor = "middle", color = C.ink } = {}) {
+  const t = document.createElementNS(NS, "text");
+  t.setAttribute("x", x); t.setAttribute("y", y);
+  t.setAttribute("text-anchor", anchor);
+  t.setAttribute("font-size", size);
+  t.style.fill = color;
+  t.textContent = str;
+  parent.appendChild(t);
+  return t;
+}
+
+function group(faded) {
+  const g = document.createElementNS(NS, "g");
+  if (faded) g.setAttribute("opacity", "0.15");
+  svg.appendChild(g);
+  return g;
+}
+
+function point(id, side, f) {
+  const [x, y, w, h] = boxes[id];
+  return { l: [x, y + h * f], r: [x + w, y + h * f], t: [x + w * f, y], b: [x + w * f, y + h] }[side];
+}
+
+function arrowHead(g, [x1, y1], [x2, y2], color, seed) {
+  const a = Math.atan2(y2 - y1, x2 - x1), len = 14;
+  for (const d of [-0.45, 0.45]) {
+    g.appendChild(rc.line(x2, y2, x2 - len * Math.cos(a + d), y2 - len * Math.sin(a + d),
+      { stroke: color, strokeWidth: 1.8, roughness: 0.8, seed }));
+  }
+}
+
+// Each part is "hot" (in this flow), "faded" (not in it), or plain (no flow picked).
+function stateOf(list, id) {
+  if (!list) return "plain";
+  return list.includes(id) ? "hot" : "faded";
+}
+
+// Where each arrow's label landed, so a step number can sit beside it rather than on it.
+const labelBoxes = {};
+
+// Where a step's number sits: a box's top-left corner, just left of an arrow's label, or an
+// unlabelled arrow's middle.
+function anchorOf(id) {
+  if (boxes[id]) { const [x, y] = boxes[id]; return [x + 4, y + 4]; }
+  const bb = labelBoxes[id];
+  if (bb) return [bb.x - 22, bb.y + bb.height / 2];
+  const [a, as, af, b, bs, bf] = arrows[id];
+  const p1 = point(a, as, af), p2 = point(b, bs, bf);
+  return [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+}
+
+function render(flow) {
+  svg.replaceChildren();
+  let seed = 1;
+
+  for (const [id, [x, y, w, h, label, style, dashed]] of Object.entries(boxes)) {
+    const isFrame = id in frameTitles;
+    const state = isFrame ? "plain" : stateOf(flow.boxes, id);
+    const g = group(state === "faded");
+    const [fill, stroke] = C[style];
+    g.appendChild(rc.rectangle(x, y, w, h, {
+      fill, fillStyle: isFrame ? "solid" : "hachure", hachureGap: 6, fillWeight: 1.2,
+      stroke: state === "hot" ? C.hot : stroke, strokeWidth: state === "hot" ? 3.5 : 2,
+      roughness: 1.3, strokeLineDash: dashed ? [8, 6] : undefined, seed: seed++,
+    }));
+    if (isFrame) {
+      const [tx, ty, title, color] = frameTitles[id];
+      addText(g, tx, ty, title, { anchor: "start", size: 17, color });
+      continue;
+    }
+    const lines = label.split("\n"), lh = 20;
+    const top = y + h / 2 - (lines.length - 1) * lh / 2 + 6;
+    lines.forEach((line, i) => addText(g, x + w / 2, top + i * lh, line, { size: i === 0 ? 19 : 15 }));
+  }
+
+  headings.forEach(([x, y, s]) => addText(svg, x, y, s, { anchor: "start", size: 15, color: C.grey }));
+
+  for (const [id, [a, as, af, b, bs, bf, label, opts = {}]] of Object.entries(arrows)) {
+    const state = stateOf(flow.arrows, id);
+    const g = group(state === "faded");
+    const p1 = point(a, as, af), p2 = point(b, bs, bf);
+    const color = state === "hot" ? C.hot : opts.dashed ? C.grey : C.ink;
+    const style = {
+      stroke: color, strokeWidth: state === "hot" ? 2.6 : 1.8, roughness: 1,
+      strokeLineDash: opts.dashed ? [8, 6] : undefined, seed: seed++,
+    };
+    let mid, from1 = p1, from2 = p2;
+    if (opts.via) {
+      const [cx, cy] = opts.via;
+      g.appendChild(rc.path(`M${p1[0]},${p1[1]} Q${cx},${cy} ${p2[0]},${p2[1]}`, style));
+      mid = [(p1[0] + 2 * cx + p2[0]) / 4, (p1[1] + 2 * cy + p2[1]) / 4];
+      from1 = from2 = [cx, cy];
+    } else {
+      g.appendChild(rc.line(...p1, ...p2, style));
+      mid = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+    }
+    arrowHead(g, from1, p2, color, seed++);
+    if (opts.both) arrowHead(g, from2, p1, color, seed++);
+    if (label) {
+      const t = addText(g, mid[0], mid[1] + 5, label, { size: 14 });
+      const bb = labelBoxes[id] = t.getBBox();
+      const bg = document.createElementNS(NS, "rect");
+      bg.setAttribute("x", bb.x - 4); bg.setAttribute("y", bb.y - 1);
+      bg.setAttribute("width", bb.width + 8); bg.setAttribute("height", bb.height + 2);
+      bg.setAttribute("fill", "#fdfdfb");
+      g.insertBefore(bg, t);
+    }
+  }
+
+  // Step numbers go on top of everything. A second step on the same spot sits beside the first.
+  const used = {};
+  (flow.steps || []).forEach(([id], i) => {
+    const repeat = used[id] = (used[id] ?? -1) + 1;
+    const [x, y] = anchorOf(id);
+    const g = document.createElementNS(NS, "g");
+    g.setAttribute("class", "badge");
+    g.dataset.step = i;
+    const c = document.createElementNS(NS, "circle");
+    c.setAttribute("cx", x + repeat * 40); c.setAttribute("cy", y);
+    c.setAttribute("r", 17); c.setAttribute("fill", C.hot);
+    c.setAttribute("stroke", "#fff"); c.setAttribute("stroke-width", 3);
+    g.appendChild(c);
+    addText(g, x + repeat * 40, y + 7, String(i + 1), { size: 20, color: "#fff" });
+    svg.appendChild(g);
+  });
+}
+
+function highlight(i, on) {
+  svg.querySelector(`.badge[data-step="${i}"]`)?.classList.toggle("on", on);
+  walkEl.children[i]?.classList.toggle("on", on);
+}
+
+// Flow picker. The current flow is kept in the URL (#flow=3) so a view can be linked.
+const stepsEl = document.getElementById("steps"), aboutEl = document.getElementById("about");
+const walkEl = document.getElementById("walk"), zoomEl = document.getElementById("zoom");
+function select(n) {
+  const flow = flows[n];
+  render(flow);
+  aboutEl.innerHTML = flow.about;
+  walkEl.replaceChildren(...(flow.steps || []).map(([, text], i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="n">${i + 1}</span><span>${text}</span>`;
+    li.onmouseenter = () => highlight(i, true);
+    li.onmouseleave = () => highlight(i, false);
+    return li;
+  }));
+  svg.querySelectorAll(".badge").forEach(b => {
+    b.onmouseenter = () => highlight(+b.dataset.step, true);
+    b.onmouseleave = () => highlight(+b.dataset.step, false);
+  });
+  stepsEl.querySelectorAll("button[data-flow]").forEach(b => b.setAttribute("aria-pressed", +b.dataset.flow === n));
+  try { history.replaceState(null, "", n ? `#flow=${n}` : location.pathname); } catch {} // can fail on file:// URLs
+}
+flows.forEach(({ name }, n) => {
+  const b = document.createElement("button");
+  b.textContent = name;
+  b.dataset.flow = n;
+  b.onclick = () => select(n);
+  stepsEl.insertBefore(b, zoomEl);
+});
+zoomEl.onclick = () => {
+  const full = document.body.classList.toggle("full");
+  zoomEl.textContent = full ? "Fit to screen" : "Full size";
+};
+const fromHash = Number((location.hash.match(/flow=(\d)/) || [])[1]);
+document.fonts.ready.then(() => select(flows[fromHash] ? fromHash : 0));
+</script>
+</body>
+</html>

@@ -164,6 +164,8 @@ redacted, like any URL's.
 All download logic lives in the `rdm` engine library. The CLI and the GUI
 (Tauri + React) are thin frontends over it: they start, pause, resume and
 display downloads, but don't fetch anything themselves.
+[The architecture diagram](architecture.html) shows the components and
+follows a download through them.
 
 ## When something goes wrong
 
