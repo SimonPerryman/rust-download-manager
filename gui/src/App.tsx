@@ -113,6 +113,8 @@ export default function App() {
   const { detailsId, setDetailsId, detailsRow, onDetails, closeDetails } = useDetails({
     downloads,
     seeded,
+    selection: sel,
+    visibleIds,
     selectRow: selection.click,
     tableRef,
   });

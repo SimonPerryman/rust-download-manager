@@ -11,14 +11,17 @@ import {
   ROW,
   addThroughDialog,
   baseUrl,
+  clickRow,
   downloadDir,
   filterCount,
   folderButton,
   removeAll,
   retype,
+  rowById,
   selectFilter,
   setMaxConcurrent,
   shownIds,
+  waitForGone,
   waitForStatus,
   waitForText,
 } from "../helpers";
@@ -189,5 +192,24 @@ describe("rdm GUI filters", () => {
       },
       { timeoutMsg: "clearing the name filter didn't bring every row back" },
     );
+  });
+
+  it("moves the open details pane to the row the selection lands on", async () => {
+    await selectFilter("all");
+    const paneFor = (id: number) => `[data-testid="details-pane"][data-id="${id}"]`;
+    await clickRow(completed);
+    await $(paneFor(completed)).waitForDisplayed();
+
+    // Ctrl-click adds a row: the pane stays on its still-selected row.
+    await clickRow(failed, { ctrlKey: true });
+    await expect($(paneFor(completed))).toBeDisplayed();
+    // Ctrl-click drops that row: only `failed` stays selected, and the pane follows it.
+    await clickRow(completed, { ctrlKey: true });
+    await expect(rowById(completed)).toHaveAttribute("aria-selected", "false");
+    await $(paneFor(failed)).waitForDisplayed();
+    await waitForGone(paneFor(completed));
+
+    await $('button[aria-label="Close details"]').click();
+    await waitForGone('[data-testid="details-pane"]');
   });
 });
