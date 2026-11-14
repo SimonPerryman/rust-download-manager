@@ -33,6 +33,14 @@ const ICON: Record<RowActionKey, (p: { size?: number }) => React.ReactNode> = {
   downloadAgain: DownloadAgain,
 };
 
+// The labelled Open is 4rem. Locate… takes its place and the empty Show in folder slot
+// (4rem + 0.25rem gap + 1.5rem icon button), so its left edge lines up with Open's and
+// Archive stays in its column. Widths are fixed so the label never truncates.
+const LABELLED_WIDTH: Partial<Record<RowActionKey, string>> = {
+  open: "min-w-16",
+  locate: "w-[5.75rem]",
+};
+
 type Props = {
   d: DownloadSnapshot;
   lingering: boolean;
@@ -129,7 +137,7 @@ function ActionButton({
       aria-label={action.label}
       title={title}
       onClick={onClick}
-      className={`btn btn-sm ${action.style === "primary" ? "btn-primary" : "btn-soft"}`}
+      className={`btn btn-sm justify-center ${action.style === "primary" ? "btn-primary" : "btn-soft"} ${LABELLED_WIDTH[action.key] ?? ""}`}
     >
       <Icon size={14} />
       <span className="act-label">{action.label}</span>

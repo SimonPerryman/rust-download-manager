@@ -14,6 +14,7 @@ import {
   engineRow,
   filterCount,
   openLog,
+  rectOf,
   removeAll,
   rowById,
   rowSelector,
@@ -82,6 +83,21 @@ describe("rdm GUI missing files", () => {
     await selectFilter("done");
     expect(await shownIds()).toContain(id);
     await selectFilter("all");
+  });
+
+  it("Locate… lines up with a finished row's Open and leaves Archive in its column", async () => {
+    const { id: lostId } = await addAndLoseFile(ids);
+    // A just-finished row shows the labelled Open button.
+    const okId = await addThroughDialog(`${baseUrl}/file`);
+    ids.push(okId);
+    await waitForStatus(okId, "completed", 30_000);
+
+    const locate = await rectOf(await rowById(lostId).$("button=Locate…"));
+    const open = await rectOf(await rowById(okId).$('button[aria-label="Open"]'));
+    expect(Math.abs(locate.x - open.x)).toBeLessThan(1);
+    const lostArchive = await rectOf(await rowById(lostId).$('button[aria-label="Archive"]'));
+    const okArchive = await rectOf(await rowById(okId).$('button[aria-label="Archive"]'));
+    expect(Math.abs(lostArchive.x - okArchive.x)).toBeLessThan(1);
   });
 
   it("Locate… relinks the record to the chosen file and clears the flag", async () => {
