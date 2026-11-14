@@ -5,7 +5,6 @@ import {
   deletedPartialMessage,
   emptyCopy,
   openFailedMessage,
-  relinkedMessage,
   removedMissingMessage,
   removeSelectedTitle,
   retryAllMessage,
@@ -17,7 +16,8 @@ import { EMPTY_WORK } from "./lib/laneWork";
 import { selectionActions } from "./lib/menu";
 import { queueOrder, stepIndex } from "./lib/queue";
 import { pauseAllMode, totalSpeed } from "./lib/rowView";
-import type { DownloadSnapshot } from "./lib/types";
+import { acceptOffer, locateFolderFor, locateOne } from "./lib/locate";
+import type { DownloadSnapshot, SameFolderOffer } from "./lib/types";
 import { useArchive } from "./lib/useArchive";
 import { useBulkCommands } from "./lib/useBulkCommands";
 import { useDetails } from "./lib/useDetails";
@@ -54,6 +54,7 @@ import { DownloadTable } from "./components/table/DownloadTable";
 import { RowMenu } from "./components/table/RowMenu";
 import { Toolbar } from "./components/toolbar/Toolbar";
 import { FirstRunCard } from "./components/updater/FirstRunCard";
+import { SameFolderOfferBar } from "./components/missing/SameFolderOfferBar";
 import { PausedForUpdateBar } from "./components/updater/PausedForUpdateBar";
 import { UpdateNotice } from "./components/updater/UpdateNotice";
 
@@ -146,11 +147,30 @@ export default function App() {
     [fail],
   );
 
+  const [sameFolderOffer, setSameFolderOffer] = useState<SameFolderOffer | null>(null);
   const locateDownload = useCallback(
     (d: DownloadSnapshot) => {
-      api
-        .locateDownload(d.id)
-        .then((relinked) => relinked && notify(relinkedMessage(d)))
+      locateOne(d)
+        .then(({ message, offer }) => {
+          if (message) notify(message);
+          setSameFolderOffer(offer);
+        })
+        .catch(fail);
+    },
+    [notify, fail],
+  );
+  const acceptSameFolderOffer = useCallback(() => {
+    setSameFolderOffer(null);
+    acceptOffer().then(notify).catch(fail);
+  }, [notify, fail]);
+  const dismissSameFolderOffer = useCallback(() => {
+    setSameFolderOffer(null);
+    api.dismissSameFolderOffer().catch(fail);
+  }, [fail]);
+  const locateFolder = useCallback(
+    (rows: DownloadSnapshot[]) => {
+      locateFolderFor(rows)
+        .then((message) => message && notify(message))
         .catch(fail);
     },
     [notify, fail],
@@ -224,6 +244,7 @@ export default function App() {
     open: openDownload,
     reveal: revealDownload,
     locate: locateDownload,
+    locateFolder,
     forget: forgetMissing,
     retryAll,
     askStop: setStopIds,
@@ -352,6 +373,11 @@ export default function App() {
             onNotes={() => api.openUpdateNotes().catch(fail)}
             onRetry={() => void updater.retry()}
             onDismiss={() => updater.dismiss()}
+          />
+          <SameFolderOfferBar
+            offer={sameFolderOffer}
+            onAccept={acceptSameFolderOffer}
+            onDismiss={dismissSameFolderOffer}
           />
           <PausedForUpdateBar
             count={pausedBarCount(downloads, updates)}

@@ -2,6 +2,7 @@ import type { MenuCommand } from "../../lib/menu";
 import { Archive } from "../icons/Archive";
 import { ArchiveRestore } from "../icons/ArchiveRestore";
 import { ExternalLink } from "../icons/ExternalLink";
+import { Folder } from "../icons/Folder";
 import { ListRemove } from "../icons/ListRemove";
 import { Pause } from "../icons/Pause";
 import { Play } from "../icons/Play";
@@ -13,6 +14,7 @@ import { X } from "../icons/X";
 const BUTTON: Partial<
   Record<MenuCommand, { label: string; Icon: (p: { size?: number }) => React.ReactNode }>
 > = {
+  locateFolder: { label: "Locate folder…", Icon: Folder },
   open: { label: "Open", Icon: ExternalLink },
   pause: { label: "Pause", Icon: Pause },
   resume: { label: "Resume", Icon: Play },

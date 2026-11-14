@@ -122,3 +122,22 @@ export interface Settings {
 /** The Proxy setting: the system's proxy (the default), none, or a URL. */
 export type ProxySetting = { mode: "system" } | { mode: "none" } | { mode: "custom"; url: string };
 export type ProxyModeName = ProxySetting["mode"];
+
+/** Other missing downloads the engine found in a relinked file's new folder (not yet relinked). */
+export interface SameFolderOffer {
+  count: number;
+  old_folder: string;
+  new_folder: string;
+}
+
+/** What Locate… did: whether it relinked, and any offer to relink more from the same folder. */
+export interface LocateOutcome {
+  relinked: boolean;
+  offer: SameFolderOffer | null;
+}
+
+/** What Locate folder… did, as counts of the selected missing downloads. */
+export interface FolderOutcome {
+  relinked: number;
+  not_found: number;
+}

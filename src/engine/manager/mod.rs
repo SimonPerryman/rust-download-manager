@@ -45,7 +45,7 @@ use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Stor
 use crate::engine::tally::Tally;
 use crate::engine::{Checksum, Control, RateLimiter, Segment};
 use files::{has_partial, remove_partial};
-pub use missing::MissingChange;
+pub use missing::{FolderMatch, FolderRelink, MissingChange, SameFolderOffer};
 
 /// Minimum wall-clock gap between progress-driven snapshot publishes.
 const PUBLISH_INTERVAL: Duration = Duration::from_millis(100);

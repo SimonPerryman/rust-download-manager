@@ -4,12 +4,13 @@
 // record to a chosen file (the OS picker is replaced by the RDM_LOCATE_PATH seam) and
 // clears the flag; Remove from list drops only the record.
 
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { $, browser, expect } from "@wdio/globals";
 import {
   addThroughDialog,
   baseUrl,
+  clickRow,
   clickRowAction,
   engineRow,
   filterCount,
@@ -20,6 +21,7 @@ import {
   rowSelector,
   selectFilter,
   shownIds,
+  TOAST,
   waitForAttr,
   waitForGone,
   waitForStatus,
@@ -28,21 +30,61 @@ import {
 
 const PANE = '[data-testid="details-pane"]';
 const BANNER = '[data-testid="missing-banner"]';
+const OFFER = '[data-testid="same-folder-offer"]';
+const SELECTION_BAR = '[data-testid="selection-bar"]';
 
-/** Adds /file, waits for it to finish, deletes its file and lets Open's check flag the row. */
-async function addAndLoseFile(ids: number[]): Promise<{ id: number; oldPath: string }> {
+type Finished = { id: number; oldPath: string; size: number };
+
+/** Adds /file and waits for it to finish. */
+async function addFinished(ids: number[]): Promise<Finished> {
   const id = await addThroughDialog(`${baseUrl}/file`);
   ids.push(id);
   await waitForStatus(id, "completed", 30_000);
   const oldPath = (await engineRow(id))!.final_path!;
   expect(existsSync(oldPath)).toBe(true);
-  rmSync(oldPath);
+  return { id, oldPath, size: statSync(oldPath).size };
+}
 
+/** Deletes the file and lets Open's check flag the row. */
+async function loseFile({ id, oldPath }: Finished): Promise<void> {
+  rmSync(oldPath);
   // Open checks the file right before opening it: it flags the row and opens nothing.
   await clickRowAction(id, "Open");
   await waitForAttr(id, "data-missing", "true", 15_000);
   expect(openLog().some((l) => l.startsWith(`open ${oldPath}`))).toBe(false);
-  return { id, oldPath };
+}
+
+/** Adds /file, waits for it to finish, deletes its file and lets Open's check flag the row. */
+async function addAndLoseFile(ids: number[]): Promise<Finished> {
+  const f = await addFinished(ids);
+  await loseFile(f);
+  return f;
+}
+
+/**
+ * Several downloads at once, finished before any file goes: a name is free again once its file
+ * is deleted, so one by one they could all be called "file".
+ */
+async function addAndLoseFiles(ids: number[], count: number): Promise<Finished[]> {
+  const all: Finished[] = [];
+  for (let i = 0; i < count; i++) all.push(await addFinished(ids));
+  for (const f of all) await loseFile(f);
+  return all;
+}
+
+/** Puts a file named `name` of `size` bytes in `dir`, as if the user had moved it there. */
+function putFile(dir: string, name: string, size: number): string {
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, name);
+  writeFileSync(file, Buffer.alloc(size, 1));
+  return file;
+}
+
+async function toastTexts(): Promise<string[]> {
+  return browser.execute(
+    (sel) => Array.from(document.querySelectorAll<HTMLElement>(sel)).map((t) => t.innerText),
+    TOAST,
+  );
 }
 
 async function openDetails(id: number): Promise<void> {
@@ -53,6 +95,7 @@ async function openDetails(id: number): Promise<void> {
 describe("rdm GUI missing files", () => {
   const ids: number[] = [];
   const located = process.env.RDM_LOCATE_PATH!;
+  const locatedFolder = process.env.RDM_LOCATE_DIR!;
 
   before(async () => {
     await selectFilter("all");
@@ -62,6 +105,7 @@ describe("rdm GUI missing files", () => {
     await selectFilter("all");
     await removeAll(ids);
     rmSync(path.dirname(located), { recursive: true, force: true });
+    rmSync(locatedFolder, { recursive: true, force: true });
   });
 
   it("flags the row, counts it under Completed and Missing, and lists it in the Missing filter", async () => {
@@ -115,6 +159,8 @@ describe("rdm GUI missing files", () => {
     const row = (await engineRow(id))!;
     expect(path.resolve(row.final_path!)).toBe(path.resolve(located));
     expect(row.status).toBe("completed");
+    // No other missing download has a file in the new folder, so nothing is offered.
+    await expect($(OFFER)).not.toBeExisting();
     await waitForText(`${rowSelector(id)} .fn`, path.basename(located));
     // Opening now works: the new file is checked and opened.
     await clickRowAction(id, "Open");
@@ -131,5 +177,66 @@ describe("rdm GUI missing files", () => {
     await waitForGone(rowSelector(id), "the row stayed after Remove from list");
     expect(await engineRow(id)).toBeUndefined();
     expect(existsSync(oldPath)).toBe(false);
+  });
+
+  it("offers the other missing downloads found in the new folder, and relinks them on accept", async () => {
+    const [a, b] = await addAndLoseFiles(ids, 2);
+    // B's file is in the folder A will be relinked into, with its name and exact size.
+    const moved = putFile(path.dirname(located), path.basename(b.oldPath), b.size);
+    writeFileSync(located, "found again");
+    await openDetails(a.id);
+    await $(BANNER).$("button=Locate…").click();
+
+    await waitForAttr(a.id, "data-missing", null, 15_000);
+    await $(OFFER).waitForDisplayed();
+    expect(await $(OFFER).getText()).toContain("1 other missing download");
+    // Offering relinks nothing: B is still flagged until the user accepts.
+    expect((await engineRow(b.id))!.file_missing).toBe(true);
+
+    await $(OFFER).$("button=Relink it").click();
+    await waitForAttr(b.id, "data-missing", null, 15_000);
+    await waitForGone(OFFER, "the offer stayed after accepting");
+    expect(path.resolve((await engineRow(b.id))!.final_path!)).toBe(path.resolve(moved));
+  });
+
+  it("leaves the others missing when the offer is dismissed", async () => {
+    const [a, b] = await addAndLoseFiles(ids, 2);
+    putFile(path.dirname(located), path.basename(b.oldPath), b.size);
+    writeFileSync(located, "found again");
+    await openDetails(a.id);
+    await $(BANNER).$("button=Locate…").click();
+    await waitForAttr(a.id, "data-missing", null, 15_000);
+    await $(OFFER).waitForDisplayed();
+
+    await $(OFFER).$('button[aria-label="Dismiss"]').click();
+    await waitForGone(OFFER, "the offer stayed after Dismiss");
+    expect((await engineRow(b.id))!.file_missing).toBe(true);
+  });
+
+  it("Locate folder… relinks every selected missing row found in one folder and reports the rest", async () => {
+    const [x, y, z] = await addAndLoseFiles(ids, 3);
+    rmSync(locatedFolder, { recursive: true, force: true });
+    const fx = putFile(locatedFolder, path.basename(x.oldPath), x.size);
+    const fy = putFile(locatedFolder, path.basename(y.oldPath), y.size);
+    // Z's name is there but the size is wrong, so it doesn't match.
+    putFile(locatedFolder, path.basename(z.oldPath), z.size + 1);
+
+    await clickRow(x.id);
+    await clickRow(y.id, { ctrlKey: true });
+    await clickRow(z.id, { ctrlKey: true });
+    await $(SELECTION_BAR).$('button[aria-label="Locate folder…"]').click();
+
+    await waitForAttr(x.id, "data-missing", null, 15_000);
+    await waitForAttr(y.id, "data-missing", null, 15_000);
+    expect(path.resolve((await engineRow(x.id))!.final_path!)).toBe(path.resolve(fx));
+    expect(path.resolve((await engineRow(y.id))!.final_path!)).toBe(path.resolve(fy));
+    expect((await engineRow(z.id))!.file_missing).toBe(true);
+    await browser.waitUntil(
+      async () =>
+        (await toastTexts()).some((t) =>
+          t.includes("Relinked 2 downloads. 1 wasn't found in that folder."),
+        ),
+      { timeoutMsg: "the Locate folder… toast never showed the counts" },
+    );
   });
 });
