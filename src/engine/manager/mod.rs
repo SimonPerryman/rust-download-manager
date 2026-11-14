@@ -20,6 +20,7 @@
 mod archive;
 mod commands;
 mod files;
+mod missing;
 mod observe;
 mod persist;
 mod queue;
@@ -44,6 +45,7 @@ use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Stor
 use crate::engine::tally::Tally;
 use crate::engine::{Checksum, Control, RateLimiter, Segment};
 use files::{has_partial, remove_partial};
+pub use missing::MissingChange;
 
 /// Minimum wall-clock gap between progress-driven snapshot publishes.
 const PUBLISH_INTERVAL: Duration = Duration::from_millis(100);
@@ -116,6 +118,9 @@ pub struct DownloadSnapshot {
     pub archived: bool,
     /// User labels, in the order added.
     pub tags: Vec<String>,
+    /// A completed download whose file was not found at its last check (see
+    /// [`Manager::check_missing`]); derived, never saved. Still `Completed`.
+    pub file_missing: bool,
 }
 
 /// Optional extras for [`Manager::add_with`].
@@ -165,6 +170,8 @@ struct Entry {
     started: Option<Instant>,
     /// Totals for the finish summary, across this download's runs here.
     tally: Arc<Tally>,
+    /// See [`DownloadSnapshot::file_missing`].
+    file_missing: bool,
 }
 
 impl Entry {
@@ -182,6 +189,7 @@ impl Entry {
             peak_lanes: 0,
             started: None,
             tally: Arc::default(),
+            file_missing: false,
         }
     }
 
@@ -226,6 +234,7 @@ impl Entry {
             active_ms: self.active_ms(),
             archived: self.record.archived,
             tags: self.record.tags.clone(),
+            file_missing: self.file_missing && self.record.status == Status::Completed,
         }
     }
 
@@ -280,6 +289,10 @@ struct Inner {
     global: Arc<RateLimiter>,
     /// Each download's recent log lines, filled by [`Manager::log_layer`].
     logs: Arc<DownloadLogs>,
+    /// Announces each change of a download's missing flag.
+    missing_tx: tokio::sync::broadcast::Sender<MissingChange>,
+    /// Folders a check is listing now, so a repeat check skips them.
+    missing_busy: Mutex<std::collections::HashSet<PathBuf>>,
 }
 
 /// Coordinates many concurrent downloads over the engine's [`download`](crate::engine::download).
