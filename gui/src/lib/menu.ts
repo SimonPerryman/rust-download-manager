@@ -11,6 +11,7 @@ export type MenuCommand =
   | "open"
   | "reveal"
   | "locate"
+  | "locateFolder"
   | "forget"
   | "pause"
   | "resume"
@@ -65,6 +66,8 @@ export function menuItems(
   const missing = one != null && isMissing(one);
   if (missing) {
     out.push(item("locate", "Locate…"));
+  } else if (list.filter(isMissing).length >= 2) {
+    out.push(item("locateFolder", "Locate folder…"));
   } else if (any(done)) {
     out.push(item("open", "Open", one ? "Enter" : undefined));
     if (one) out.push(item("reveal", "Show in folder"));
@@ -127,6 +130,7 @@ export function selectionActions(
 ): MenuCommand[] {
   const has = (f: (d: DownloadSnapshot) => boolean) => list.some(f);
   const out: MenuCommand[] = [];
+  if (list.filter(isMissing).length >= 2) out.push("locateFolder");
   if (has((d) => d.status === "completed")) out.push("open");
   if (has(isPausable)) out.push("pause");
   if (toResume(list).length) out.push("resume");

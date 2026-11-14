@@ -16,7 +16,10 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use rdm::{AddOptions, Checksum, DownloadSnapshot, JsonStore, LogLine, Manager, Settings, Status};
+use rdm::{
+    AddOptions, Checksum, DownloadSnapshot, JsonStore, LogLine, Manager, SameFolderOffer, Settings,
+    Status,
+};
 use tauri::{Emitter, Manager as _, State};
 use tauri_plugin_opener::OpenerExt;
 
@@ -25,6 +28,9 @@ struct AppState {
     manager: Arc<Manager>,
     /// Spaces out the missing-file checks that window focus triggers.
     focus_check: std::sync::Mutex<FocusThrottle>,
+    /// The same-folder offer awaiting the user's answer. Held here so the webview
+    /// accepts it by saying yes, never by naming paths.
+    pending_offer: std::sync::Mutex<Option<SameFolderOffer>>,
 }
 
 /// Fewest time between two focus-triggered missing-file checks.
@@ -417,18 +423,42 @@ async fn checked_file(manager: &Manager, id: u64) -> Result<PathBuf, String> {
     manager.completed_file(id).map_err(|e| e.to_string())
 }
 
+/// The offer after a Locate…: other missing downloads from the same old folder
+/// that are in the new one. Nothing is relinked until it is accepted.
+#[derive(serde::Serialize)]
+struct OfferInfo {
+    count: usize,
+    old_folder: String,
+    new_folder: String,
+}
+
+/// What Locate… did: whether it relinked, and any same-folder offer.
+#[derive(serde::Serialize)]
+struct LocateOutcome {
+    relinked: bool,
+    offer: Option<OfferInfo>,
+}
+
+/// What Locate folder… did, as counts.
+#[derive(serde::Serialize)]
+struct FolderOutcome {
+    relinked: usize,
+    not_found: usize,
+}
+
 /// Let the user locate the file of missing download `id` in a native file
-/// picker and relink the record to it. Resolves `true` once relinked, `false`
-/// if they cancelled. The webview never names the path.
+/// picker and relink the record to it. Reports whether it relinked (not if
+/// they cancelled) and any offer to relink more from the same folder. The
+/// webview never names the path.
 #[tauri::command]
 async fn locate_download(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     id: u64,
-) -> Result<bool, String> {
+) -> Result<LocateOutcome, String> {
     use tauri_plugin_dialog::DialogExt;
     let manager = state.manager.clone();
-    commands_guard::contained("locate_download", async move {
+    let outcome = commands_guard::contained("locate_download", async move {
         let old_folder = manager
             .snapshot()
             .into_iter()
@@ -454,10 +484,95 @@ async fn locate_download(
             }
         };
         let Some(path) = picked else {
-            return Ok(false);
+            return Ok(None);
         };
-        manager.relink(id, &path).map_err(|e| e.to_string())?;
-        Ok(true)
+        let blocking = manager.clone();
+        let offer = tokio::task::spawn_blocking(move || blocking.relink_with_offer(id, &path))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+        Ok(Some(offer))
+    })
+    .await?;
+    let offer = outcome.clone().flatten();
+    let info = offer.as_ref().map(|o| OfferInfo {
+        count: o.matches.len(),
+        old_folder: o.old_folder.display().to_string(),
+        new_folder: o.new_folder.display().to_string(),
+    });
+    *lock_offer(&state) = offer;
+    Ok(LocateOutcome {
+        relinked: outcome.is_some(),
+        offer: info,
+    })
+}
+
+fn lock_offer<'a>(
+    state: &'a State<'_, AppState>,
+) -> std::sync::MutexGuard<'a, Option<SameFolderOffer>> {
+    state
+        .pending_offer
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Relink the downloads of the pending same-folder offer, if there is one.
+/// Resolves with how many were relinked.
+#[tauri::command]
+async fn accept_same_folder_offer(state: State<'_, AppState>) -> Result<usize, String> {
+    let Some(offer) = lock_offer(&state).take() else {
+        return Ok(0);
+    };
+    let manager = state.manager.clone();
+    commands_guard::contained("accept_same_folder_offer", async move {
+        tokio::task::spawn_blocking(move || manager.apply_matches(&offer.matches))
+            .await
+            .map_err(|e| e.to_string())
+    })
+    .await
+}
+
+/// Drop the pending same-folder offer without relinking anything.
+#[tauri::command]
+fn dismiss_same_folder_offer(state: State<'_, AppState>) {
+    lock_offer(&state).take();
+}
+
+/// Let the user pick one folder and relink each of the missing downloads `ids`
+/// whose same-named, same-sized file is in it. Resolves `None` if they
+/// cancelled. The webview names ids only; the folder comes from the picker.
+#[tauri::command]
+async fn locate_folder(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    ids: Vec<u64>,
+) -> Result<Option<FolderOutcome>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let manager = state.manager.clone();
+    commands_guard::contained("locate_folder", async move {
+        let picked = match test_seam(LOCATE_DIR_ENV) {
+            Some(dir) => Some(dir),
+            None => {
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                app.dialog().file().pick_folder(move |path| {
+                    let _ = tx.send(path);
+                });
+                match rx.await.ok().flatten() {
+                    Some(path) => Some(path.into_path().map_err(|e| e.to_string())?),
+                    None => None,
+                }
+            }
+        };
+        let Some(folder) = picked else {
+            return Ok(None);
+        };
+        let result = tokio::task::spawn_blocking(move || manager.relink_from_folder(&ids, &folder))
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(Some(FolderOutcome {
+            relinked: result.relinked.len(),
+            not_found: result.not_found.len(),
+        }))
     })
     .await
 }
@@ -479,6 +594,10 @@ const OPEN_LOG_ENV: &str = "RDM_OPEN_LOG";
 /// When set, `locate_download` relinks to this file instead of asking with a
 /// file picker. Test builds only (see [`test_seam`]).
 const LOCATE_PATH_ENV: &str = "RDM_LOCATE_PATH";
+
+/// When set, `locate_folder` relinks from this folder instead of asking with a
+/// folder picker. Test builds only (see [`test_seam`]).
+const LOCATE_DIR_ENV: &str = "RDM_LOCATE_DIR";
 
 /// A path from test-only environment variable `key`. Honoured only in the
 /// `fault-injection` (e2e) build, so a shipped app ignores these variables.
@@ -795,6 +914,7 @@ pub fn run() {
             app.manage(AppState {
                 manager,
                 focus_check: std::sync::Mutex::new(FocusThrottle::new(FOCUS_CHECK_EVERY)),
+                pending_offer: std::sync::Mutex::new(None),
             });
             let version = app.package_info().version.to_string();
             app.manage(updater::prefs::PrefsStore::open(&home, &version));
@@ -844,6 +964,9 @@ pub fn run() {
             open_download,
             reveal_download,
             locate_download,
+            accept_same_folder_offer,
+            dismiss_same_folder_offer,
+            locate_folder,
             check_for_update,
             install_update,
             staged_update,

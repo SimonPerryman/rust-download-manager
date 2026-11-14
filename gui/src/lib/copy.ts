@@ -200,6 +200,31 @@ export function relinkedMessage(d: DownloadSnapshot): string {
   return `Relinked ${d.filename} to the file you chose.`;
 }
 
+/** The same-folder offer's line after a Locate…: the others found in the new folder. */
+export function sameFolderOfferLine(count: number): string {
+  return count === 1
+    ? "1 other missing download from the old folder is in the folder you chose."
+    : `${count} other missing downloads from the old folder are in the folder you chose.`;
+}
+
+/** The toast after the same-folder offer was accepted. */
+export function sameFolderAcceptedMessage(n: number): string {
+  if (n === 0) return "Couldn't relink them: the files have changed since.";
+  return n === 1 ? "Relinked 1 more download." : `Relinked ${n} more downloads.`;
+}
+
+/** The toast after Locate folder…: how many of the selected downloads were found there. */
+export function locateFolderMessage(relinked: number, notFound: number): string {
+  if (relinked === 0) {
+    return notFound === 1
+      ? "That download's file isn't in that folder."
+      : `None of the ${notFound} downloads' files are in that folder.`;
+  }
+  const done = relinked === 1 ? "Relinked 1 download." : `Relinked ${relinked} downloads.`;
+  if (notFound === 0) return done;
+  return `${done} ${notFound === 1 ? "1 wasn't" : `${notFound} weren't`} found in that folder.`;
+}
+
 /** Remove from list's toast for a missing download: only the record goes. */
 export function removedMissingMessage(d: DownloadSnapshot): string {
   return `Removed ${d.filename} from the list.`;

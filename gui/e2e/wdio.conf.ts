@@ -43,6 +43,8 @@ export const config: WebdriverIO.Config = {
     process.env.RDM_SAVE_PATH = path.join(e2eRoot, "saved.log");
     // The missing-file spec's Locate… relinks to this file instead of asking with a file picker.
     process.env.RDM_LOCATE_PATH = path.join(e2eRoot, "located", "replacement.bin");
+    // The missing-file spec's Locate folder… relinks from this folder instead of asking with a picker.
+    process.env.RDM_LOCATE_DIR = path.join(e2eRoot, "located-folder");
     console.log(`E2E temp root: ${e2eRoot}`);
 
     // Automatic update checks answered "no", so only the updater spec ever
