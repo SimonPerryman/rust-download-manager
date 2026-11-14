@@ -81,6 +81,8 @@ Interrupted, or pressed Ctrl-C? Run the same command again to resume. The
   for a bug report.
 - [How it works](docs/how-it-works.md): segmenting, resume, retries and
   integrity checks.
+- [Architecture diagram](docs/architecture.html): the components and how a
+  download flows through them (open the file in a browser).
 - [Contributing](CONTRIBUTING.md): building and testing from source, and
   cutting a release.
 
