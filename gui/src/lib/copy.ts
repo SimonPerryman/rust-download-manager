@@ -195,9 +195,48 @@ export function retryAllMessage(failed: readonly DownloadSnapshot[]): string {
 /** The details banner's heading for a finished download whose file is gone. */
 export const missingBannerText = "This file is no longer where it was saved.";
 
-/** The toast after Locate… relinked a download to the file the user chose. */
-export function relinkedMessage(d: DownloadSnapshot): string {
-  return `Relinked ${d.filename} to the file you chose.`;
+const lastPart = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+
+/**
+ * The toast after Locate… relinked `oldPath` (a row's old file) to `newPath`: the same name says
+ * which folder it is in now, a different name says what the row is called now.
+ */
+export function relinkedMessage(oldPath: string, newPath: string): string {
+  const oldName = lastPart(oldPath);
+  const newName = lastPart(newPath);
+  if (oldName !== newName) return `Relinked ${oldName}, now named ${newName}`;
+  const folder = lastPart(newPath.slice(0, newPath.length - newName.length));
+  return `Relinked ${newName} (now in ${folder})`;
+}
+
+/** The same-folder offer's line after a Locate…: the others found in the new folder. */
+export function sameFolderOfferLine(count: number): string {
+  return count === 1
+    ? "1 other missing download from the old folder is in the folder you chose."
+    : `${count} other missing downloads from the old folder are in the folder you chose.`;
+}
+
+/** The toast after the same-folder offer was accepted. */
+export function sameFolderAcceptedMessage(n: number): string {
+  if (n === 0) return "Couldn't relink them: the files have changed since.";
+  return n === 1 ? "Relinked 1 more download." : `Relinked ${n} more downloads.`;
+}
+
+/** The label of the toast action that jumps to the downloads Locate folder… didn't find. */
+export const showNotFoundLabel = "Show not found";
+
+/** The toast after Locate folder…: how many of the selected downloads were found there. */
+export function locateFolderMessage(relinked: number, notFound: number): string {
+  if (relinked === 0) {
+    return notFound === 1
+      ? "That download's file isn't in that folder."
+      : `None of the ${notFound} downloads' files are in that folder.`;
+  }
+  if (notFound === 0) {
+    return relinked === 1 ? "Relinked 1 download." : `Relinked ${relinked} downloads.`;
+  }
+  const rest = notFound === 1 ? "1 wasn't" : `${notFound} weren't`;
+  return `Relinked ${relinked}. ${rest} found in that folder.`;
 }
 
 /** Remove from list's toast for a missing download: only the record goes. */

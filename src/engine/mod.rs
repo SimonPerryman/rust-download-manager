@@ -46,7 +46,10 @@ pub use download_log::{LogLevel, LogLine, LOG_LINES};
 pub(crate) use http::{status_error, throttle_wait};
 pub use integrity::{Algo, Checksum};
 pub use limit::{parse_rate, RateLimiter};
-pub use manager::{AddOptions, DownloadSnapshot, Manager, MissingChange};
+pub use manager::{
+    AddOptions, DownloadSnapshot, FolderMatch, FolderRelink, Manager, MissingChange,
+    SameFolderOffer,
+};
 pub use progress::{Progress, SpeedMeter};
 pub use proxy::{Proxy, ProxyMode};
 #[doc(hidden)]

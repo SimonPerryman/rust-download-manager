@@ -25,6 +25,22 @@ describe("menuItems for a missing file", () => {
   });
 });
 
+describe("Locate folder…", () => {
+  const gone = (id: number) => snap({ id, status: "completed", file_missing: true });
+
+  it("is offered for several missing rows, in the menu and the selection bar", () => {
+    expect(menu([gone(1), gone(2)])[0]).toBe("Locate folder…");
+    expect(selectionActions([gone(1), gone(2)])[0]).toBe("locateFolder");
+  });
+
+  it("is not offered for one missing row or when fewer than two are missing", () => {
+    expect(menu([gone(1)])).not.toContain("Locate folder…");
+    const mixed = [gone(1), snap({ id: 2, status: "completed" })];
+    expect(menu(mixed)).not.toContain("Locate folder…");
+    expect(selectionActions(mixed)).not.toContain("locateFolder");
+  });
+});
+
 describe("menuItems", () => {
   it("fits a finished download", () => {
     expect(menu([snap({ status: "completed" })])).toEqual([

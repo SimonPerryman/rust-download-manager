@@ -66,15 +66,25 @@
     color: var(--primary-ink);
   }
   .toast {
-    @apply pointer-events-auto flex min-h-10 items-center gap-4 rounded-lg py-2 pl-4 pr-2 text-sm shadow-pop;
+    @apply pointer-events-auto flex min-h-10 items-center gap-2 rounded-lg py-2 pl-4 pr-2 text-sm shadow-pop;
     max-width: min(560px, calc(100vw - 32px));
     background: var(--toast-bg);
     color: var(--toast-ink);
     animation: rise 0.2s ease-out;
   }
+  .toast > span {
+    @apply mr-1;
+  }
+  /* A thin divider before the action so it reads as a button, not loose text. */
   .toast .btn {
-    @apply h-7;
+    @apply relative h-7;
     color: var(--toast-action);
+  }
+  .toast .btn::before {
+    content: "";
+    @apply absolute -left-1.5 top-1/2 h-4 w-px -translate-y-1/2;
+    background: currentColor;
+    opacity: 0.25;
   }
   .toast .btn:hover {
     background: rgba(255, 255, 255, 0.08);

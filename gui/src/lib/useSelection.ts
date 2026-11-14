@@ -16,6 +16,8 @@ export interface SelectionApi {
   /** Moves the cursor up, down, or to the first or last row; returns the new cursor id. */
   move: (to: "up" | "down" | "first" | "last", extend: boolean) => number | null;
   selectAll: () => void;
+  /** Selects exactly these ids (they must be in the view, or the next prune drops them). */
+  select: (ids: readonly number[]) => void;
   clear: () => void;
 }
 
@@ -62,7 +64,12 @@ export function useSelection(visible: readonly number[]): SelectionApi {
     [set],
   );
   const all = useCallback(() => set(selectAll(ref.current, visibleRef.current)), [set]);
+  const select = useCallback(
+    (ids: readonly number[]) =>
+      set({ selected: new Set(ids), anchor: ids[0] ?? null, cursor: ids[ids.length - 1] ?? null }),
+    [set],
+  );
   const clear = useCallback(() => set(NO_SELECTION), [set]);
 
-  return { selection, click, move, selectAll: all, clear };
+  return { selection, click, move, selectAll: all, select, clear };
 }

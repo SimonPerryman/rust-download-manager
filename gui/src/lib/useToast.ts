@@ -6,12 +6,19 @@ export const TOAST_MS = 3_500;
 export interface Toast {
   seq: number;
   message: string;
+  /** A button on the toast; a toast with one stays until dismissed, so there is time to click. */
+  action?: ToastAction;
 }
 
-/** The info toast slot: one at a time, a new one replaces the last, each gone after `TOAST_MS`. */
+export interface ToastAction {
+  label: string;
+  run: () => void;
+}
+
+/** The info toast slot: one at a time, a new one replaces the last, each gone after `TOAST_MS` unless it has an action. */
 export function useToast(): {
   toast: Toast | null;
-  show: (message: string) => void;
+  show: (message: string, action?: ToastAction) => void;
   dismiss: () => void;
 } {
   const [toast, setToast] = useState<Toast | null>(null);
@@ -25,11 +32,12 @@ export function useToast(): {
   }, []);
 
   const show = useCallback(
-    (message: string) => {
+    (message: string, action?: ToastAction) => {
       if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
       seq.current += 1;
-      setToast({ seq: seq.current, message });
-      timer.current = setTimeout(dismiss, TOAST_MS);
+      setToast({ seq: seq.current, message, action });
+      if (!action) timer.current = setTimeout(dismiss, TOAST_MS);
     },
     [dismiss],
   );

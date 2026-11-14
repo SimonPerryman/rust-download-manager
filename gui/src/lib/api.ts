@@ -7,7 +7,9 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { SettingsPatch } from "./settings";
 import type {
   DownloadSnapshot,
+  FolderOutcome,
   InstallWhen,
+  LocateOutcome,
   LogLine,
   Settings,
   Status,
@@ -107,9 +109,20 @@ export const pickFolder = () => invoke<string | null>("pick_folder");
 export const openDownload = (id: number) => invoke<void>("open_download", { id });
 /**
  * Ask the user for the file of a missing download in the OS file picker and relink the record to
- * it. Resolves true once relinked, false if they cancelled. By id, so the webview names no path.
+ * it. Says whether it relinked (not if they cancelled) and any offer to relink more from the same
+ * folder. By id, so the webview names no path.
  */
-export const locateDownload = (id: number) => invoke<boolean>("locate_download", { id });
+export const locateDownload = (id: number) => invoke<LocateOutcome>("locate_download", { id });
+/** Relink the downloads of the pending same-folder offer; resolves with how many were relinked. */
+export const acceptSameFolderOffer = () => invoke<number>("accept_same_folder_offer");
+/** Drop the pending same-folder offer without relinking anything. */
+export const dismissSameFolderOffer = () => invoke<void>("dismiss_same_folder_offer");
+/**
+ * Ask the user for one folder in the OS picker and relink each of the missing downloads `ids`
+ * whose same-named, same-sized file is in it. Resolves null if they cancelled.
+ */
+export const locateFolder = (ids: number[]) =>
+  invoke<FolderOutcome | null>("locate_folder", { ids });
 /** Show a completed download's file in its folder (by id, like `openDownload`). */
 export const revealDownload = (id: number) => invoke<void>("reveal_download", { id });
 

@@ -22,6 +22,7 @@ const ICON: Record<MenuCommand, (p: { size?: number }) => React.ReactNode> = {
   open: ExternalLink,
   reveal: Folder,
   locate: Search,
+  locateFolder: Folder,
   forget: ListRemove,
   pause: Pause,
   resume: Play,

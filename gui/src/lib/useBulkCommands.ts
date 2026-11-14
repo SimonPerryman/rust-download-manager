@@ -18,6 +18,8 @@ type Deps = {
   open: (d: DownloadSnapshot) => void;
   reveal: (d: DownloadSnapshot) => void;
   locate: (d: DownloadSnapshot) => void;
+  /** Locate folder… for these rows (the missing ones are used). */
+  locateFolder: (rows: DownloadSnapshot[]) => void;
   forget: (d: DownloadSnapshot) => void;
   retryAll: () => void;
   /** Opens the Stop dialog for these (stoppable) ids. */
@@ -41,7 +43,7 @@ export function useBulkCommands(deps: Deps): (cmd: MenuCommand, ids: readonly nu
 
   return useCallback((cmd: MenuCommand, ids: readonly number[]) => {
     const { downloads, queue, notify, fail, open, reveal, retryAll, askStop } = ref.current;
-    const { locate, forget } = ref.current;
+    const { locate, locateFolder, forget } = ref.current;
     const { askRemove, askTags, archive } = ref.current;
     const list = ids.flatMap((id) => downloads.find((d) => d.id === id) ?? []);
     const each = (
@@ -61,6 +63,8 @@ export function useBulkCommands(deps: Deps): (cmd: MenuCommand, ids: readonly nu
       case "locate":
         if (one && isMissing(one)) locate(one);
         return;
+      case "locateFolder":
+        return locateFolder(list);
       case "forget":
         if (one && isMissing(one)) forget(one);
         return;
