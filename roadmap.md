@@ -36,6 +36,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M7 | Archive & tags | done | [[milestone-07-archive-tags]] |
 | M8 | Diagnostics — finding the bug when rdm crashes | done | [[milestone-08-diagnostics]] |
 | M9 | In-app updater | done | [[milestone-09-in-app-updater]] |
+| M10 | Smarter connections | done | [[milestone-10-smarter-connections]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 
@@ -51,36 +52,24 @@ order.
 
 ## Up next (in priority order)
 
-Pick from the top. Items 1–2 are single PRs; item 3 becomes the next
-milestone ticket when it's picked up.
+Pick from the top. Items 2–3 need the owner before any code: live
+measurements, a design chat and a paid account respectively.
 
-1. **Mark-of-the-Web on Windows** (from post-download safety checks): write
-   a `Zone.Identifier` stream (ZoneId=3, HostUrl) on each finished file, as
-   browsers do, so SmartScreen, Office protected view and antivirus treat it
-   as downloaded. Today rdm's files skip those checks.
-2. **Re-probe after a settle** (M4 follow-up): once settled, or frozen by a
-   speed limit that is later lifted, ramping never tries again for that
-   attempt, so lifting a limit doesn't bring connections back.
-3. **Smarter connections** (next milestone): the rest of the M4 ramping
-   follow-ups in one milestone, tuned with live smoke runs.
-   - *Mid-download connection shedding*: ramping only grows then settles
-     once; drop a connection when aggregate throughput falls later on.
-   - *Slow connection setup*: a new connection is only treated as "warming
-     up" for the window it joins in; on high-latency hosts its setup can
-     spill into the next, judged window and stop ramping early.
-   - *Ramp window tuning*: with the 1 s window a download needs ~7 s to
-     reach 4 connections; a live smoke run decides whether it should shrink.
-   - *Rate-limited hosts*: a host that limits request rate (e.g. OVH) costs
-     a 429 and its Retry-After wait per segment request; after a rate limit,
-     fetch the remainder in one open-ended request.
-4. **Missing and moved files**: spot a finished download whose file was
+1. **Ramp window tuning** (M10 follow-up): with the 1 s window a download
+   needs ~7 s to reach 4 connections; live smoke runs the owner makes decide
+   whether it should shrink.
+2. **Missing and moved files**: spot a finished download whose file was
    deleted or moved, relink it ("Update file reference"), or move files
    through rdm so the record follows them; keep a record whose file is gone
-   as a note of what was downloaded.
-5. **Code signing** (cut from M6): sign the Windows binaries and installers
+   as a note of what was downloaded. Starts with a design chat.
+3. **Code signing** (cut from M6): sign the Windows binaries and installers
    (e.g. Azure Trusted Signing) and sign and notarise the macOS app (Apple
    Developer Program), so SmartScreen and Gatekeeper stop warning. Has a
    running cost; move it up when rdm is promoted beyond its current users.
+
+Shipped from this list: Mark-of-the-Web on Windows, and the smarter-connections
+work ([[milestone-10-smarter-connections]]: re-probe after a settle, shedding
+on a sustained drop, slow-setup warm-up, one wait for rate-limited hosts).
 
 ## Backlog (not yet scheduled — parked on purpose)
 
@@ -140,7 +129,7 @@ unrequested items last.
 
 Known gaps left deliberately out of a milestone's scope. Each is small enough
 to be a single PR; promote one into a ticket when it's picked up. The M4
-ramping follow-ups moved to "Up next". These are low priority.
+ramping follow-ups shipped in M10; window tuning is in "Up next". These are low priority.
 
 - **Add-time checksum "checking" state** (M5 PR A): the engine hashes inside
   finalize, so `checksum_state` never shows `pending` for it; an engine hook

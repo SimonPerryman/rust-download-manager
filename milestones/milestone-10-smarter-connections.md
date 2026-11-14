@@ -1,7 +1,7 @@
 ---
 id: M10
 title: Smarter connections
-status: todo
+status: done
 depends-on: [M4]
 tags: [engine, network, perf, testing]
 ---
@@ -61,12 +61,12 @@ updated.
 - Changing the default connection count (4) or the 10% margin.
 
 ## Tasks
-- [ ] `ramp-reprobe`
-- [ ] `ramp-shed-on-drop`
-- [ ] `ramp-slow-setup`
-- [ ] `rate-limit-remainder`
+- [x] `ramp-reprobe`
+- [x] `ramp-shed-on-drop`
+- [x] `ramp-slow-setup`
+- [x] `rate-limit-remainder`
 
 ## Acceptance criteria
-- [ ] `cargo test` passes, with new fixture tests for each task.
-- [ ] `docs/how-it-works.md` describes the full ramp lifecycle (ramp up,
+- [x] `cargo test` passes, with new fixture tests for each task.
+- [x] `docs/how-it-works.md` describes the full ramp lifecycle (ramp up,
       settle, re-probe, shed) and the rate-limit behaviour.
