@@ -436,14 +436,29 @@ struct OfferInfo {
 #[derive(serde::Serialize)]
 struct LocateOutcome {
     relinked: bool,
+    /// The file it was relinked to, so the toast can name what changed.
+    new_path: Option<String>,
     offer: Option<OfferInfo>,
 }
 
-/// What Locate folder… did, as counts.
+/// What Locate folder… did: how many it relinked, and which were not in the folder.
 #[derive(serde::Serialize)]
 struct FolderOutcome {
     relinked: usize,
-    not_found: usize,
+    not_found: Vec<u64>,
+}
+
+/// The one folder every path in `paths` is in, if it exists; where a picker should start.
+fn shared_existing_folder<'a>(
+    paths: impl IntoIterator<Item = &'a std::path::Path>,
+) -> Option<PathBuf> {
+    let mut folders = paths.into_iter().map(std::path::Path::parent);
+    let first = folders.next()??;
+    if folders.all(|f| f == Some(first)) && first.is_dir() {
+        Some(first.to_path_buf())
+    } else {
+        None
+    }
 }
 
 /// Let the user locate the file of missing download `id` in a native file
@@ -487,14 +502,18 @@ async fn locate_download(
             return Ok(None);
         };
         let blocking = manager.clone();
+        let new_path = path.display().to_string();
         let offer = tokio::task::spawn_blocking(move || blocking.relink_with_offer(id, &path))
             .await
             .map_err(|e| e.to_string())?
             .map_err(|e| e.to_string())?;
-        Ok(Some(offer))
+        Ok(Some((offer, new_path)))
     })
     .await?;
-    let offer = outcome.clone().flatten();
+    let (offer, new_path) = match outcome {
+        Some((offer, new_path)) => (offer, Some(new_path)),
+        None => (None, None),
+    };
     let info = offer.as_ref().map(|o| OfferInfo {
         count: o.matches.len(),
         old_folder: o.old_folder.display().to_string(),
@@ -502,7 +521,8 @@ async fn locate_download(
     });
     *lock_offer(&state) = offer;
     Ok(LocateOutcome {
-        relinked: outcome.is_some(),
+        relinked: new_path.is_some(),
+        new_path,
         offer: info,
     })
 }
@@ -554,7 +574,17 @@ async fn locate_folder(
             Some(dir) => Some(dir),
             None => {
                 let (tx, rx) = tokio::sync::oneshot::channel();
-                app.dialog().file().pick_folder(move |path| {
+                let snapshot = manager.snapshot();
+                let old_paths: Vec<&std::path::Path> = snapshot
+                    .iter()
+                    .filter(|d| ids.contains(&d.id))
+                    .filter_map(|d| d.final_path.as_deref())
+                    .collect();
+                let mut dialog = app.dialog().file();
+                if let Some(folder) = shared_existing_folder(old_paths) {
+                    dialog = dialog.set_directory(folder);
+                }
+                dialog.pick_folder(move |path| {
                     let _ = tx.send(path);
                 });
                 match rx.await.ok().flatten() {
@@ -571,7 +601,7 @@ async fn locate_folder(
             .map_err(|e| e.to_string())?;
         Ok(Some(FolderOutcome {
             relinked: result.relinked.len(),
-            not_found: result.not_found.len(),
+            not_found: result.not_found,
         }))
     })
     .await
@@ -1017,6 +1047,20 @@ mod tests {
         assert!(!t.allow(start + Duration::from_secs(29)));
         assert!(t.allow(start + every));
         assert!(!t.allow(start + every + Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn folder_picker_starts_where_the_rows_shared_a_folder() {
+        use std::path::Path;
+        let dir = std::env::temp_dir();
+        let a = dir.join("a.bin");
+        let b = dir.join("b.bin");
+        let elsewhere = dir.join("not-a-folder-rdm").join("c.bin");
+        let shared = |paths: &[&Path]| super::shared_existing_folder(paths.iter().copied());
+        assert_eq!(shared(&[&a, &b]), Some(dir.clone()));
+        assert_eq!(shared(&[&a, &elsewhere]), None, "different folders");
+        assert_eq!(shared(&[&elsewhere]), None, "the folder is gone");
+        assert_eq!(shared(&[]), None);
     }
 
     #[test]

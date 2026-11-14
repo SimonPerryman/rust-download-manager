@@ -6,7 +6,7 @@
 
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { $, browser, expect } from "@wdio/globals";
+import { $, $$, browser, expect } from "@wdio/globals";
 import {
   addThroughDialog,
   baseUrl,
@@ -233,10 +233,24 @@ describe("rdm GUI missing files", () => {
     expect((await engineRow(z.id))!.file_missing).toBe(true);
     await browser.waitUntil(
       async () =>
-        (await toastTexts()).some((t) =>
-          t.includes("Relinked 2 downloads. 1 wasn't found in that folder."),
-        ),
+        (await toastTexts()).some((t) => t.includes("Relinked 2. 1 wasn't found in that folder.")),
       { timeoutMsg: "the Locate folder… toast never showed the counts" },
     );
+
+    // Show not found: the Missing view, with exactly the not-found row selected.
+    await $(TOAST).$("button=Show not found").click();
+    await browser.waitUntil(
+      async () => (await rowById(z.id).getAttribute("aria-selected")) === "true",
+      { timeoutMsg: "Show not found never selected the not-found row" },
+    );
+    await expect($(`button[data-testid="filter"][data-filter="missing"]`)).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(await shownIds()).toContain(z.id);
+    // Other missing rows (earlier specs leave some) stay unselected.
+    expect(await $$('tr[aria-selected="true"]').length).toBe(1);
+    await waitForGone(TOAST, "the toast stayed after Show not found");
+    await selectFilter("all");
   });
 });

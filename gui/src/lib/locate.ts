@@ -12,7 +12,10 @@ export async function locateOne(
 ): Promise<{ message: string | null; offer: SameFolderOffer | null }> {
   const outcome = await api.locateDownload(d.id);
   return {
-    message: outcome.relinked ? relinkedMessage(d) : null,
+    message:
+      outcome.relinked && outcome.new_path
+        ? relinkedMessage(d.final_path ?? d.filename, outcome.new_path)
+        : null,
     offer: outcome.relinked ? outcome.offer : null,
   };
 }
@@ -22,14 +25,28 @@ export async function acceptOffer(): Promise<string> {
   return sameFolderAcceptedMessage(await api.acceptSameFolderOffer());
 }
 
+/** What Locate folder… did: the toast, and the ids of the downloads not in the folder. */
+export interface FolderResult {
+  message: string;
+  /** Empty unless some were found, so the toast offers Show not found only on a partial result. */
+  notFoundIds: number[];
+}
+
 /**
  * Locate folder… for the missing rows among `rows`: one folder picked, each row's same-named,
- * same-sized file looked for in it. Resolves with the toast, or null if nothing was asked or
+ * same-sized file looked for in it. Resolves with the result, or null if nothing was asked or
  * the picker was cancelled.
  */
-export async function locateFolderFor(rows: readonly DownloadSnapshot[]): Promise<string | null> {
+export async function locateFolderFor(
+  rows: readonly DownloadSnapshot[],
+): Promise<FolderResult | null> {
   const ids = rows.filter(isMissing).map((d) => d.id);
   if (!ids.length) return null;
   const outcome = await api.locateFolder(ids);
-  return outcome && locateFolderMessage(outcome.relinked, outcome.not_found);
+  if (!outcome) return null;
+  const notFound = outcome.not_found;
+  return {
+    message: locateFolderMessage(outcome.relinked, notFound.length),
+    notFoundIds: outcome.relinked > 0 ? notFound : [],
+  };
 }

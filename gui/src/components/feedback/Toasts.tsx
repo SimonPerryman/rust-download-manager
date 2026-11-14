@@ -39,6 +39,15 @@ export function Toasts({ pending, onUndo, toast, onDismissToast }: Props) {
           key={`toast-${toast.seq}`}
           testId="toast"
           message={toast.message}
+          action={
+            toast.action && {
+              label: toast.action.label,
+              run: () => {
+                toast.action?.run();
+                onDismissToast();
+              },
+            }
+          }
           onDismiss={onDismissToast}
         />
       )}

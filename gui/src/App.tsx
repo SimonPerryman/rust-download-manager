@@ -6,6 +6,7 @@ import {
   emptyCopy,
   openFailedMessage,
   removedMissingMessage,
+  showNotFoundLabel,
   removeSelectedTitle,
   retryAllMessage,
 } from "./lib/copy";
@@ -167,13 +168,26 @@ export default function App() {
     setSameFolderOffer(null);
     api.dismissSameFolderOffer().catch(fail);
   }, [fail]);
+  const { select: selectIds } = selection;
   const locateFolder = useCallback(
     (rows: DownloadSnapshot[]) => {
       locateFolderFor(rows)
-        .then((message) => message && notify(message))
+        .then((result) => {
+          if (!result) return;
+          const { message, notFoundIds } = result;
+          const showNotFound = () => {
+            setQuery("");
+            setFilter({ kind: "status", status: "missing" });
+            selectIds(notFoundIds);
+          };
+          notify(
+            message,
+            notFoundIds.length ? { label: showNotFoundLabel, run: showNotFound } : undefined,
+          );
+        })
         .catch(fail);
     },
-    [notify, fail],
+    [notify, fail, setQuery, setFilter, selectIds],
   );
   // Only the record: the file is already gone, so there is nothing to ask about.
   const forgetMissing = useCallback(
