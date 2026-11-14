@@ -56,8 +56,17 @@ Pick from the top. Items 2–3 need the owner before any code: live
 measurements, a design chat and a paid account respectively.
 
 1. **Ramp window tuning** (M10 follow-up): with the 1 s window a download
-   needs ~7 s to reach 4 connections; live smoke runs the owner makes decide
-   whether it should shrink.
+   needs ~7 s to reach 4 connections. Parked, low value: shrinking it saves
+   a fixed ~2-3 s per download, which only shows on 100 MB to 1 GB files
+   from hosts that cap each connection. A live run on 2026-11-14 (Ubuntu
+   24.04 ISO, 1000/500/250 ms builds) showed nothing: one connection
+   already fills a ~460 Mbit/s link, so every variant tried extra lanes and
+   dropped them, and 250 ms stopped one lane earlier (the noise risk). To
+   settle it, measure against a server that caps each connection: a local
+   fixture with a per-connection rate cap, or a distant mirror. Compare
+   time to 4 lanes, final speed and total time, over several runs. The
+   window is the `RAMP_WINDOW` constant in `src/engine/ramp.rs`, so each
+   variant is a rebuild.
 2. **Missing and moved files**: spot a finished download whose file was
    deleted or moved, relink it ("Update file reference"), or move files
    through rdm so the record follows them; keep a record whose file is gone
