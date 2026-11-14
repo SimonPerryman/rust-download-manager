@@ -6,7 +6,8 @@
 //! The `/seg-ramp` fixture serves each connection at R and all of them at 4R
 //! (deadline-paced, no burst), so the ramp's decisions are known in advance;
 //! a test can change that 4R mid-download.
-//! Assertions are on connection counts, never on elapsed time.
+//! Assertions are on connection counts or the ramp's own trace, never on
+//! elapsed time.
 
 mod common;
 
@@ -14,6 +15,7 @@ use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::ramp::{ramp_windows, RampTrace};
 use common::{FixtureConfig, SEG_RAMP_CAP, SEG_RAMP_CHUNK, SEG_RAMP_RATE};
 use rdm::engine::state::{self, DownloadState};
 use rdm::engine::{Ramping, Segment};
@@ -347,47 +349,6 @@ async fn settled_ramp_reprobes_each_interval_and_retires_a_useless_trial() {
     assert!(seen.last().unwrap().downloaded < 16 * MIB);
 }
 
-/// One `ramp window` trace line: what the ramp decided and its new target.
-struct RampWindow {
-    decision: String,
-    target: u8,
-    /// Neither skipped (a pool change, the work running out, a stall) nor
-    /// slowed by a speed limit.
-    judged: bool,
-}
-
-/// The ramp's `ramp window` trace lines, in order, from the first line
-/// containing `from` on.
-fn ramp_windows(log: &[String], from: &str) -> Vec<RampWindow> {
-    let start = log
-        .iter()
-        .position(|l| l.contains(from))
-        .unwrap_or_else(|| panic!("no {from:?} in the log"));
-    let field = |line: &str, name: &str| -> String {
-        let at = line.find(name).expect("traced field") + name.len();
-        line[at..]
-            .chars()
-            .take_while(char::is_ascii_alphanumeric)
-            .collect()
-    };
-    log[start..]
-        .iter()
-        .filter(|l| l.contains("ramp window"))
-        .map(|l| RampWindow {
-            decision: field(l, " decision="),
-            target: field(l, " target=").parse().expect("numeric target"),
-            judged: [
-                "waited_fraction: 0.0,",
-                "pool_changed: false",
-                "short: false",
-            ]
-            .iter()
-            .all(|f| l.contains(f))
-                && !l.contains("bytes_per_sec: 0.0,"),
-        })
-        .collect()
-}
-
 /// After a host refuses a third connection on `route`, re-probes, however
 /// often, never go past the two it accepts: a re-probe comes due again and
 /// again while capped, and the ramp declines each one.
@@ -489,19 +450,19 @@ impl Watch {
 /// (after three slow windows) and, its best reset, no more.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_sustained_slowdown_sheds_a_connection_and_a_brief_one_does_not() {
+    let (trace, _guard) = RampTrace::capture();
     let server = ramp_server(32 * MIB).await;
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("slowed.bin");
-    let req = ramping(server.url("/seg-ramp"), &out, 4);
+    // A loaded runner can settle the ramp short of 4; try again, but not
+    // within the windows watched after the shed.
+    let req = ramping(server.url("/seg-ramp"), &out, 4).with_reprobe_interval(WINDOW * 16);
 
     let control = Control::new();
-    let watch = Watch::default();
-    let mut seen = Vec::new();
     let drive = async {
-        watch.until("ramped to 4", |c| c == 4).await;
-        let settled = watch.reports();
-        // Past the window that settles it at 4, even on a late timer.
-        tokio::time::sleep(WINDOW * 4).await;
+        let settled = trace
+            .first("settled at 4", 80, 0, |w| w.settled_at(4))
+            .await;
         // The link's own pacing ends this slowdown, one window long: a window
         // is slow when over 40% of it is slowed, so it makes one or two slow
         // windows, and three only if stretched past 1.8 windows.
@@ -512,29 +473,44 @@ async fn a_sustained_slowdown_sheds_a_connection_and_a_brief_one_does_not() {
             assert!(tokio::time::Instant::now() < deadline, "slowdown never ran");
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        // Fast windows reset the slow count before the lasting slowdown.
-        tokio::time::sleep(WINDOW * 6).await;
-        let slowed = watch.reports();
+        // A fast window resets the slow count before the lasting slowdown.
+        let fast = 0.9 * SEG_RAMP_CAP as f64;
+        let ended = trace.windows().len();
+        trace
+            .first("fast again", 12, ended, |w| {
+                w.judged && w.bytes_per_sec > fast
+            })
+            .await;
+        let lasting = trace.windows().len();
         server.set_ramp_link(SEG_RAMP_RATE);
-        watch.until("shed", |c| c < 4).await;
-        tokio::time::sleep(WINDOW * 8).await;
+        let shed = trace
+            .first("shed", 12, lasting, |w| w.decision == "Shed")
+            .await;
+        // Twice the slow windows a shed takes, so a second shed would show.
+        let watched = trace
+            .until("judged six windows after the shed", 16, |windows| {
+                windows[shed + 1..].iter().filter(|w| w.judged).count() >= 6
+            })
+            .await;
         control.cancel();
-        (settled, slowed, watch.reports())
+        (settled, lasting, watched)
     };
-    let (result, (settled, slowed, stopped)) = tokio::join!(
-        download(&req, &control, |p| watch.record(&mut seen, p)),
-        drive
-    );
+    let (result, (settled, lasting, watched)) =
+        tokio::join!(download(&req, &control, |_| {}), drive);
 
     assert!(matches!(result, Err(Error::Cancelled)), "got {result:?}");
+    let windows = trace.windows();
+    let decided = |from: usize, to: usize| -> Vec<(String, u8)> {
+        windows[from..to]
+            .iter()
+            .filter(|w| w.decision != "Hold")
+            .map(|w| (w.decision.clone(), w.target))
+            .collect()
+    };
+    assert_eq!(decided(settled, lasting), [], "shed on a brief slowdown");
     assert_eq!(
-        runs(&seen[settled..slowed]),
-        [4],
-        "shed on a brief slowdown"
-    );
-    assert_eq!(
-        runs(&seen[slowed..stopped]),
-        [4, 3],
+        decided(lasting, watched),
+        [("Shed".to_owned(), 3)],
         "one shed, and only one"
     );
 }
