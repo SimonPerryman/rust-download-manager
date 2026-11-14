@@ -246,6 +246,7 @@ impl Manager {
             task.abort();
         }
         self.inner.logs.forget(id);
+        lock(&self.inner.find_results).remove(&id);
         discard_files(st, &e.record);
         self.inner.schedule(st);
         self.inner.persist(st);

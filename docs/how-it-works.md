@@ -13,6 +13,7 @@ share it, so everything here applies to both.
 - [Marked as downloaded (Windows)](#marked-as-downloaded-windows)
 - [The queue and speed limits](#the-queue-and-speed-limits)
 - [Proxies](#proxies)
+- [Missing and moved files](#missing-and-moved-files)
 - [Engine and frontends](#engine-and-frontends)
 - [When something goes wrong](#when-something-goes-wrong)
 
@@ -158,6 +159,46 @@ The CLI picks the mode with `--proxy` and `--no-proxy`, the desktop app
 with its Proxy setting, where a change applies from each download's next
 start or resume. Logs and error messages show a custom proxy with its login
 redacted, like any URL's.
+
+## Missing and moved files
+
+A finished download whose file is gone is flagged as missing; it stays
+finished, and the flag is worked out from disk each time, never saved. The
+check lists each folder once rather than looking up every file.
+
+**Find file** looks for a missing download's file in three places, in order:
+the folder it used to be in, the folders of your other downloads, and the
+default download folder. It never searches a whole drive. Folders repeated
+or inside another folder in the list are searched once, as part of the outer
+one.
+
+Each folder is scanned once into an index of file names and sizes, and every
+missing download is then matched against that index, so finding a thousand
+files is one pass, not a thousand. The scan is breadth first, so nearby files
+come first and Cancel takes effect quickly. It has limits:
+
+- Subfolders are searched three levels down.
+- Up to 50,000 files and folders are looked at per search folder.
+- Symbolic links and junctions are not followed, and hidden and system
+  folders are skipped.
+
+When a limit cuts a search short, the result says so, so the app can tell you
+not every folder was fully searched.
+
+A file is an exact match when its name and size are both the same. If the name
+changed, it counts as a possible match only when it is the one file of that
+size with the same extension. If several files share the size and the
+download has a SHA-256 checksum, only those are hashed and the one with the
+right digest is offered. A file that is another download's own file is never
+offered.
+
+Searching never relinks anything: it offers candidates, and you accept them.
+Results are kept in memory until the download is relinked or its file
+reappears; they are not saved. Each search is also written to the download's
+log, with the folders searched and the outcome.
+
+**Locate…** lets you pick any file by hand, but refuses one of a different
+size. It uses the same name and size check as Find file.
 
 ## Engine and frontends
 

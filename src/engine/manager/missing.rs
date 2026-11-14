@@ -17,6 +17,7 @@ use tokio::task::JoinHandle;
 use super::{Inner, Manager};
 use crate::engine::lock::lock;
 use crate::engine::store::Status;
+use crate::engine::Checksum;
 use crate::engine::{join_error, Error};
 
 /// A download's missing flag changed: emitted by
@@ -59,19 +60,47 @@ pub struct FolderRelink {
     pub not_found: Vec<u64>,
 }
 
-/// A missing download as seen by the folder matcher.
-struct Candidate {
-    id: u64,
-    name: OsString,
+/// A missing download as seen by the folder matcher and by Find file.
+pub(super) struct Candidate {
+    pub(super) id: u64,
+    pub(super) name: OsString,
+    pub(super) size: u64,
+    pub(super) folder: PathBuf,
+    pub(super) checksum: Option<Checksum>,
+}
+
+/// How a file on disk compares with the one a missing download expects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Likeness {
+    /// Same file name and exactly the same size.
+    SameNameAndSize,
+    /// The size is right but the name differs.
+    SameSizeOnly,
+    DifferentSize,
+}
+
+/// The one name/size check: Locate… refuses [`Likeness::DifferentSize`], Find
+/// file's folder matcher and its index both build on the other two.
+pub(super) fn compare(
+    expected_name: &OsStr,
+    expected_size: u64,
+    name: &OsStr,
     size: u64,
-    folder: PathBuf,
+) -> Likeness {
+    if size != expected_size {
+        Likeness::DifferentSize
+    } else if name_key(name) == name_key(expected_name) {
+        Likeness::SameNameAndSize
+    } else {
+        Likeness::SameSizeOnly
+    }
 }
 
 fn same_folder(a: &Path, b: &Path) -> bool {
     name_key(a.as_os_str()) == name_key(b.as_os_str())
 }
 
-fn file_size(path: &Path) -> Option<u64> {
+pub(super) fn file_size(path: &Path) -> Option<u64> {
     let meta = std::fs::metadata(path).ok()?;
     meta.is_file().then_some(meta.len())
 }
@@ -91,7 +120,9 @@ fn match_in_folder(candidates: &[Candidate], folder: &Path) -> Vec<FolderMatch> 
         .filter(|c| names.contains(&name_key(&c.name)))
         .filter_map(|c| {
             let file = folder.join(&c.name);
-            (file_size(&file) == Some(c.size)).then_some(FolderMatch { id: c.id, file })
+            let size = file_size(&file)?;
+            (compare(&c.name, c.size, &c.name, size) == Likeness::SameNameAndSize)
+                .then_some(FolderMatch { id: c.id, file })
         })
         .collect()
 }
@@ -118,7 +149,7 @@ fn group_by_parent(files: Vec<(u64, PathBuf)>) -> BTreeMap<PathBuf, Vec<(u64, Pa
 }
 
 /// File names compare ignoring case on Windows, as its file system does.
-fn name_key(name: &OsStr) -> OsString {
+pub(super) fn name_key(name: &OsStr) -> OsString {
     if cfg!(windows) {
         name.to_string_lossy().to_lowercase().into()
     } else {
@@ -242,6 +273,7 @@ impl Manager {
         e.record.final_path = Some(file.to_path_buf());
         e.record.target = file.to_path_buf();
         let was_missing = std::mem::replace(&mut e.file_missing, false);
+        lock(&self.inner.find_results).remove(&id);
         if was_missing {
             let _ = self
                 .inner
@@ -269,6 +301,7 @@ impl Manager {
             .find(|d| d.id == id)
             .and_then(|d| d.final_path)
             .and_then(|p| p.parent().map(Path::to_path_buf));
+        self.check_locate_size(id, file)?;
         self.relink(id, file)?;
         let (Some(old_folder), Some(new_folder)) = (old_folder, file.parent()) else {
             return Ok(None);
@@ -283,6 +316,28 @@ impl Manager {
             new_folder: new_folder.to_path_buf(),
             matches,
         }))
+    }
+
+    /// Refuse a Locate… file whose size isn't the one the download has, with
+    /// [`Error::DifferentSize`]. Any name is fine; a download with no known
+    /// size, or a file that can't be read (relink reports that), passes.
+    fn check_locate_size(&self, id: u64, file: &Path) -> crate::engine::Result<()> {
+        let expected = {
+            let st = lock(&self.inner.state);
+            st.entries.get(&id).and_then(|e| {
+                let r = &e.record;
+                let size = r.total.or((r.downloaded > 0).then_some(r.downloaded))?;
+                Some((r.final_path.as_deref()?.file_name()?.to_owned(), size))
+            })
+        };
+        let (Some((name, size)), Some(actual)) = (expected, file_size(file)) else {
+            return Ok(());
+        };
+        let found = file.file_name().unwrap_or_default();
+        match compare(&name, size, found, actual) {
+            Likeness::DifferentSize => Err(Error::DifferentSize),
+            _ => Ok(()),
+        }
     }
 
     /// Relink every accepted match of an offer. Each is re-verified first
@@ -326,7 +381,11 @@ impl Manager {
 
     /// Missing completed downloads, optionally only `ids` and/or those whose
     /// file sat in `old_folder`.
-    fn missing_candidates(&self, ids: Option<&[u64]>, old_folder: Option<&Path>) -> Vec<Candidate> {
+    pub(super) fn missing_candidates(
+        &self,
+        ids: Option<&[u64]>,
+        old_folder: Option<&Path>,
+    ) -> Vec<Candidate> {
         let st = lock(&self.inner.state);
         st.order
             .iter()
@@ -340,6 +399,7 @@ impl Manager {
                     name: path.file_name()?.to_owned(),
                     size: e.record.total.unwrap_or(e.record.downloaded),
                     folder: path.parent()?.to_path_buf(),
+                    checksum: e.record.checksum.as_deref().and_then(|c| c.parse().ok()),
                 })
             })
             .filter(|c| old_folder.is_none_or(|f| same_folder(&c.folder, f)))
@@ -386,6 +446,9 @@ impl Inner {
                 continue;
             }
             e.file_missing = missing;
+            if !missing {
+                lock(&self.find_results).remove(&id);
+            }
             changed = true;
             let _ = self.missing_tx.send(MissingChange { id, missing });
         }

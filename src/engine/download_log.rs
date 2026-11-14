@@ -125,6 +125,20 @@ impl DownloadLogs {
             .unwrap_or_default()
     }
 
+    /// File one line straight into `id`'s log (opening it if the download
+    /// hasn't run this session), for work that happens outside a download's task.
+    pub(crate) fn record(&self, id: u64, level: LogLevel, message: String) {
+        let at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis() as u64);
+        lock(&self.buffers).entry(id).or_default().push(LogLine {
+            at,
+            level,
+            message: capped(message),
+            fields: String::new(),
+        });
+    }
+
     fn push(&self, id: u64, line: LogLine) {
         if let Some(buffer) = lock(&self.buffers).get_mut(&id) {
             buffer.push(line);
