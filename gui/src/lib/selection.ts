@@ -88,3 +88,18 @@ export function prune(s: Selection, visible: readonly number[]): Selection {
 export function selectedInOrder(s: Selection, visible: readonly number[]): number[] {
   return visible.filter((id) => s.selected.has(id));
 }
+
+/**
+ * The row an open details pane should show after the selection changed: it stays
+ * while it is still selected (Ctrl/Shift extend around it), else it moves to the
+ * cursor row (or the first selected one). An empty selection leaves it alone.
+ */
+export function followedRow(
+  paneId: number | null,
+  s: Selection,
+  visible: readonly number[],
+): number | null {
+  if (paneId == null || s.selected.size === 0 || s.selected.has(paneId)) return paneId;
+  if (s.cursor != null && s.selected.has(s.cursor)) return s.cursor;
+  return selectedInOrder(s, visible)[0] ?? paneId;
+}

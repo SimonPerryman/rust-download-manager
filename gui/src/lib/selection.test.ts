@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   clickRow,
   cursorIndex,
+  followedRow,
   moveCursor,
   NO_SELECTION,
   prune,
@@ -93,5 +94,36 @@ describe("selectAll / prune / selectedInOrder", () => {
     let s = clickRow(NO_SELECTION, 40, {}, visible);
     s = clickRow(s, 10, { ctrl: true }, visible);
     expect(selectedInOrder(s, visible)).toEqual([10, 40]);
+  });
+});
+
+describe("followedRow", () => {
+  const one = clickRow(NO_SELECTION, 30, {}, visible);
+
+  it("leaves a closed pane closed", () => {
+    expect(followedRow(null, one, visible)).toBeNull();
+  });
+
+  it("moves to the selected row when the pane's row is not selected", () => {
+    expect(followedRow(10, one, visible)).toBe(30);
+  });
+
+  it("stays while its row is still selected, even with others added", () => {
+    const two = clickRow(clickRow(NO_SELECTION, 10, {}, visible), 30, { ctrl: true }, visible);
+    expect(followedRow(10, two, visible)).toBe(10);
+  });
+
+  it("takes the cursor row of a multi-selection that left the pane's row out", () => {
+    const s = clickRow(clickRow(NO_SELECTION, 30, {}, visible), 50, { shift: true }, visible);
+    expect(followedRow(10, s, visible)).toBe(50);
+  });
+
+  it("falls back to the first selected row when the cursor is not selected", () => {
+    const s: Selection = { selected: new Set([40, 20]), anchor: null, cursor: null };
+    expect(followedRow(10, s, visible)).toBe(20);
+  });
+
+  it("leaves the pane alone when nothing is selected", () => {
+    expect(followedRow(10, NO_SELECTION, visible)).toBe(10);
   });
 });

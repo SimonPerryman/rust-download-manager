@@ -1,17 +1,26 @@
-import { useCallback, useEffect, useState, type RefObject } from "react";
-import type { Modifiers } from "./selection";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { followedRow, type Modifiers, type Selection } from "./selection";
 import type { DownloadSnapshot } from "./types";
 
 type Deps = {
   downloads: readonly DownloadSnapshot[];
   seeded: boolean;
+  selection: Selection;
+  visibleIds: readonly number[];
   /** The selection's click: selects a row (alone, with no modifiers). */
   selectRow: (id: number, mods: Modifiers) => void;
   tableRef: RefObject<HTMLTableElement | null>;
 };
 
 /** The details pane's row: which one it shows, and opening and closing it. */
-export function useDetails({ downloads, seeded, selectRow, tableRef }: Deps) {
+export function useDetails({
+  downloads,
+  seeded,
+  selection,
+  visibleIds,
+  selectRow,
+  tableRef,
+}: Deps) {
   // The row in the details pane. Kept apart from the selection so the pane stays
   // when its row leaves the view (it finishes, or a search hides it).
   const [detailsId, setDetailsId] = useState<number | null>(null);
@@ -20,6 +29,17 @@ export function useDetails({ downloads, seeded, selectRow, tableRef }: Deps) {
   useEffect(() => {
     if (detailsId != null && seeded && !detailsRow) setDetailsId(null);
   }, [detailsId, seeded, detailsRow]);
+
+  // The pane follows the selection when it moves off the pane's row (a filter switch,
+  // a programmatic select), not when the row merely leaves the view.
+  const paneRef = useRef(detailsId);
+  paneRef.current = detailsId;
+  const visibleRef = useRef(visibleIds);
+  visibleRef.current = visibleIds;
+  useEffect(() => {
+    const next = followedRow(paneRef.current, selection, visibleRef.current);
+    if (next !== paneRef.current) setDetailsId(next);
+  }, [selection]);
 
   // The filename button toggles the row's details. A mouse press hands focus to
   // the table so the keyboard map works; a key press leaves it on the button.
