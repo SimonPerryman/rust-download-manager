@@ -148,6 +148,16 @@
     background: var(--danger-soft);
     color: var(--danger-ink);
   }
+  /* A recoverable problem, not an error: the warning tokens in place of the danger ones. */
+  .callout-warn {
+    background: var(--warn-soft);
+    color: var(--warn-ink);
+  }
+  .missing-path {
+    @apply mt-2 break-all rounded-sm px-2 py-1 font-mono text-xs;
+    background: var(--raised);
+    color: var(--ink);
+  }
   .spd {
     @apply flex h-full flex-col;
     min-height: 120px;

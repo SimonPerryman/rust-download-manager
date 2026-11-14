@@ -9,6 +9,10 @@ export interface RowHandlers {
   stop: (d: DownloadSnapshot) => void;
   open: (d: DownloadSnapshot) => void;
   reveal: (d: DownloadSnapshot) => void;
+  /** Locate… a missing download's file with the OS file picker and relink to it. */
+  locate: (d: DownloadSnapshot) => void;
+  /** Remove from list: a missing download's record only (its file is already gone). */
+  forget: (d: DownloadSnapshot) => void;
   /** Remove for good (from the Archived view); may ask first. */
   remove: (d: DownloadSnapshot) => void;
   archive: (d: DownloadSnapshot) => void;

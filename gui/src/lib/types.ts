@@ -60,6 +60,11 @@ export interface DownloadSnapshot {
   tags: string[];
   /** Paused by an update restart and still paused (Resume all after the update resumes it). */
   paused_for_update: boolean;
+  /**
+   * A finished download whose file is no longer where it was saved (deleted or moved). Derived by
+   * the engine's checks, never saved; the status stays "completed".
+   */
+  file_missing: boolean;
 }
 
 /** Mirrors the engine's `LogLevel`. */

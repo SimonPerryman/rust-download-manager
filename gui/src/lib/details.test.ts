@@ -63,6 +63,14 @@ describe("summaryParts", () => {
   });
 });
 
+describe("statePhrase for a missing file", () => {
+  it("says the file is missing without changing the status", () => {
+    expect(statePhrase(snap({ status: "completed", file_missing: true }))).toBe(
+      "Completed, file missing",
+    );
+  });
+});
+
 describe("statePhrase", () => {
   it("covers every status", () => {
     expect(statePhrase(snap({ status: "downloading", downloaded: 421, total: 1000 }))).toBe(

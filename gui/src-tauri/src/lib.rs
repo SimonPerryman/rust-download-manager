@@ -23,6 +23,35 @@ use tauri_plugin_opener::OpenerExt;
 /// Shared application state: the one engine [`Manager`] every command drives.
 struct AppState {
     manager: Arc<Manager>,
+    /// Spaces out the missing-file checks that window focus triggers.
+    focus_check: std::sync::Mutex<FocusThrottle>,
+}
+
+/// Fewest time between two focus-triggered missing-file checks.
+const FOCUS_CHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Lets a focus event through at most once per `every`.
+struct FocusThrottle {
+    every: std::time::Duration,
+    last: Option<std::time::Instant>,
+}
+
+impl FocusThrottle {
+    fn new(every: std::time::Duration) -> Self {
+        Self { every, last: None }
+    }
+
+    /// Whether a check should run for a focus at `now`; if so, counts it.
+    fn allow(&mut self, now: std::time::Instant) -> bool {
+        if self
+            .last
+            .is_some_and(|t| now.duration_since(t) < self.every)
+        {
+            return false;
+        }
+        self.last = Some(now);
+        true
+    }
 }
 
 /// One-shot snapshot of every download, in display order.
@@ -337,37 +366,100 @@ async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
 
 /// Open completed download `id`'s file with the OS default handler. Takes an
 /// id, not a path, so the webview can only open files the engine downloaded.
+/// Checks the file is still there first (flagging the row if not).
 #[tauri::command]
-fn open_download(app: tauri::AppHandle, state: State<'_, AppState>, id: u64) -> Result<(), String> {
-    let path = state
-        .manager
-        .completed_file(id)
-        .map_err(|e| e.to_string())?;
-    if let Some(log) = test_seam(OPEN_LOG_ENV) {
-        return append_open_log(&log, "open", &path).map_err(|e| e.to_string());
-    }
-    app.opener()
-        .open_path(path.to_string_lossy(), None::<&str>)
-        .map_err(|e| e.to_string())
-}
-
-/// Show completed download `id`'s file in its folder in the OS file manager.
-#[tauri::command]
-fn reveal_download(
+async fn open_download(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     id: u64,
 ) -> Result<(), String> {
-    let path = state
-        .manager
-        .completed_file(id)
+    let manager = state.manager.clone();
+    commands_guard::contained("open_download", async move {
+        let path = checked_file(&manager, id).await?;
+        if let Some(log) = test_seam(OPEN_LOG_ENV) {
+            return append_open_log(&log, "open", &path).map_err(|e| e.to_string());
+        }
+        app.opener()
+            .open_path(path.to_string_lossy(), None::<&str>)
+            .map_err(|e| e.to_string())
+    })
+    .await
+}
+
+/// Show completed download `id`'s file in its folder in the OS file manager,
+/// after the same check as [`open_download`].
+#[tauri::command]
+async fn reveal_download(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: u64,
+) -> Result<(), String> {
+    let manager = state.manager.clone();
+    commands_guard::contained("reveal_download", async move {
+        let path = checked_file(&manager, id).await?;
+        if let Some(log) = test_seam(OPEN_LOG_ENV) {
+            return append_open_log(&log, "reveal", &path).map_err(|e| e.to_string());
+        }
+        app.opener()
+            .reveal_item_in_dir(path)
+            .map_err(|e| e.to_string())
+    })
+    .await
+}
+
+/// The file of completed download `id`, after a fresh check that it is still
+/// on disk: a missing one flags its row (the snapshot carries it) and errors.
+async fn checked_file(manager: &Manager, id: u64) -> Result<PathBuf, String> {
+    manager
+        .check_missing_one(id)
+        .await
         .map_err(|e| e.to_string())?;
-    if let Some(log) = test_seam(OPEN_LOG_ENV) {
-        return append_open_log(&log, "reveal", &path).map_err(|e| e.to_string());
-    }
-    app.opener()
-        .reveal_item_in_dir(path)
-        .map_err(|e| e.to_string())
+    manager.completed_file(id).map_err(|e| e.to_string())
+}
+
+/// Let the user locate the file of missing download `id` in a native file
+/// picker and relink the record to it. Resolves `true` once relinked, `false`
+/// if they cancelled. The webview never names the path.
+#[tauri::command]
+async fn locate_download(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    id: u64,
+) -> Result<bool, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let manager = state.manager.clone();
+    commands_guard::contained("locate_download", async move {
+        let old_folder = manager
+            .snapshot()
+            .into_iter()
+            .find(|d| d.id == id)
+            .and_then(|d| d.final_path)
+            .and_then(|p| p.parent().map(std::path::Path::to_path_buf))
+            .filter(|p| p.is_dir());
+        let picked = match test_seam(LOCATE_PATH_ENV) {
+            Some(path) => Some(path),
+            None => {
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                let mut dialog = app.dialog().file();
+                if let Some(folder) = old_folder {
+                    dialog = dialog.set_directory(folder);
+                }
+                dialog.pick_file(move |path| {
+                    let _ = tx.send(path);
+                });
+                match rx.await.ok().flatten() {
+                    Some(path) => Some(path.into_path().map_err(|e| e.to_string())?),
+                    None => None,
+                }
+            }
+        };
+        let Some(path) = picked else {
+            return Ok(false);
+        };
+        manager.relink(id, &path).map_err(|e| e.to_string())?;
+        Ok(true)
+    })
+    .await
 }
 
 /// Overrides the state/log directory (default `~/.rdm`), and puts the webview
@@ -383,6 +475,10 @@ const DOWNLOAD_DIR_ENV: &str = "RDM_DOWNLOAD_DIR";
 /// Open logs folder and the bug report link, with `open`). Lets the webview E2E suite check
 /// what would open without starting another program. Test builds only (see [`test_seam`]).
 const OPEN_LOG_ENV: &str = "RDM_OPEN_LOG";
+
+/// When set, `locate_download` relinks to this file instead of asking with a
+/// file picker. Test builds only (see [`test_seam`]).
+const LOCATE_PATH_ENV: &str = "RDM_LOCATE_PATH";
 
 /// A path from test-only environment variable `key`. Honoured only in the
 /// `fault-injection` (e2e) build, so a shipped app ignores these variables.
@@ -480,6 +576,9 @@ fn init_manager(
     Box::leak(Box::new(runtime));
 
     let manager = Arc::new(Manager::load(Box::new(store), handle)?);
+    // In the background: flags finished downloads whose file went missing
+    // while rdm was closed.
+    manager.check_missing();
     // After the Manager, whose layer it installs; loading logs nothing. The
     // default level is `info`, overridable with `RUST_LOG`.
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
@@ -693,11 +792,29 @@ pub fn run() {
                     return Ok(());
                 }
             };
-            app.manage(AppState { manager });
+            app.manage(AppState {
+                manager,
+                focus_check: std::sync::Mutex::new(FocusThrottle::new(FOCUS_CHECK_EVERY)),
+            });
             let version = app.package_info().version.to_string();
             app.manage(updater::prefs::PrefsStore::open(&home, &version));
             create_main_window(app.handle())?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Files get moved or deleted while rdm is in the background.
+            if let tauri::WindowEvent::Focused(true) = event {
+                if let Some(state) = window.app_handle().try_state::<AppState>() {
+                    let allowed = state
+                        .focus_check
+                        .lock()
+                        .map(|mut t| t.allow(std::time::Instant::now()))
+                        .unwrap_or(false);
+                    if allowed {
+                        state.manager.check_missing();
+                    }
+                }
+            }
         })
         .invoke_handler(commands_guard::contain_panics(tauri::generate_handler![
             list,
@@ -726,6 +843,7 @@ pub fn run() {
             pick_folder,
             open_download,
             reveal_download,
+            locate_download,
             check_for_update,
             install_update,
             staged_update,
@@ -767,6 +885,17 @@ mod tests {
 
     /// A list saved by a newer rdm names its version and says it's untouched;
     /// any other startup error shows its own text.
+    #[test]
+    fn focus_checks_are_spaced_out() {
+        let every = Duration::from_secs(30);
+        let mut t = super::FocusThrottle::new(every);
+        let start = Instant::now();
+        assert!(t.allow(start), "the first focus checks");
+        assert!(!t.allow(start + Duration::from_secs(29)));
+        assert!(t.allow(start + every));
+        assert!(!t.allow(start + every + Duration::from_secs(1)));
+    }
+
     #[test]
     fn startup_errors_say_why() {
         let newer: Box<dyn std::error::Error> = Box::new(rdm::Error::UnsupportedStore(3));

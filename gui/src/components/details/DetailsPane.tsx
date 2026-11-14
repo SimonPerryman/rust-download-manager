@@ -29,6 +29,8 @@ type Props = {
   samples: readonly number[];
   globalLimit: number | null;
   onReveal: (d: DownloadSnapshot) => void;
+  onLocate: (d: DownloadSnapshot) => void;
+  onForget: (d: DownloadSnapshot) => void;
   /** Where a waiting download sits in the queue, else null. */
   spot: QueueSpot | null;
   onMove: (delta: number) => void;
@@ -48,6 +50,8 @@ export function DetailsPane({
   samples,
   globalLimit,
   onReveal,
+  onLocate,
+  onForget,
   spot,
   onMove,
 }: Props) {
@@ -115,7 +119,15 @@ export function DetailsPane({
         aria-labelledby={tabId(tab)}
       >
         {tab === "overview" && (
-          <OverviewTab d={d} work={work} onReveal={onReveal} spot={spot} onMove={onMove} />
+          <OverviewTab
+            d={d}
+            work={work}
+            onReveal={onReveal}
+            onLocate={onLocate}
+            onForget={onForget}
+            spot={spot}
+            onMove={onMove}
+          />
         )}
         {tab === "speed" && <SpeedTab d={d} samples={samples} globalLimit={globalLimit} />}
         {tab === "log" && <LogTab key={d.id} id={d.id} name={d.filename} />}

@@ -3,6 +3,7 @@ import { queuePlace } from "../../lib/copy";
 import { describeError } from "../../lib/errors";
 import { folderOf } from "../../lib/folders";
 import { formatBytes, formatLeft, formatSpeed } from "../../lib/format";
+import { isMissing } from "../../lib/filters";
 import { hasLanes } from "../../lib/lanes";
 import type { LaneWork } from "../../lib/laneWork";
 import type { DownloadSnapshot } from "../../lib/types";
@@ -13,6 +14,7 @@ import { Link } from "../icons/Link";
 import { Tag } from "../icons/Tag";
 import { TagEditor } from "../tags/TagEditor";
 import { ChecksumFact } from "./ChecksumFact";
+import { MissingBanner } from "./MissingBanner";
 import { LanesMap } from "./LanesMap";
 
 /** A waiting download's place in the queue (0 starts next) and how many wait. */
@@ -23,6 +25,8 @@ type Props = {
   /** What this download's lanes have written, for its lane rows. */
   work: LaneWork;
   onReveal: (d: DownloadSnapshot) => void;
+  onLocate: (d: DownloadSnapshot) => void;
+  onForget: (d: DownloadSnapshot) => void;
   spot: QueueSpot | null;
   /** Moves the download `delta` places in the queue (negative is sooner). */
   onMove: (delta: number) => void;
@@ -108,7 +112,7 @@ function Stats({ d, spot, onMove }: Pick<Props, "d" | "spot" | "onMove">) {
 }
 
 // Overview: where the download stands, its lanes, and the facts about it.
-export function OverviewTab({ d, work, onReveal, spot, onMove }: Props) {
+export function OverviewTab({ d, work, onReveal, onLocate, onForget, spot, onMove }: Props) {
   const done = d.status === "completed";
   const summary = done ? summaryParts(d) : null;
   const dates = datesLine(d);
@@ -121,6 +125,7 @@ export function OverviewTab({ d, work, onReveal, spot, onMove }: Props) {
             <p title={d.error ?? undefined}>{describeError(d.error)}</p>
           </div>
         )}
+        {isMissing(d) && <MissingBanner d={d} onLocate={onLocate} onRemove={onForget} />}
         {summary && (
           <div className="summary" data-testid="summary">
             <span className="big">{summary.size}</span>
@@ -140,7 +145,7 @@ export function OverviewTab({ d, work, onReveal, spot, onMove }: Props) {
           <span className="min-w-0">
             {done ? "Saved in " : "Saves to "}
             <span className="break-all text-ink">{folderOf(d.target)}</span>
-            {done && (
+            {done && !d.file_missing && (
               <>
                 {" "}
                 <button className="btn-link" onClick={() => onReveal(d)}>

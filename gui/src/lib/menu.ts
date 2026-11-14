@@ -2,6 +2,7 @@
 // statuses. Pure; useTableInput runs the chosen command.
 
 import { isArchivable, toRemove } from "./archive";
+import { isMissing } from "./filters";
 import { removeDiskNote } from "./copy";
 import { isPausable, isRemovable, isStoppable, toResume } from "./rowView";
 import type { DownloadSnapshot } from "./types";
@@ -9,6 +10,8 @@ import type { DownloadSnapshot } from "./types";
 export type MenuCommand =
   | "open"
   | "reveal"
+  | "locate"
+  | "forget"
   | "pause"
   | "resume"
   | "startNext"
@@ -59,7 +62,10 @@ export function menuItems(
   const done = (d: DownloadSnapshot) => d.status === "completed";
   const failed = (d: DownloadSnapshot) => d.status === "failed";
 
-  if (any(done)) {
+  const missing = one != null && isMissing(one);
+  if (missing) {
+    out.push(item("locate", "Locate…"));
+  } else if (any(done)) {
     out.push(item("open", "Open", one ? "Enter" : undefined));
     if (one) out.push(item("reveal", "Show in folder"));
   }
@@ -106,6 +112,7 @@ export function menuItems(
   } else if (any(isArchivable)) {
     out.push(item("archive", "Archive", "Del"));
   }
+  if (missing && !archivedView) out.push(item("forget", "Remove from list"));
   if (out[out.length - 1].kind === "separator") out.pop();
   return out;
 }

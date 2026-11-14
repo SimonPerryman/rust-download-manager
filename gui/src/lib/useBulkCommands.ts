@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import * as api from "./api";
 import { toRemove, unarchivedMessage } from "./archive";
 import { copiedMessage, deletedPartialMessage, deletedPartialsMessage } from "./copy";
+import { isMissing } from "./filters";
 import { folderOf } from "./folders";
 import type { MenuCommand } from "./menu";
 import { stepIndex } from "./queue";
@@ -16,6 +17,8 @@ type Deps = {
   fail: (e: unknown) => void;
   open: (d: DownloadSnapshot) => void;
   reveal: (d: DownloadSnapshot) => void;
+  locate: (d: DownloadSnapshot) => void;
+  forget: (d: DownloadSnapshot) => void;
   retryAll: () => void;
   /** Opens the Stop dialog for these (stoppable) ids. */
   askStop: (ids: number[]) => void;
@@ -38,6 +41,7 @@ export function useBulkCommands(deps: Deps): (cmd: MenuCommand, ids: readonly nu
 
   return useCallback((cmd: MenuCommand, ids: readonly number[]) => {
     const { downloads, queue, notify, fail, open, reveal, retryAll, askStop } = ref.current;
+    const { locate, forget } = ref.current;
     const { askRemove, askTags, archive } = ref.current;
     const list = ids.flatMap((id) => downloads.find((d) => d.id === id) ?? []);
     const each = (
@@ -53,6 +57,12 @@ export function useBulkCommands(deps: Deps): (cmd: MenuCommand, ids: readonly nu
         return list.filter(done).forEach(open);
       case "reveal":
         if (one && done(one)) reveal(one);
+        return;
+      case "locate":
+        if (one && isMissing(one)) locate(one);
+        return;
+      case "forget":
+        if (one && isMissing(one)) forget(one);
         return;
       case "pause":
         return void each(isPausable, (d) => api.pause(d.id)).catch(fail);

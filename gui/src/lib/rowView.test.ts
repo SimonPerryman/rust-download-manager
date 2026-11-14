@@ -107,6 +107,12 @@ describe("rowActions", () => {
     ]);
   });
 
+  it("offers Locate… instead of Open and Show in folder on a missing row", () => {
+    const gone = snap({ status: "completed", file_missing: true });
+    expect(labels(gone, true)).toEqual(["Locate…:soft", "Archive:icon"]);
+    expect(labels(gone, false)).toEqual(["Locate…:soft", "Archive:icon"]);
+  });
+
   it("offers Retry on failed rows", () => {
     expect(labels(snap({ status: "failed" }))).toEqual(["Retry:soft", "Archive:icon"]);
   });

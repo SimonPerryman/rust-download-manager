@@ -12,6 +12,7 @@ import { ListRemove } from "../icons/ListRemove";
 import { Pause } from "../icons/Pause";
 import { Play } from "../icons/Play";
 import { Retry } from "../icons/Retry";
+import { Search } from "../icons/Search";
 import { Stop } from "../icons/Stop";
 import { Trash } from "../icons/Trash";
 import type { RowHandlers } from "./rowHandlers";
@@ -23,12 +24,21 @@ const ICON: Record<RowActionKey, (p: { size?: number }) => React.ReactNode> = {
   resume: Play,
   stop: Stop,
   open: ExternalLink,
+  locate: Search,
   reveal: Folder,
   remove: ListRemove,
   archive: Archive,
   retry: Retry,
   deletePartial: Trash,
   downloadAgain: DownloadAgain,
+};
+
+// The labelled Open is 4rem. Locate… takes its place and the empty Show in folder slot
+// (4rem + 0.25rem gap + 1.5rem icon button), so its left edge lines up with Open's and
+// Archive stays in its column. Widths are fixed so the label never truncates.
+const LABELLED_WIDTH: Partial<Record<RowActionKey, string>> = {
+  open: "min-w-16",
+  locate: "w-[5.75rem]",
 };
 
 type Props = {
@@ -56,6 +66,8 @@ export function RowActions({ d, lingering, editor, handlers }: Props) {
         return handlers.stop(d);
       case "open":
         return handlers.open(d);
+      case "locate":
+        return handlers.locate(d);
       case "reveal":
         return handlers.reveal(d);
       case "remove":
@@ -125,7 +137,7 @@ function ActionButton({
       aria-label={action.label}
       title={title}
       onClick={onClick}
-      className={`btn btn-sm ${action.style === "primary" ? "btn-primary" : "btn-soft"}`}
+      className={`btn btn-sm justify-center ${action.style === "primary" ? "btn-primary" : "btn-soft"} ${LABELLED_WIDTH[action.key] ?? ""}`}
     >
       <Icon size={14} />
       <span className="act-label">{action.label}</span>

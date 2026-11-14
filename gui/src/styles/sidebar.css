@@ -19,6 +19,11 @@
     color: var(--danger-ink);
     font-weight: 600;
   }
+  .f-count.warn {
+    background: var(--warn-soft);
+    color: var(--warn-ink);
+    font-weight: 600;
+  }
   .f-count.bump {
     animation: bump 1.4s ease-out;
   }
