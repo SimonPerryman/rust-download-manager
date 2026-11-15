@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  openFailedMessage,
   addedMessage,
   copiedMessage,
   deletedPartialsMessage,
@@ -210,5 +211,17 @@ describe("bulk and queue copy", () => {
     expect(queuePlace(0)).toBe("Starts next");
     expect(queuePlace(1)).toBe("Queued behind 1 other");
     expect(queuePlace(3)).toBe("Queued behind 3 others");
+  });
+});
+
+describe("openFailedMessage", () => {
+  const d = snap({ filename: "a.iso", status: "completed" });
+  it("points a gone file at Locate…", () => {
+    expect(openFailedMessage(d, "invalid request: download 3's file is no longer on disk")).toBe(
+      "a.iso is no longer on disk. Use Locate… to find it.",
+    );
+  });
+  it("keeps the reason for other failures", () => {
+    expect(openFailedMessage(d, "no handler")).toBe("Couldn't open a.iso. no handler");
   });
 });
