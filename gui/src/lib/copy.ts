@@ -190,8 +190,8 @@ export function retryAllMessage(failed: readonly DownloadSnapshot[]): string {
 }
 
 /** The details banner for a finished download whose file is gone: what and why. */
-export const missingBannerHeading = "File missing";
-export const missingBannerText = "Moved or deleted.";
+export const missingBannerHeading = "rdm can't locate this file";
+export const missingBannerText = "It was moved or deleted.";
 
 const lastPart = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 

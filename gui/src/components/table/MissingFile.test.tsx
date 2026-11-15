@@ -91,8 +91,8 @@ describe("missing file UI", () => {
         />,
       ),
     );
-    expect(host.textContent).toContain("File missing");
-    expect(host.textContent).toContain("Moved or deleted.");
+    expect(host.textContent).toContain("rdm can't locate this file");
+    expect(host.textContent).toContain("It was moved or deleted.");
     expect(host.querySelector('[data-testid="missing-path"]')?.textContent).toBe(
       "C:\\Downloads\\gone.iso",
     );
