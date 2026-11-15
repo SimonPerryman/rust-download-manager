@@ -14,6 +14,7 @@ import type {
   InstallWhen,
   LocateOutcome,
   LogLine,
+  ParsedList,
   Settings,
   Status,
   UpdateInfo,
@@ -106,6 +107,8 @@ export const resumeAll = () => invoke<void>("resume_all");
 /** Retry every failed download. */
 export const retryFailed = () => invoke<void>("retry_failed");
 
+/** The engine's reading of pasted text: its links (with repeat counts) and skipped lines. Rejects a list over the cap. */
+export const previewList = (text: string) => invoke<ParsedList>("preview_list", { text });
 export const defaultDownloadDir = () => invoke<string>("default_download_dir");
 export const pickFolder = () => invoke<string | null>("pick_folder");
 /** Open a completed download's file. By id: the backend resolves the path, so the webview can't name one. */

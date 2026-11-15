@@ -211,6 +211,14 @@ display downloads, but don't fetch anything themselves.
 [The architecture diagram](architecture.html) shows the components and
 follows a download through them.
 
+What a pasted list of links means is decided in the engine too, so every
+frontend reads a list the same way. Links split on whitespace and newlines,
+and on a comma or pipe followed by another `http://` or `https://` link (a
+comma inside one link stays put). Blank lines and `#` comments are ignored,
+and only `http` and `https` links count. A link listed more than once is
+added once, and a list of more than 5000 distinct links is refused with its
+count.
+
 ## A download's log on disk
 
 Each download's Log tab keeps its last 200 informational lines (and up),

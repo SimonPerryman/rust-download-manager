@@ -3,8 +3,8 @@ import * as api from "../../lib/api";
 import {
   addLabel,
   addLinks,
+  entriesFrom,
   linksToAdd,
-  parseLinks,
   partialAddError,
   type Known,
 } from "../../lib/batch";
@@ -12,6 +12,7 @@ import { formatSpeed } from "../../lib/format";
 import { loadLastDir, saveLastDir } from "../../lib/prefs";
 import { NO_LIMIT, composeRate, exceeds, type RateDraft } from "../../lib/rate";
 import { parseTags, tagsError } from "../../lib/tags";
+import type { ParsedList } from "../../lib/types";
 import { ChevronDown } from "../icons/ChevronDown";
 import { Folder } from "../icons/Folder";
 import { RateInput } from "../RateInput";
@@ -43,6 +44,9 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
   const [globalLimit, setGlobalLimit] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The engine's reading of `text`; null until it answers or when it refuses the list.
+  const [list, setList] = useState<ParsedList | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   // While links are going in the dialog stays put, so their outcome lands on it.
@@ -94,7 +98,31 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     return () => document.removeEventListener("keydown", onKey);
   }, [open, busy, onClose]);
 
-  const entries = useMemo(() => parseLinks(text, existingUrls), [text, existingUrls]);
+  // The engine owns what counts as a link; a newer paste outruns a slower answer.
+  useEffect(() => {
+    if (!open) return;
+    let current = true;
+    api
+      .previewList(text)
+      .then((l) => {
+        if (!current) return;
+        setList(l);
+        setListError(null);
+      })
+      .catch((e) => {
+        if (!current) return;
+        setList(null);
+        setListError(String(e));
+      });
+    return () => {
+      current = false;
+    };
+  }, [open, text]);
+
+  const entries = useMemo(
+    () => (list ? entriesFrom(list, existingUrls) : []),
+    [list, existingUrls],
+  );
   const links = linksToAdd(entries);
   // A checksum names one file, so it only applies to a single link.
   const single = links.length <= 1;
@@ -109,7 +137,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
   const submit = async () => {
     if (busy) return;
     if (links.length === 0) {
-      setError("Paste a link to add.");
+      setError(listError ?? "Paste a link to add.");
       return;
     }
     // An error about a field under "More options" must not be hidden there.
@@ -193,7 +221,13 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
               </p>
             </Field>
 
-            <LinkPreview entries={entries} />
+            {listError ? (
+              <p data-testid="preview-error" className="text-sm text-danger-ink">
+                {listError}
+              </p>
+            ) : (
+              <LinkPreview entries={entries} />
+            )}
 
             <Field label="Destination folder" htmlFor="add-dest">
               <div className="flex gap-2">

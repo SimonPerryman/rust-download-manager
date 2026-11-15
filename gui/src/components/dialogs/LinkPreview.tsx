@@ -5,11 +5,15 @@ import { Check } from "../icons/Check";
 const DUP_NOTE = {
   listed: "Already in your list",
   archived: "In your archive",
-  repeat: "Listed twice",
+};
+
+const BAD_NOTE = {
+  not_a_link: "Not a link",
+  unsupported_scheme: "Only http and https",
 };
 
 // What the pasted text holds, before anything starts: each link's filename
-// and site, with lines that aren't links (and repeats) flagged and skipped.
+// and site, with a repeat shown once (×2) and lines that aren't links skipped.
 export function LinkPreview({ entries }: { entries: BatchEntry[] }) {
   if (entries.length === 0) return null;
   const { found, skipped } = previewSummary(entries);
@@ -22,7 +26,7 @@ export function LinkPreview({ entries }: { entries: BatchEntry[] }) {
       <ul className="max-h-40 overflow-y-auto rounded-md bg-surface py-1">
         {entries.map((e, i) => {
           const bad = e.kind === "bad";
-          const skip = bad || e.dup === "repeat";
+          const skip = bad;
           return (
             <li
               key={i}
@@ -37,8 +41,16 @@ export function LinkPreview({ entries }: { entries: BatchEntry[] }) {
               <span className="min-w-0 flex-1 truncate" title={bad ? e.line : e.url}>
                 {bad ? e.line : e.name}
               </span>
+              {!bad && e.count > 1 && (
+                <span
+                  className="shrink-0 text-xs text-g600"
+                  title={`Listed ${e.count} times, added once`}
+                >
+                  ×{e.count}
+                </span>
+              )}
               <span className={`shrink-0 text-xs ${bad ? "text-danger-ink" : "text-g400"}`}>
-                {bad ? "Not a link" : e.dup ? DUP_NOTE[e.dup] : e.host}
+                {bad ? BAD_NOTE[e.reason] : e.dup ? DUP_NOTE[e.dup] : e.host}
               </span>
             </li>
           );

@@ -2,81 +2,68 @@ import { describe, expect, it } from "vitest";
 import {
   addLabel,
   addLinks,
+  entriesFrom,
   knownUrls,
   linksToAdd,
-  parseLinks,
   partialAddError,
   previewSummary,
   type Known,
 } from "./batch";
+import type { ParsedList } from "./types";
 
 const none = new Map<string, Known>();
 
-describe("parseLinks", () => {
-  it("reads one link per line, flagging lines that aren't links", () => {
-    const entries = parseLinks(
-      "https://a.example/one.iso\nnotes from the forum\n  http://b.example/dir/two.tar.gz  \n",
+/** What the engine's `preview_list` answers (see src/engine/batch.rs). */
+const list = (links: [string, number?][], skipped: ParsedList["skipped"] = []): ParsedList => ({
+  links: links.map(([url, count]) => ({ url, count: count ?? 1 })),
+  skipped,
+});
+const notLink = (line: string): ParsedList["skipped"][number] => ({
+  line,
+  reason: "not_a_link",
+});
+
+describe("entriesFrom", () => {
+  it("shows each link's name and host, then the skipped lines", () => {
+    const entries = entriesFrom(
+      list([["https://a.example/dir/file.zip"]], [notLink("nope")]),
       none,
     );
     expect(entries).toEqual([
       {
         kind: "link",
-        url: "https://a.example/one.iso",
-        name: "one.iso",
+        url: "https://a.example/dir/file.zip",
+        name: "file.zip",
         host: "a.example",
+        count: 1,
         dup: null,
       },
-      { kind: "bad", line: "notes from the forum" },
-      {
-        kind: "link",
-        url: "http://b.example/dir/two.tar.gz",
-        name: "two.tar.gz",
-        host: "b.example",
-        dup: null,
-      },
+      { kind: "bad", line: "nope", reason: "not_a_link" },
     ]);
-  });
-
-  it("skips blank and # comment lines and splits a line of several links", () => {
-    const entries = parseLinks(
-      "# from a uri-list\r\n\r\nhttps://a.example/x https://a.example/y",
-      none,
-    );
-    expect(entries.map((e) => (e.kind === "link" ? e.url : e.line))).toEqual([
-      "https://a.example/x",
-      "https://a.example/y",
-    ]);
-  });
-
-  it("keeps a line of prose with a link in it as one non-link", () => {
-    expect(parseLinks("see https://a.example/x for details", none)).toEqual([
-      { kind: "bad", line: "see https://a.example/x for details" },
-    ]);
-  });
-
-  it("rejects other schemes", () => {
-    expect(
-      parseLinks("ftp://a.example/x\nfile:///tmp/x", none).every((e) => e.kind === "bad"),
-    ).toBe(true);
   });
 
   it("names a link by its decoded last path part, else its host", () => {
-    const [a, b] = parseLinks("https://a.example/my%20file.zip\nhttps://b.example/", none);
+    const [a, b, c] = entriesFrom(
+      list([
+        ["https://a.example/my%20file.zip"],
+        ["https://b.example/"],
+        ["https://a.example/%E0%A4%A"],
+      ]),
+      none,
+    );
     expect(a).toMatchObject({ name: "my file.zip" });
     expect(b).toMatchObject({ name: "b.example" });
-    const [bad] = parseLinks("https://a.example/%E0%A4%A", none);
-    expect(bad).toMatchObject({ name: "%E0%A4%A" });
+    expect(c).toMatchObject({ name: "%E0%A4%A" });
   });
 
-  it("flags links already in the list and repeats within the paste", () => {
-    const entries = parseLinks(
-      "https://a.example/x\nhttps://a.example/y\nhttps://a.example/x",
+  it("carries a repeat's count and flags links already in the list", () => {
+    const entries = entriesFrom(
+      list([["https://a.example/x", 2], ["https://a.example/y"]]),
       new Map([["https://a.example/y", "listed" as const]]),
     );
-    expect(entries.map((e) => (e.kind === "link" ? e.dup : "bad"))).toEqual([
-      null,
-      "listed",
-      "repeat",
+    expect(entries).toMatchObject([
+      { kind: "link", count: 2, dup: null },
+      { kind: "link", count: 1, dup: "listed" },
     ]);
   });
 });
@@ -98,16 +85,16 @@ describe("knownUrls", () => {
 
   it("notes an archived match and still adds it, so it can be downloaded again", () => {
     const known = knownUrls([{ url: "https://a.example/y", archived: true }]);
-    const entries = parseLinks("https://a.example/y", known);
+    const entries = entriesFrom(list([["https://a.example/y"]]), known);
     expect(entries).toMatchObject([{ kind: "link", dup: "archived" }]);
     expect(linksToAdd(entries)).toEqual(["https://a.example/y"]);
   });
 });
 
 describe("linksToAdd", () => {
-  it("adds listed duplicates but not repeats or non-links", () => {
-    const entries = parseLinks(
-      "https://a.example/x\nnope\nhttps://a.example/x\nhttps://a.example/y",
+  it("gives each link once, in list order, never the skipped lines", () => {
+    const entries = entriesFrom(
+      list([["https://a.example/x", 3], ["https://a.example/y"]], [notLink("nope")]),
       new Map([["https://a.example/y", "listed" as const]]),
     );
     expect(linksToAdd(entries)).toEqual(["https://a.example/x", "https://a.example/y"]);
@@ -124,16 +111,21 @@ describe("addLabel", () => {
 
 describe("previewSummary", () => {
   it("counts links and says what's skipped", () => {
-    expect(previewSummary(parseLinks("https://a.example/x", none))).toEqual({
+    expect(previewSummary(entriesFrom(list([["https://a.example/x"]]), none))).toEqual({
       found: "1 link found",
       skipped: null,
     });
     expect(
-      previewSummary(parseLinks("https://a.example/x\nhttps://a.example/y\nnope", none)),
+      previewSummary(
+        entriesFrom(
+          list([["https://a.example/x"], ["https://a.example/y"]], [notLink("nope")]),
+          none,
+        ),
+      ),
     ).toEqual({ found: "2 links found", skipped: "1 line isn't a link, skipped" });
     expect(
       previewSummary(
-        parseLinks("a\nb\nhttps://a.example/x\nhttps://a.example/x\nhttps://a.example/x", none),
+        entriesFrom(list([["https://a.example/x", 3]], [notLink("a"), notLink("b")]), none),
       ),
     ).toEqual({ found: "1 link found", skipped: "2 lines aren't links and 2 repeats, skipped" });
   });

@@ -189,3 +189,21 @@ export interface FoundChoice {
   id: number;
   path: string;
 }
+
+/** A link the engine found in pasted text, and how many times it was listed. */
+export interface ListLink {
+  url: string;
+  count: number;
+}
+
+/** A piece of pasted text the engine left out, and why. */
+export interface SkippedLine {
+  line: string;
+  reason: "not_a_link" | "unsupported_scheme";
+}
+
+/** The engine's reading of a pasted list (`preview_list`). */
+export interface ParsedList {
+  links: ListLink[];
+  skipped: SkippedLine[];
+}
