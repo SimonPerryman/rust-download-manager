@@ -350,10 +350,12 @@ fn folder_list(folders: &[PathBuf]) -> String {
 /// One log line for one search of one download.
 fn log_message(result: &FindResult, cancelled: bool) -> String {
     let folders = folder_list(&result.searched_folders);
-    let folder_of = |f: &FoundFile| {
-        f.path
-            .parent()
-            .map_or_else(String::new, |p| p.display().to_string())
+    // Name where it was found only when that adds something: not when the one
+    // folder searched is the folder it is in.
+    let found_in = |f: &FoundFile| match (f.path.parent(), result.searched_folders.as_slice()) {
+        (Some(p), [only]) if p == only => String::new(),
+        (Some(p), _) => format!(" in {}", p.display()),
+        (None, _) => String::new(),
     };
     let outcome = if cancelled {
         "cancelled".to_owned()
@@ -361,9 +363,9 @@ fn log_message(result: &FindResult, cancelled: bool) -> String {
         match result.matches.as_slice() {
             [] => "no match".to_owned(),
             [one] if one.reason == MatchReason::SameNameAndSize => {
-                format!("found a match in {}", folder_of(one))
+                format!("found a match{}", found_in(one))
             }
-            [one] => format!("found a possible match in {}", folder_of(one)),
+            [one] => format!("found a possible match{}", found_in(one)),
             many => format!("found {} possible matches", many.len()),
         }
     };
@@ -1027,7 +1029,8 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         };
-        assert!(text(1).contains(&format!("found a match in {}", moved.display())));
+        assert!(text(1).contains("found a match"), "{}", text(1));
+        assert!(!text(1).contains(" in "), "{}", text(1));
         assert!(text(1).contains("Searched "));
         assert!(text(2).contains("no match"), "{}", text(2));
         assert!(text(4).contains("found a possible match"), "{}", text(4));
@@ -1049,6 +1052,41 @@ mod tests {
         assert_eq!(
             log_message(&result, true),
             "Searched D:\\Downloads, E:\\Archive: cancelled"
+        );
+    }
+
+    #[test]
+    fn the_log_line_names_where_only_when_it_adds_something() {
+        let dl = PathBuf::from("dl");
+        let archive = PathBuf::from("archive");
+        let found = |dir: &Path| FoundFile {
+            path: dir.join("a.bin"),
+            size: 3,
+            modified: None,
+            reason: MatchReason::SameNameAndSize,
+        };
+        let result = |folders: Vec<PathBuf>, file: FoundFile| FindResult {
+            id: 1,
+            matches: vec![file],
+            searched_folders: folders,
+            truncated: false,
+        };
+        let (d, a) = (dl.display(), archive.display());
+        assert_eq!(
+            log_message(&result(vec![dl.clone()], found(&dl)), false),
+            format!("Searched {d}: found a match")
+        );
+        assert_eq!(
+            log_message(
+                &result(vec![dl.clone(), archive.clone()], found(&dl)),
+                false
+            ),
+            format!("Searched {d}, {a}: found a match in {d}")
+        );
+        let sub = dl.join("sub");
+        assert_eq!(
+            log_message(&result(vec![dl.clone()], found(&sub)), false),
+            format!("Searched {d}: found a match in {}", sub.display())
         );
     }
 
