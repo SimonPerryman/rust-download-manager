@@ -14,6 +14,7 @@ describe("menuItems for a missing file", () => {
   it("offers Locate… and Remove from list in place of Open and Show in folder", () => {
     expect(menu([snap({ status: "completed", file_missing: true })])).toEqual([
       "Locate…",
+      "Find file",
       "-",
       "Copy link",
       "Download again",

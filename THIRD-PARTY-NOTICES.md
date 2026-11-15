@@ -11,7 +11,7 @@ These icon components in `gui/src/components/icons/` are copied from Lucide,
 some with a different stroke width or with lines written as paths:
 
 `AlertTriangle`, `Archive`, `ArchiveRestore`, `Check`, `Clock`,
-`ExternalLink`, `Folder`, `Gauge`, `Monitor`, `Moon`, `Pause`, `Play`, `Plus`,
+`ExternalLink`, `Folder`, `Gauge`, `Info`, `Loader`, `Monitor`, `Moon`, `Pause`, `Play`, `Plus`,
 `Retry` (Lucide `rotate-ccw`), `ShieldCheck` (Lucide `shield`), `Sliders`
 (Lucide `settings-2`), `Sun`, `Tag`, `Trash`, `X`.
 

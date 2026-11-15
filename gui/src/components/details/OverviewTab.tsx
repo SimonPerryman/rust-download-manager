@@ -14,6 +14,7 @@ import { Link } from "../icons/Link";
 import { Tag } from "../icons/Tag";
 import { TagEditor } from "../tags/TagEditor";
 import { ChecksumFact } from "./ChecksumFact";
+import { FindPanel, type FindControls } from "../missing/FindPanel";
 import { MissingBanner } from "./MissingBanner";
 import { LanesMap } from "./LanesMap";
 
@@ -27,6 +28,8 @@ type Props = {
   onReveal: (d: DownloadSnapshot) => void;
   onLocate: (d: DownloadSnapshot) => void;
   onForget: (d: DownloadSnapshot) => void;
+  /** Find file for a missing download: its search, answer and Locate… refusal. */
+  find: FindControls;
   spot: QueueSpot | null;
   /** Moves the download `delta` places in the queue (negative is sooner). */
   onMove: (delta: number) => void;
@@ -112,7 +115,7 @@ function Stats({ d, spot, onMove }: Pick<Props, "d" | "spot" | "onMove">) {
 }
 
 // Overview: where the download stands, its lanes, and the facts about it.
-export function OverviewTab({ d, work, onReveal, onLocate, onForget, spot, onMove }: Props) {
+export function OverviewTab({ d, work, onReveal, onLocate, onForget, find, spot, onMove }: Props) {
   const done = d.status === "completed";
   const summary = done ? summaryParts(d) : null;
   const dates = datesLine(d);
@@ -125,7 +128,18 @@ export function OverviewTab({ d, work, onReveal, onLocate, onForget, spot, onMov
             <p title={d.error ?? undefined}>{describeError(d.error)}</p>
           </div>
         )}
-        {isMissing(d) && <MissingBanner d={d} onLocate={onLocate} onRemove={onForget} />}
+        {isMissing(d) &&
+          (find.searching || find.result ? (
+            <FindPanel d={d} {...find} onLocate={onLocate} onForget={onForget} />
+          ) : (
+            <MissingBanner
+              d={d}
+              locateError={find.locateError}
+              onLocate={onLocate}
+              onFind={find.onFind}
+              onRemove={onForget}
+            />
+          ))}
         {summary && (
           <div className="summary" data-testid="summary">
             <span className="big">{summary.size}</span>

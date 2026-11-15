@@ -64,23 +64,38 @@ describe("missing file UI", () => {
     expect(handlers.locate).toHaveBeenCalledWith(d);
   });
 
-  it("shows the old path in the banner, with Locate… and Remove from list", () => {
+  it("shows the old path in the banner, with Locate…, Find file and Remove from list", () => {
     const onLocate = vi.fn();
+    const onFind = vi.fn();
     const onRemove = vi.fn();
     const d = missing();
-    act(() => root.render(<MissingBanner d={d} onLocate={onLocate} onRemove={onRemove} />));
+    act(() =>
+      root.render(
+        <MissingBanner
+          d={d}
+          locateError={null}
+          onLocate={onLocate}
+          onFind={onFind}
+          onRemove={onRemove}
+        />,
+      ),
+    );
+    expect(host.textContent).toContain("rdm can't locate this file");
+    expect(host.textContent).toContain("It was moved or deleted.");
     expect(host.querySelector('[data-testid="missing-path"]')?.textContent).toBe(
       "C:\\Downloads\\gone.iso",
     );
     const buttons = [...host.querySelectorAll("button")];
-    expect(buttons.map((b) => b.textContent)).toEqual(["Locate…", "Remove from list"]);
-    // One primary per view: Remove from list is the quiet text action.
+    expect(buttons.map((b) => b.textContent)).toEqual(["Locate…", "Find file", "Remove from list"]);
+    // Locate… is the one primary; Remove from list is the quiet text action.
     expect(buttons[0].classList.contains("btn-primary")).toBe(true);
-    expect(buttons[1].classList.contains("btn")).toBe(false);
+    expect(buttons[2].classList.contains("btn")).toBe(false);
     act(() => buttons[0].click());
     expect(onLocate).toHaveBeenCalledWith(d);
-    expect(onRemove).not.toHaveBeenCalled();
     act(() => buttons[1].click());
+    expect(onFind).toHaveBeenCalledWith(d);
+    expect(onRemove).not.toHaveBeenCalled();
+    act(() => buttons[2].click());
     expect(onRemove).toHaveBeenCalledWith(d);
   });
 });

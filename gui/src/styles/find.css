@@ -1,0 +1,97 @@
+/* Find file / Find files: the search panels in the details pane, the review and the progress
+   bar. In the utilities layer, ahead of Tailwind's utilities (see index.css). */
+@layer utilities {
+  .find-panel {
+    @apply mb-4;
+    max-width: 720px;
+  }
+  .find-panel h3 {
+    @apply text-lg font-semibold;
+  }
+  .find-bar {
+    @apply h-1 overflow-hidden rounded-sm;
+    background: var(--track);
+  }
+  .find-bar > i {
+    @apply block h-full rounded-sm;
+    background: var(--accent);
+    transition: width 200ms ease-out;
+  }
+  .find-cands {
+    @apply my-4 grid gap-2;
+  }
+  .find-cand {
+    @apply grid w-full items-start gap-3 rounded-lg p-3 text-left;
+    grid-template-columns: minmax(0, 1fr) auto;
+    background: var(--raised);
+    box-shadow: var(--sh-raised);
+  }
+  .find-cand[role="radio"] {
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    cursor: pointer;
+  }
+  .find-cand[aria-checked="true"] {
+    box-shadow:
+      0 0 0 2px var(--accent),
+      var(--sh-raised);
+  }
+  .find-radio {
+    @apply mt-1 h-4 w-4 rounded-full;
+    box-shadow: inset 0 0 0 1.5px var(--g400);
+  }
+  .find-cand[aria-checked="true"] .find-radio {
+    box-shadow: inset 0 0 0 5px var(--accent);
+  }
+  .find-badge {
+    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 text-xs font-medium;
+    line-height: 20px;
+  }
+  .find-badge-ok {
+    background: var(--success-soft);
+    color: var(--success-ink);
+  }
+  .find-badge-maybe {
+    background: var(--warn-soft);
+    color: var(--warn-ink);
+  }
+  .find-folders {
+    @apply my-3 grid gap-1;
+  }
+  .find-note {
+    @apply mt-3 text-xs;
+    color: var(--g600);
+  }
+  .find-spin {
+    animation: findSpin 1s linear infinite;
+    color: var(--accent);
+  }
+  .find-review {
+    @apply my-4 overflow-hidden rounded-lg;
+    background: var(--raised);
+    box-shadow: var(--sh-raised);
+  }
+  /* Fixed columns so names, folders, badges and links line up from row to row. */
+  .find-row {
+    @apply grid items-center gap-3 px-3 py-2;
+    grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1.3fr) 188px 64px;
+    box-shadow: inset 0 -1px 0 var(--line);
+  }
+  .find-row:last-child {
+    box-shadow: none;
+  }
+  .find-check {
+    @apply grid h-4 w-4 place-items-center rounded-sm;
+    background: var(--btn);
+    color: var(--on-btn);
+  }
+  .find-check[aria-checked="false"] {
+    background: var(--raised);
+    color: transparent;
+    box-shadow: inset 0 0 0 1.5px var(--g400);
+  }
+}
+@keyframes findSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}

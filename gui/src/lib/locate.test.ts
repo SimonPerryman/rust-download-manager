@@ -4,8 +4,8 @@ import { snap } from "./testSnapshot";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
 
-const { acceptOffer, locateFolderFor, locateOne } = await import("./locate");
-const { locateFolderMessage, relinkedMessage, sameFolderOfferLine } = await import("./copy");
+const { locateFolderFor, locateOne } = await import("./locate");
+const { locateFolderMessage, relinkedMessage } = await import("./copy");
 
 const gone = (id: number, final_path = "/old/a.zip") =>
   snap({ id, status: "completed", file_missing: true, final_path });
@@ -30,16 +30,6 @@ describe("locateOne", () => {
   it("shows nothing when the picker was cancelled", async () => {
     invoke.mockResolvedValue({ relinked: false, new_path: null, offer: null });
     expect(await locateOne(gone(1))).toEqual({ message: null, offer: null });
-  });
-});
-
-describe("accepting the offer", () => {
-  beforeEach(() => invoke.mockReset());
-
-  it("names no ids or paths, and reports how many were relinked", async () => {
-    invoke.mockResolvedValue(2);
-    expect(await acceptOffer()).toBe("Relinked 2 more downloads.");
-    expect(invoke.mock.calls).toEqual([["accept_same_folder_offer"]]);
   });
 });
 
@@ -75,8 +65,6 @@ describe("locateFolderFor", () => {
 
 describe("copy", () => {
   it("words the offer and the folder result for one and many", () => {
-    expect(sameFolderOfferLine(1)).toMatch(/^1 other missing download from/);
-    expect(sameFolderOfferLine(3)).toMatch(/^3 other missing downloads from/);
     expect(locateFolderMessage(0, 3)).toBe("None of the 3 downloads' files are in that folder.");
     expect(locateFolderMessage(3, 0)).toBe("Relinked 3 downloads.");
     expect(locateFolderMessage(1, 0)).toBe("Relinked 1 download.");

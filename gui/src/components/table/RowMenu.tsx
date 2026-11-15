@@ -21,7 +21,8 @@ import { Trash } from "../icons/Trash";
 const ICON: Record<MenuCommand, (p: { size?: number }) => React.ReactNode> = {
   open: ExternalLink,
   reveal: Folder,
-  locate: Search,
+  locate: Folder,
+  find: Search,
   locateFolder: Folder,
   forget: ListRemove,
   pause: Pause,

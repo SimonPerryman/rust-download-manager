@@ -143,3 +143,49 @@ export interface FolderOutcome {
   relinked: number;
   not_found: number[];
 }
+
+/** Mirrors the engine's `MatchReason` (src/engine/manager/find.rs): why a found file may be the one. */
+export type MatchReason = "SameNameAndSize" | "RenamedUniqueSize" | "RenamedChecksumMatch";
+
+/** Mirrors the engine's `FoundFile`: a file that may be a missing download's file. */
+export interface FoundFile {
+  path: string;
+  size: number;
+  /** Seconds since the Unix epoch, if the file system says. */
+  modified: number | null;
+  reason: MatchReason;
+}
+
+/** Mirrors the engine's `FindResult`: what one search found for one missing download. */
+export interface FindResult {
+  id: number;
+  /** Best folder first; empty when nothing matched. */
+  matches: FoundFile[];
+  searched_folders: string[];
+  /** Some folder was not fully searched (a depth or entry limit was reached). */
+  truncated: boolean;
+}
+
+/** Mirrors the engine's `FindEvent`, as the `find-event` event carries it. */
+export type FindEvent =
+  | {
+      kind: "progress";
+      search: number;
+      folders_done: number;
+      folders_total: number;
+      current: string | null;
+    }
+  | { kind: "result"; search: number; result: FindResult }
+  | {
+      kind: "finished";
+      search: number;
+      cancelled: boolean;
+      searched_folders: string[];
+      truncated: boolean;
+    };
+
+/** One candidate the user accepted for a missing download. */
+export interface FoundChoice {
+  id: number;
+  path: string;
+}

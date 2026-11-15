@@ -2,7 +2,7 @@
 // to show. The engine decides every match; the webview only passes ids and answers yes or no.
 
 import * as api from "./api";
-import { locateFolderMessage, relinkedMessage, sameFolderAcceptedMessage } from "./copy";
+import { locateFolderMessage, relinkedMessage } from "./copy";
 import { isMissing } from "./filters";
 import type { DownloadSnapshot, SameFolderOffer } from "./types";
 
@@ -18,11 +18,6 @@ export async function locateOne(
         : null,
     offer: outcome.relinked ? outcome.offer : null,
   };
-}
-
-/** Accept the pending offer; resolves with the toast. */
-export async function acceptOffer(): Promise<string> {
-  return sameFolderAcceptedMessage(await api.acceptSameFolderOffer());
 }
 
 /** What Locate folder… did: the toast, and the ids of the downloads not in the folder. */

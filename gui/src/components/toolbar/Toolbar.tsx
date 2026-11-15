@@ -8,6 +8,7 @@ import { ListRemove } from "../icons/ListRemove";
 import { Pause } from "../icons/Pause";
 import { Play } from "../icons/Play";
 import { Plus } from "../icons/Plus";
+import { Search } from "../icons/Search";
 import { Retry } from "../icons/Retry";
 import { SettingsMenu } from "../settings/SettingsMenu";
 import type { UpdateSettingsProps } from "../settings/UpdateSettings";
@@ -22,6 +23,8 @@ type Props = {
   count: number;
   /** The Failed view's bulk retry; null hides it. */
   onRetryAll: (() => void) | null;
+  /** The Missing view's Find files; null hides it (every other view, or a search running). */
+  onFindFiles: (() => void) | null;
   query: string;
   onQuery: (q: string) => void;
   pauseMode: "pause" | "resume" | null;
@@ -134,6 +137,12 @@ export function Toolbar(p: Props) {
               <span className="tb-label">Remove</span>
             </button>
           </>
+        )}
+        {p.onFindFiles && (
+          <button data-testid="find-files-button" className="btn btn-soft" onClick={p.onFindFiles}>
+            <Search />
+            Find files
+          </button>
         )}
         <button
           data-testid="add-button"

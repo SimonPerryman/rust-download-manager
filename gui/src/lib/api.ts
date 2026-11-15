@@ -7,7 +7,10 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { SettingsPatch } from "./settings";
 import type {
   DownloadSnapshot,
+  FindEvent,
+  FindResult,
   FolderOutcome,
+  FoundChoice,
   InstallWhen,
   LocateOutcome,
   LogLine,
@@ -113,8 +116,6 @@ export const openDownload = (id: number) => invoke<void>("open_download", { id }
  * folder. By id, so the webview names no path.
  */
 export const locateDownload = (id: number) => invoke<LocateOutcome>("locate_download", { id });
-/** Relink the downloads of the pending same-folder offer; resolves with how many were relinked. */
-export const acceptSameFolderOffer = () => invoke<number>("accept_same_folder_offer");
 /** Drop the pending same-folder offer without relinking anything. */
 export const dismissSameFolderOffer = () => invoke<void>("dismiss_same_folder_offer");
 /**
@@ -123,6 +124,25 @@ export const dismissSameFolderOffer = () => invoke<void>("dismiss_same_folder_of
  */
 export const locateFolder = (ids: number[]) =>
   invoke<FolderOutcome | null>("locate_folder", { ids });
+/**
+ * Search for a missing download's file: its old folder, the other downloads' folders, the default
+ * folder. Resolves with the search id; progress and results arrive as find events.
+ */
+export const findFile = (id: number) => invoke<number>("find_file", { id });
+/** Search for every missing download's file in one pass; resolves with the search id. */
+export const findFiles = () => invoke<number>("find_files");
+/** Stop a search by its id. */
+export const cancelFind = (search: number) => invoke<void>("cancel_find", { search });
+/** The kept result of every search not yet relinked: the source of truth after a missed event. */
+export const findResults = () => invoke<FindResult[]>("find_results");
+/**
+ * Relink each accepted candidate. The engine takes only a path the last search offered; resolves
+ * with how many were relinked.
+ */
+export const relinkFound = (choices: FoundChoice[]) => invoke<number>("relink_found", { choices });
+/** Subscribe to a search's progress, per-download results and end. */
+export const onFindEvent = (cb: (event: FindEvent) => void): Promise<UnlistenFn> =>
+  listen<FindEvent>("find-event", (e) => cb(e.payload));
 /** Show a completed download's file in its folder (by id, like `openDownload`). */
 export const revealDownload = (id: number) => invoke<void>("reveal_download", { id });
 
