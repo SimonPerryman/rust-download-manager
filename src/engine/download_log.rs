@@ -113,6 +113,9 @@ struct Buffer {
     unloaded: bool,
     /// Lines in the file, to know when to rewrite it shorter.
     file_lines: usize,
+    /// The file is known to end in a newline (or not exist), so the next
+    /// line can be appended as is; a torn tail from a crash gets one first.
+    tail_clean: bool,
 }
 
 impl Buffer {
@@ -142,9 +145,14 @@ impl Buffer {
             return;
         }
         let Some(dir) = dir else { return };
-        let Ok(text) = std::fs::read_to_string(log_path(dir, id)) else {
-            return;
+        let text = match std::fs::read_to_string(log_path(dir, id)) {
+            Ok(text) => text,
+            Err(e) => {
+                self.tail_clean = e.kind() == std::io::ErrorKind::NotFound;
+                return;
+            }
         };
+        self.tail_clean = text.is_empty() || text.ends_with('\n');
         let saved: Vec<LogLine> = text
             .lines()
             .filter_map(|l| serde_json::from_str(l).ok())
@@ -175,7 +183,9 @@ impl Buffer {
             .create(true)
             .append(true)
             .open(&path)?;
-        file.write_all(format!("{json}\n").as_bytes())?;
+        let lead = if self.tail_clean { "" } else { "\n" };
+        file.write_all(format!("{lead}{json}\n").as_bytes())?;
+        self.tail_clean = true;
         self.file_lines += 1;
         if self.file_lines > LOG_FILE_MAX_LINES {
             self.rewrite_short(&path)?;
@@ -195,6 +205,7 @@ impl Buffer {
         let tmp = path.with_extension("jsonl.tmp");
         std::fs::write(&tmp, text)?;
         std::fs::rename(&tmp, path)?;
+        self.tail_clean = true;
         self.file_lines = self.concise.len();
         Ok(())
     }
@@ -671,6 +682,27 @@ mod tests {
         let kept = messages(&again, 1);
         assert_eq!(kept.len(), LOG_LINES);
         assert_eq!(kept[0], "line 5");
+    }
+
+    /// A crash mid-write leaves a fragment with no newline; the next saved
+    /// line must start on its own line, not be glued onto it.
+    #[test]
+    fn a_torn_tail_does_not_swallow_the_next_line() {
+        let tmp = tempfile::tempdir().unwrap();
+        let logs = on_disk(tmp.path());
+        logs.record(1, LogLevel::Info, "before".into());
+        let path = tmp.path().join("1.jsonl");
+        let mut text = std::fs::read_to_string(&path).unwrap();
+        text.push_str("{\"at\":1,\"level\":\"info\",\"mess");
+        std::fs::write(&path, text).unwrap();
+
+        let restarted = on_disk(tmp.path());
+        restarted.open(1);
+        restarted.record(1, LogLevel::Info, "after".into());
+
+        let again = on_disk(tmp.path());
+        again.open(1);
+        assert_eq!(messages(&again, 1), ["before", "after"]);
     }
 
     #[test]
