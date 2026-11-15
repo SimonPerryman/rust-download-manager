@@ -105,6 +105,10 @@ impl Manager {
             logs: Arc::default(),
             missing_tx: tokio::sync::broadcast::channel(64).0,
             missing_busy: Mutex::default(),
+            find_tx: tokio::sync::broadcast::channel(2048).0,
+            find_results: Mutex::default(),
+            finds: Mutex::default(),
+            next_find: std::sync::atomic::AtomicU64::new(1),
             state: Mutex::new(st),
         });
         // Prime the channel with the restored list.

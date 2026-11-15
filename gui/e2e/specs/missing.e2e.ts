@@ -145,13 +145,13 @@ describe("rdm GUI missing files", () => {
   });
 
   it("Locate… relinks the record to the chosen file and clears the flag", async () => {
-    const { id, oldPath } = await addAndLoseFile(ids);
+    const { id, oldPath, size } = await addAndLoseFile(ids);
     await openDetails(id);
     await waitForText(`${BANNER} [data-testid="missing-path"]`, path.basename(oldPath));
 
     // The seam stands in for the OS file picker.
     mkdirSync(path.dirname(located), { recursive: true });
-    writeFileSync(located, "found again");
+    writeFileSync(located, Buffer.alloc(size, 1));
     await $(BANNER).$("button=Locate…").click();
 
     await waitForAttr(id, "data-missing", null, 15_000);
@@ -183,7 +183,7 @@ describe("rdm GUI missing files", () => {
     const [a, b] = await addAndLoseFiles(ids, 2);
     // B's file is in the folder A will be relinked into, with its name and exact size.
     const moved = putFile(path.dirname(located), path.basename(b.oldPath), b.size);
-    writeFileSync(located, "found again");
+    writeFileSync(located, Buffer.alloc(a.size, 1));
     await openDetails(a.id);
     await $(BANNER).$("button=Locate…").click();
 
@@ -202,7 +202,7 @@ describe("rdm GUI missing files", () => {
   it("leaves the others missing when the offer is dismissed", async () => {
     const [a, b] = await addAndLoseFiles(ids, 2);
     putFile(path.dirname(located), path.basename(b.oldPath), b.size);
-    writeFileSync(located, "found again");
+    writeFileSync(located, Buffer.alloc(a.size, 1));
     await openDetails(a.id);
     await $(BANNER).$("button=Locate…").click();
     await waitForAttr(a.id, "data-missing", null, 15_000);

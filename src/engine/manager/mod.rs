@@ -20,6 +20,7 @@
 mod archive;
 mod commands;
 mod files;
+mod find;
 mod missing;
 mod observe;
 mod persist;
@@ -45,6 +46,7 @@ use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Stor
 use crate::engine::tally::Tally;
 use crate::engine::{Checksum, Control, RateLimiter, Segment};
 use files::{has_partial, remove_partial};
+pub use find::{FindEvent, FindResult, FoundFile, MatchReason};
 pub use missing::{FolderMatch, FolderRelink, MissingChange, SameFolderOffer};
 
 /// Minimum wall-clock gap between progress-driven snapshot publishes.
@@ -293,6 +295,13 @@ struct Inner {
     missing_tx: tokio::sync::broadcast::Sender<MissingChange>,
     /// Folders a check is listing now, so a repeat check skips them.
     missing_busy: Mutex<std::collections::HashSet<PathBuf>>,
+    /// Announces Find file progress, results and completion.
+    find_tx: tokio::sync::broadcast::Sender<FindEvent>,
+    /// The latest Find file result per missing download; memory only.
+    find_results: Mutex<HashMap<u64, FindResult>>,
+    /// Cancel flags of the searches running now, by search id.
+    finds: Mutex<HashMap<u64, Arc<AtomicBool>>>,
+    next_find: std::sync::atomic::AtomicU64,
 }
 
 /// Coordinates many concurrent downloads over the engine's [`download`](crate::engine::download).

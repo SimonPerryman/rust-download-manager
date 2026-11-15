@@ -607,6 +607,66 @@ async fn locate_folder(
     .await
 }
 
+/// Start a search for the file of missing download `id`: its old folder, the
+/// other downloads' folders, then the default download folder. Resolves with
+/// the search id; progress and results arrive as `find-event` events.
+#[tauri::command]
+fn find_file(app: tauri::AppHandle, state: State<'_, AppState>, id: u64) -> Result<u64, String> {
+    let default = default_dir(&app).ok();
+    state
+        .manager
+        .find_file(id, default.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Start one search for every missing download (each folder is scanned once).
+/// Resolves with the search id; events as for [`find_file`].
+#[tauri::command]
+fn find_files(app: tauri::AppHandle, state: State<'_, AppState>) -> u64 {
+    let default = default_dir(&app).ok();
+    state.manager.find_files(default.as_deref())
+}
+
+/// Cancel a running search by the id `find_file` / `find_files` returned.
+#[tauri::command]
+fn cancel_find(state: State<'_, AppState>, search: u64) {
+    state.manager.cancel_find(search);
+}
+
+/// The kept results of the latest searches, one per missing download that was
+/// searched for and hasn't been relinked since.
+#[tauri::command]
+fn find_results(state: State<'_, AppState>) -> Vec<rdm::FindResult> {
+    state.manager.find_results()
+}
+
+/// One accepted candidate: the webview names the download and the path the
+/// search offered, and the engine accepts only a path it offered.
+#[derive(serde::Deserialize)]
+struct FoundChoice {
+    id: u64,
+    path: PathBuf,
+}
+
+/// Relink each chosen candidate. Resolves with how many were relinked.
+#[tauri::command]
+async fn relink_found(
+    state: State<'_, AppState>,
+    choices: Vec<FoundChoice>,
+) -> Result<usize, String> {
+    let manager = state.manager.clone();
+    commands_guard::contained("relink_found", async move {
+        tokio::task::spawn_blocking(move || {
+            let choices: Vec<(u64, PathBuf)> =
+                choices.into_iter().map(|c| (c.id, c.path)).collect();
+            manager.relink_found(&choices)
+        })
+        .await
+        .map_err(|e| e.to_string())
+    })
+    .await
+}
+
 /// Overrides the state/log directory (default `~/.rdm`), and puts the webview
 /// profile (localStorage) under it too. Lets automated runs (the webview E2E
 /// suite) stay off the developer's real download list and display settings.
@@ -739,6 +799,7 @@ fn init_manager(
     // Bridge the manager's watch channel to a webview event. The receiver
     // always holds the latest coalesced snapshot, so a slow webview never
     // falls behind. An initial send primes the UI on startup.
+    let find_app = app.clone();
     let app = app.clone();
     let mut rx = manager.subscribe();
     tauri::async_runtime::spawn(async move {
@@ -746,6 +807,22 @@ fn init_manager(
         while rx.changed().await.is_ok() {
             let snapshot = rx.borrow().clone();
             let _ = app.emit("downloads-changed", snapshot);
+        }
+    });
+
+    // Forward Find file progress, results and completion as `find-event`.
+    let app = find_app;
+    let mut find = manager.subscribe_find();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match find.recv().await {
+                Ok(event) => {
+                    let _ = app.emit("find-event", event);
+                }
+                // A slow webview missed some; `find_results` has them all.
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
         }
     });
 
@@ -997,6 +1074,11 @@ pub fn run() {
             accept_same_folder_offer,
             dismiss_same_folder_offer,
             locate_folder,
+            find_file,
+            find_files,
+            cancel_find,
+            find_results,
+            relink_found,
             check_for_update,
             install_update,
             staged_update,

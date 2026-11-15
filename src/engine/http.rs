@@ -33,6 +33,7 @@ pub(super) fn is_transient(err: &Error) -> bool {
         | Error::UnsupportedState(_)
         | Error::UnsupportedStore(_)
         | Error::InvalidRequest(_)
+        | Error::DifferentSize
         | Error::Internal(_) => false,
     }
 }

@@ -47,8 +47,8 @@ pub(crate) use http::{status_error, throttle_wait};
 pub use integrity::{Algo, Checksum};
 pub use limit::{parse_rate, RateLimiter};
 pub use manager::{
-    AddOptions, DownloadSnapshot, FolderMatch, FolderRelink, Manager, MissingChange,
-    SameFolderOffer,
+    AddOptions, DownloadSnapshot, FindEvent, FindResult, FolderMatch, FolderRelink, FoundFile,
+    Manager, MatchReason, MissingChange, SameFolderOffer,
 };
 pub use progress::{Progress, SpeedMeter};
 pub use proxy::{Proxy, ProxyMode};
@@ -353,6 +353,9 @@ pub enum Error {
     /// verify one that isn't completed).
     #[error("invalid request: {0}")]
     InvalidRequest(String),
+    /// Locate… was given a file whose size isn't the download's.
+    #[error("That file is a different size.")]
+    DifferentSize,
     /// A bug in rdm: the download's task panicked (the panic message is
     /// carried). The download fails instead of taking the app down with it.
     #[error("internal error, please report it: {0}")]

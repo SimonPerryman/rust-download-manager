@@ -11,7 +11,8 @@ pub mod platform;
 pub use engine::{
     download, map_urls_in, parse_rate, redact_url, redact_urls_in, AddOptions, Algo, Checksum,
     ChecksumState, ClaimTarget, Control, DownloadRecord, DownloadRequest, DownloadSnapshot,
-    DownloadState, Error, FolderMatch, FolderRelink, JsonStore, LogLevel, LogLine, Manager,
-    MissingChange, Progress, Proxy, ProxyMode, RateLimiter, Result, RetryPolicy, SameFolderOffer,
-    Segment, Settings, Status, Store, StoreData, Summary, LOG_LINES,
+    DownloadState, Error, FindEvent, FindResult, FolderMatch, FolderRelink, FoundFile, JsonStore,
+    LogLevel, LogLine, Manager, MatchReason, MissingChange, Progress, Proxy, ProxyMode,
+    RateLimiter, Result, RetryPolicy, SameFolderOffer, Segment, Settings, Status, Store, StoreData,
+    Summary, LOG_LINES,
 };
