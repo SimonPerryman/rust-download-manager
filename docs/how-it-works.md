@@ -211,6 +211,23 @@ display downloads, but don't fetch anything themselves.
 [The architecture diagram](architecture.html) shows the components and
 follows a download through them.
 
+## A download's log on disk
+
+Each download's Log tab keeps its last 200 informational lines (and up),
+including Find file searches and relinks, across restarts. Every such line is
+appended as it is logged, as one line of JSON, to `logs/<id>.jsonl` beside
+`state.json`, so a crash loses at most the last line. Detailed (debug) lines
+stay in memory only. The saved lines are read back the first time a
+download's log is opened, and they hold exactly the redacted text the Log tab
+shows. Removing a download from the list deletes its log file.
+
+Logs are pruned once, in the background, at start: files not written for 90
+days go, then files for downloads no longer in the list, then the least
+recently written ones until all logs together take at most 20 MB. A file that
+grows past 1000 lines is cut back to its last 200. If a log can't be written
+or read, the download carries on, and one warning says the log won't survive a
+restart.
+
 ## When something goes wrong
 
 - **A bug in a download:** if a download's task panics (a bug in rdm), only

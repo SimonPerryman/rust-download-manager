@@ -82,7 +82,8 @@ impl Manager {
     }
 
     /// Download `id`'s recent log lines, oldest first: empty for an unknown id
-    /// or one that hasn't run since the manager loaded (lines aren't saved).
+    /// or one with no saved lines. INFO-and-up lines are kept on disk, so they
+    /// survive a restart; detailed (DEBUG) ones don't.
     pub fn download_log(&self, id: u64) -> Vec<LogLine> {
         self.inner.logs.lines(id)
     }

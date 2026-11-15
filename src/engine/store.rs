@@ -272,6 +272,12 @@ pub trait Store: Send + Sync {
 
     /// Persist the full document, atomically where possible.
     fn save(&self, data: &StoreData) -> Result<()>;
+
+    /// A folder for per-download log files, if this store has a place for
+    /// them; `None` keeps logs in memory only.
+    fn logs_dir(&self) -> Option<PathBuf> {
+        None
+    }
 }
 
 /// A [`Store`] backed by a single JSON file.
@@ -292,6 +298,11 @@ impl JsonStore {
 }
 
 impl Store for JsonStore {
+    /// The `logs` folder beside the document.
+    fn logs_dir(&self) -> Option<PathBuf> {
+        Some(self.path.parent()?.join("logs"))
+    }
+
     fn load(&self) -> Result<StoreData> {
         match std::fs::read(&self.path) {
             Ok(bytes) => {

@@ -128,10 +128,10 @@ async fn a_failed_check_logs_one_error() {
     assert!(!lines.iter().any(|l| starts(l, "Completed")));
 }
 
-/// An unknown id has no lines, and neither has a download restored from the
-/// store: lines live in memory only, for downloads run since the manager loaded.
+/// An unknown id has no lines; a download restored from the store has the
+/// INFO-and-up lines saved on disk, but never the DEBUG detail.
 #[tokio::test]
-async fn unknown_and_restored_downloads_have_no_lines() {
+async fn unknown_ids_have_no_lines_and_restored_ones_only_the_saved_story() {
     let server = common::spawn().await;
     let dir = tempfile::tempdir().unwrap();
     let id = {
@@ -145,7 +145,9 @@ async fn unknown_and_restored_downloads_have_no_lines() {
     let mgr = manager_in(dir.path());
     let _guard = capture(&mgr);
     assert!(mgr.snapshot().iter().any(|s| s.id == id));
-    assert!(mgr.download_log(id).is_empty());
+    let restored = mgr.download_log(id);
+    assert!(starts(&restored[0], "Started · "), "{restored:#?}");
+    assert!(restored.iter().all(|l| l.level == LogLevel::Info));
     assert!(mgr.download_log(id + 1000).is_empty());
 }
 
@@ -285,4 +287,73 @@ async fn pause_resume_and_detail_through_the_manager() {
             && l.message.ends_with("HTTP 206")),
         "{lines:#?}"
     );
+}
+
+/// The concise lines, a relink entry included, are still there after a
+/// restart (a new Manager over the same folder); removing the download then
+/// deletes its log file.
+#[tokio::test]
+async fn logs_survive_a_restart_and_go_with_the_download() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    let guard = capture(&mgr);
+
+    let id = mgr.add(server.url("/named"), dir.path(), None, None);
+    wait_status(&mgr, id, Status::Completed).await;
+    let file = dir.path().join("moved.bin");
+    std::fs::write(&file, b"x").unwrap();
+    mgr.relink(id, &file).unwrap();
+    let before = concise(&mgr.download_log(id))
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        starts(before.last().unwrap(), "Relinked to "),
+        "{before:#?}"
+    );
+    mgr.shutdown();
+    drop(guard);
+    drop(mgr);
+
+    let log_file = dir.path().join("logs").join(format!("{id}.jsonl"));
+    assert!(log_file.exists());
+    let mgr = manager_in(dir.path());
+    assert_eq!(mgr.download_log(id), before);
+
+    mgr.remove(id);
+    assert!(mgr.download_log(id).is_empty());
+    assert!(!log_file.exists());
+}
+
+/// A log file whose download is gone from the list is deleted at start.
+#[tokio::test]
+async fn start_prunes_logs_of_downloads_no_longer_listed() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    let id = mgr.add(server.url("/named"), dir.path(), None, None);
+    let _guard = capture(&mgr);
+    wait_status(&mgr, id, Status::Completed).await;
+    mgr.shutdown();
+    drop(mgr);
+
+    let logs = dir.path().join("logs");
+    let stray = logs.join("1.jsonl");
+    std::fs::create_dir_all(&logs).unwrap();
+    std::fs::write(&stray, "{}\n").unwrap();
+    let state = dir.path().join("state.json");
+    let doc = std::fs::read_to_string(&state).unwrap();
+    assert!(doc.contains("next_id"));
+    // Drop the download from the list but keep its id counted.
+    let mut json: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    json["downloads"] = serde_json::json!([]);
+    std::fs::write(&state, json.to_string()).unwrap();
+
+    let _mgr = manager_in(dir.path());
+    let deadline = Instant::now() + T;
+    while stray.exists() {
+        assert!(Instant::now() < deadline, "orphan log never pruned");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }

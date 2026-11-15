@@ -133,8 +133,10 @@ turns orange and the Speed column reads the speed against the limit:
     `HH:MM:SS  text`; it says "Copied" for a moment (and tells a screen
     reader how many lines). **Save…** writes the same text to a file you
     pick, named after the download (`big.iso.log`), and says "Saved".
-  - A finished download's lanes and log lines are kept only until the app
-    closes; after a restart the pane shows the summary alone.
+  - A finished download's lanes are kept only until the app closes, and
+    so are its detailed log lines; after a restart the pane shows the
+    summary and the Log tab's informational lines, which rdm keeps on disk
+    (see [how it works](how-it-works.md#a-downloads-log-on-disk)).
 
 ![The details pane's Speed tab for a running download: speed now, average and peak, and a graph of the last minute, under a table whose rows draw their lanes](screenshots/details.png)
 
