@@ -70,28 +70,22 @@ function Stats({ d, spot, onMove }: Pick<Props, "d" | "spot" | "onMove">) {
       return (
         <div className="stats">
           <Stat big={formatBytes(d.downloaded)} sec={of} />
-          <span className="text-g600">Paused. Resume picks up where it stopped.</span>
         </div>
       );
     case "cancelled":
       return d.partial_kept ? (
         <div className="stats">
           <Stat big={formatBytes(d.downloaded)} sec={`${of} kept`} />
-          <span className="text-g600">Resume picks up from here.</span>
         </div>
       ) : (
         <div className="stats">
           <Stat big="Nothing kept" />
-          <span className="text-g600">Download again starts from zero.</span>
         </div>
       );
     case "queued":
       return (
         <div className="stats">
-          <Stat big="Queued for a free slot" />
-          <span className="text-g600">
-            {spot ? queuePlace(spot.index) : "Starts when a running download finishes."}
-          </span>
+          {spot && <Stat big={queuePlace(spot.index)} />}
           {spot && spot.count > 1 && (
             // aria-disabled, not disabled: a button that disables itself under
             // the keyboard would drop focus to the page.

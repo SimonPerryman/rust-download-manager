@@ -20,12 +20,14 @@ export function Sparkline({ speed, samples, globalLimit }: Props) {
   // Split so the icon rail can stack the unit under the number.
   const [num, unit] = formatSpeed(speed).split(" ");
   return (
-    <div className="spark" data-testid="sparkline">
+    <div
+      className="spark"
+      data-testid="sparkline"
+      role="group"
+      aria-label="Total speed, last minute"
+    >
       <div className="spark-speed font-semibold tabular-nums" data-testid="total-speed">
         <span className="spark-num">{num}</span> <span className="spark-unit">{unit}</span>
-      </div>
-      <div className="spark-caption text-xs text-g400">
-        Total speed now; the line is the last minute
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
         {samples.length > 1 && (
