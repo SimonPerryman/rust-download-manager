@@ -15,6 +15,7 @@
 //! checkpointed in its v2 sidecar, re-fetching only the missing ranges.
 
 mod attempt;
+pub mod batch;
 pub mod control;
 mod download_log;
 #[cfg(feature = "fault-injection")]
@@ -41,6 +42,9 @@ pub mod tags;
 mod tally;
 mod wording;
 
+pub use batch::{
+    parse_list, ListError, ListLink, ParsedList, SkipReason, SkippedLine, MAX_LIST_LINKS,
+};
 pub use control::{Control, Flow};
 pub use download_log::{LogLevel, LogLine, LOG_LINES};
 pub(crate) use http::{status_error, throttle_wait};

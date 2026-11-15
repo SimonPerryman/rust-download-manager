@@ -9,10 +9,11 @@ pub mod engine;
 pub mod platform;
 
 pub use engine::{
-    download, map_urls_in, parse_rate, redact_url, redact_urls_in, AddOptions, Algo, Checksum,
-    ChecksumState, ClaimTarget, Control, DownloadRecord, DownloadRequest, DownloadSnapshot,
-    DownloadState, Error, FindEvent, FindResult, FolderMatch, FolderRelink, FoundFile, JsonStore,
-    LogLevel, LogLine, Manager, MatchReason, MissingChange, Progress, Proxy, ProxyMode,
-    RateLimiter, Result, RetryPolicy, SameFolderOffer, Segment, Settings, Status, Store, StoreData,
-    Summary, LOG_LINES,
+    download, map_urls_in, parse_list, parse_rate, redact_url, redact_urls_in, AddOptions, Algo,
+    Checksum, ChecksumState, ClaimTarget, Control, DownloadRecord, DownloadRequest,
+    DownloadSnapshot, DownloadState, Error, FindEvent, FindResult, FolderMatch, FolderRelink,
+    FoundFile, JsonStore, ListError, ListLink, LogLevel, LogLine, Manager, MatchReason,
+    MissingChange, ParsedList, Progress, Proxy, ProxyMode, RateLimiter, Result, RetryPolicy,
+    SameFolderOffer, Segment, Settings, SkipReason, SkippedLine, Status, Store, StoreData, Summary,
+    LOG_LINES, MAX_LIST_LINKS,
 };

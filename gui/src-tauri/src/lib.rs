@@ -350,6 +350,13 @@ fn retry_failed(state: State<'_, AppState>) {
     }
 }
 
+/// Read the Add dialog's pasted text into links and skipped lines; the list
+/// rules live in the engine. Rejects a list over the engine's cap.
+#[tauri::command]
+fn preview_list(text: String) -> Result<rdm::ParsedList, String> {
+    rdm::parse_list(&text).map_err(|e| e.to_string())
+}
+
 /// The default download directory, as a string (for the Add dialog's default).
 #[tauri::command]
 fn default_download_dir(app: tauri::AppHandle) -> Result<String, String> {
@@ -1066,6 +1073,7 @@ pub fn run() {
             resume_paused_for_update,
             forget_paused_for_update,
             retry_failed,
+            preview_list,
             default_download_dir,
             pick_folder,
             open_download,
