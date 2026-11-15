@@ -34,32 +34,41 @@ dialog and list is kept locally (not in the repo) in
   CLI and GUI both call. The GUI's preview asks the engine through a Tauri
   command instead of parsing in TypeScript; `batch.ts` keeps only
   presentation.
-- **List format:** one link per line; blank lines and `#` comments ignored;
-  several whitespace-separated links on a line count as several (as today);
-  `http` and `https` only. No per-line options.
-- **Duplicates:** a link repeated within one list is added once. A link
-  already in the list or archive is flagged in the GUI preview but still
-  added (as today); the CLI adds it without comment.
+- **List format:** links split on newlines and whitespace, and on a comma or
+  pipe that is followed by another `http(s)://` link (so a comma inside one
+  URL stays put); blank lines and `#` comments ignored; `http` and `https`
+  only. No per-line options.
+- **Duplicates:** a link repeated within one list is added once, and the
+  preview shows it once with its count (×2). A link already in the list or
+  archive is flagged in the GUI preview but still added (as today); the CLI
+  adds it without comment. Skipped lines are counted in the summary and
+  listed only on request.
 - **Per-item failure never stops a batch.** A line that isn't a link or a
   link the engine rejects is reported and skipped; the rest go in. The CLI
   exits non-zero if any item failed.
 - **Patterns:** a `[a-b]` range in the path or query expands to every value
   between, curl-style. Numbers keep their zero padding (`[01-20]` gives
   `01`…`20`); single letters work too (`[a-f]`). One pattern per link, in
-  the path or query only, never the host. A list over 1000 links, after
-  expansion, is refused with its count.
+  the path or query only, never the host. The count is worked out from the
+  range, never by generating it, and a list over 1000 links is refused with
+  its count. Rdm can't know which numbers exist: every link is added and a
+  missing one fails on its own row.
 - **Batches are queued like any download.** Each item is a normal download:
   it waits behind the queue cap, takes the global speed limit, and a
-  per-download limit applies to each item, not to the batch. No new
-  scheduler.
-- **Folder:** all items go to the chosen folder by default. An opt-in "New
-  folder for this batch" puts them in a subfolder named by the batch label.
-  Name clashes use the existing `name (1)` rule.
+  per-download limit applies to each item. An optional batch limit caps
+  the batch's items combined (slice 5). No new scheduler.
+- **Folder:** with two or more links, "New folder for this batch" puts
+  them in a subfolder named by the batch name (dated if unnamed). It is
+  ticked once a name is typed and unticked otherwise, so naming a batch is
+  the signal. Name clashes use the existing `name (1)` rule.
 - **Batch identity (slice 4):** each add of two or more links gets a batch
   id and an optional label saved on its downloads (store schema v3,
-  optional fields, older stores load unchanged). The list can show a batch
+  optional fields, older stores load unchanged). The list shows a batch
   as a group with a rollup ("12 of 40 done"), and **Retry failed** acts on
-  that batch only.
+  that batch only. A Grouped / Flat switch in the list toolbar turns the
+  grouping off (remembered); Flat is today's list. The sidebar gains a
+  Batches section that filters to one batch. Batches and tags stay separate:
+  a tag is a free label a user edits, a batch is fixed at add time.
 - **CLI form:** `rdm -i urls.txt` (`-i -` reads stdin). The `<URL>`
   argument stays for one link and may be repeated; `-i` and links can be
   mixed. A batch runs through the Manager so the queue cap applies, and the
@@ -75,7 +84,6 @@ failed; opt-in folder per batch; docs and screenshots.
 
 **Out (deferred):**
 - Site mirroring or recursive fetch (not planned).
-- A batch-wide speed limit that shares one cap across its items.
 - Per-line options in a list file (output name, checksum).
 - Importing a checksum list alongside a batch (→ "Checksum lists" in the
   roadmap backlog).
@@ -84,8 +92,8 @@ failed; opt-in folder per batch; docs and screenshots.
   backlog).
 
 ## Tasks
-Each is its own PR, in this order. Slice 4 needs the owner's go-ahead
-after slice 3.
+Each is its own PR, in this order. Slices 4 and 5 need the owner's
+go-ahead after slice 3.
 - [ ] `batch-engine`: `engine::batch` (parse, dedupe, report bad lines),
       Tauri preview command, GUI preview switched over, `batch.ts` trimmed,
       tests
@@ -95,6 +103,9 @@ after slice 3.
       Add dialog, 1000-link cap, docs
 - [ ] `batch-group`: batch id and label (schema v3), group row with rollup,
       Retry failed, opt-in folder per batch, e2e spec and screenshots
+- [ ] `batch-limit`: optional batch-wide speed cap shared by a batch's
+      items (a per-batch limiter in the engine), field in the Add dialog's
+      More options, test that the items' combined rate stays under it
 - [ ] `batch-docs`: `docs/gui.md`, `docs/cli.md`, `docs/how-it-works.md`,
       README highlight, screenshots
 
