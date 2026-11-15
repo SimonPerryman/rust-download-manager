@@ -37,7 +37,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M8 | Diagnostics — finding the bug when rdm crashes | done | [[milestone-08-diagnostics]] |
 | M9 | In-app updater | done | [[milestone-09-in-app-updater]] |
 | M10 | Smarter connections | done | [[milestone-10-smarter-connections]] |
-| M11 | Missing and moved files | todo | [[milestone-11-missing-and-moved-files]] |
+| M11 | Missing and moved files | done | [[milestone-11-missing-and-moved-files]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 
@@ -53,13 +53,10 @@ order.
 
 ## Up next (in priority order)
 
-Pick from the top. Items 2–3 need the owner before any code: live
+Pick from the top. Both items need the owner before any code: live
 measurements and a paid account respectively.
 
-1. **Missing and moved files** ([[milestone-11-missing-and-moved-files]]):
-   spot a finished download whose file was deleted or moved, keep its
-   record, and let the user relink it (Locate…, or Find it) or remove it.
-2. **Ramp window tuning** (M10 follow-up): with the 1 s window a download
+1. **Ramp window tuning** (M10 follow-up): with the 1 s window a download
    needs ~7 s to reach 4 connections. Parked, low value: shrinking it saves
    a fixed ~2-3 s per download, which only shows on 100 MB to 1 GB files
    from hosts that cap each connection. A live run on 2026-11-14 (Ubuntu
@@ -71,14 +68,15 @@ measurements and a paid account respectively.
    time to 4 lanes, final speed and total time, over several runs. The
    window is the `RAMP_WINDOW` constant in `src/engine/ramp.rs`, so each
    variant is a rebuild.
-3. **Code signing** (cut from M6): sign the Windows binaries and installers
+2. **Code signing** (cut from M6): sign the Windows binaries and installers
    (e.g. Azure Trusted Signing) and sign and notarise the macOS app (Apple
    Developer Program), so SmartScreen and Gatekeeper stop warning. Has a
    running cost; move it up when rdm is promoted beyond its current users.
 
 Shipped from this list: Mark-of-the-Web on Windows, and the smarter-connections
 work ([[milestone-10-smarter-connections]]: re-probe after a settle, shedding
-on a sustained drop, slow-setup warm-up, one wait for rate-limited hosts).
+on a sustained drop, slow-setup warm-up, one wait for rate-limited hosts), and
+missing and moved files ([[milestone-11-missing-and-moved-files]]).
 
 ## Backlog (not yet scheduled — parked on purpose)
 

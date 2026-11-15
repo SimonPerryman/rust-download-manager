@@ -164,7 +164,10 @@ redacted, like any URL's.
 
 A finished download whose file is gone is flagged as missing; it stays
 finished, and the flag is worked out from disk each time, never saved. The
-check lists each folder once rather than looking up every file.
+check lists each folder once rather than looking up every file. It runs in
+the background when the app starts, when its window regains focus (at most
+once every 30 seconds) and just before a file is opened or shown, so a slow
+or unplugged drive never freezes the list.
 
 **Find file** looks for a missing download's file in three places, in order:
 the folder it used to be in, the folders of your other downloads, and the

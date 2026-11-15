@@ -12,6 +12,7 @@ see [Installing rdm](install.md#desktop-app); to build it, see
 - [The queue](#the-queue)
 - [Lanes and details](#lanes-and-details)
 - [Completed and failed downloads](#completed-and-failed-downloads)
+- [Missing files](#missing-files)
 - [Archive and tags](#archive-and-tags)
 - [Settings](#settings)
 - [Updates](#updates)
@@ -143,6 +144,60 @@ turns orange and the Speed column reads the speed against the limit:
   **Show in folder**, until you [archive](#archive-and-tags) them.
 - **Failed** downloads are pinned to the top with the reason in plain words and
   a **Retry** button.
+
+## Missing files
+
+When a finished download's file has been moved or deleted, its row dims and
+shows **File missing** with a warning icon in place of its size and speed. The
+download stays in the list as a record, and it counts under both **Completed**
+and the sidebar's **Missing** view, which shows how many there are. Open and
+Show in folder give way to **Locate…** on the row.
+
+Select a missing row and the details pane shows a banner with the old path
+and three actions:
+
+- **Locate…** opens a file picker. Pick the file and the row relinks to it. A
+  file of a different size is refused ("That file is a different size.").
+- **Find file** searches nearby folders for it (below). Also in the row's
+  right-click menu.
+- **Remove from list** drops the record; the file is already gone.
+
+With two or more missing rows selected, right-click offers **Locate folder…**
+to pick the folder they all moved to.
+
+### Find file
+
+Find file shows its progress and the folder being searched, with **Cancel**.
+It then reports one of:
+
+- **Match found:** one file, with its folder, size and date. **Relink** accepts
+  it; **Locate…** picks a different file instead.
+- **Possible matches:** several files, each marked with why it may be the one
+  (**Same name and size**, **Possible match: renamed** or **Checksum match**).
+  Choose one and **Relink**, or **Skip**.
+- **No match found:** the folders searched, with **Locate…**,
+  **Search again** and **Remove from list**.
+
+Nothing is relinked until you click Relink. When a search was cut short, a
+quiet "Not every folder was fully searched" appears under the result. Each
+search is recorded in the download's [Log](#logs-and-troubleshooting), with
+the folders searched and the outcome. For what is searched and how files are
+matched, see [how it works](how-it-works.md#missing-and-moved-files).
+
+### Find files
+
+In the Missing view the toolbar has **Find files**, which searches for every
+missing file in one pass. A bar shows its progress, with **Cancel**. The result
+opens as a review: each file with where it was, where it was found and why it
+matches, plus a **Locate…** link in case the suggestion is wrong. Same-name,
+same-size files start ticked; renamed ones start unticked. **Relink selected**
+relinks the ticked rows.
+
+### Same-folder offer
+
+After you relink a file with Locate…, a bar offers to search the folder it
+moved to for the other missing files that were in the same old folder.
+**Search** runs Find files on just those; the X dismisses the bar.
 
 ## Archive and tags
 
