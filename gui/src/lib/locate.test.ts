@@ -65,12 +65,12 @@ describe("locateFolderFor", () => {
 
 describe("copy", () => {
   it("words the offer and the folder result for one and many", () => {
-    expect(locateFolderMessage(0, 3)).toBe("None of the 3 downloads' files are in that folder.");
-    expect(locateFolderMessage(3, 0)).toBe("Relinked 3 downloads.");
-    expect(locateFolderMessage(1, 0)).toBe("Relinked 1 download.");
+    expect(locateFolderMessage(0, 3)).toBe("None of the 3 files are in that folder.");
+    expect(locateFolderMessage(3, 0)).toBe("Relinked 3 files.");
+    expect(locateFolderMessage(1, 0)).toBe("Relinked 1 file.");
     expect(locateFolderMessage(2, 3)).toBe("Relinked 2. 3 weren't found in that folder.");
     expect(locateFolderMessage(1, 1)).toBe("Relinked 1. 1 wasn't found in that folder.");
-    expect(locateFolderMessage(0, 1)).toBe("That download's file isn't in that folder.");
+    expect(locateFolderMessage(0, 1)).toBe("That file isn't in that folder.");
   });
 
   it("words a relink by what changed: the folder if the name held, else the name", () => {

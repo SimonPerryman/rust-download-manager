@@ -136,7 +136,7 @@ function ActionButton({
       aria-label={action.label}
       title={title}
       onClick={onClick}
-      className={`btn btn-sm justify-center ${action.style === "primary" ? "btn-primary" : "btn-soft"} ${LABELLED_WIDTH[action.key] ?? ""}`}
+      className={`btn btn-sm btn-soft justify-center ${action.style === "primary" ? "btn-row-primary" : ""} ${LABELLED_WIDTH[action.key] ?? ""}`}
     >
       <Icon size={14} />
       <span className="act-label">{action.label}</span>

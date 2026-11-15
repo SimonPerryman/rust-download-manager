@@ -130,6 +130,18 @@
   .row.linger td {
     background: var(--success-linger);
   }
+  /* A row's primary action (the unopened Open) is soft until the row is hovered, selected or
+     focused, so a list of finished files isn't a column of solid blue. */
+  .row:hover .btn-row-primary,
+  .row.selected .btn-row-primary,
+  .row .btn-row-primary:focus-visible {
+    background: var(--btn);
+    color: var(--on-btn);
+    box-shadow: 0 1px 2px rgba(28, 27, 25, 0.18);
+  }
+  .row .btn-row-primary:hover:not(:disabled) {
+    background: var(--btn-h);
+  }
   /* The finish moment: a success tint that holds, then settles to the linger tint.
      The negative delay resumes it mid-way when the row remounts. */
   .row.fresh td {
