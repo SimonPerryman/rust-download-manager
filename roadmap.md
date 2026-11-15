@@ -152,6 +152,13 @@ ramping follow-ups shipped in M10; window tuning is in "Up next". These are low 
 - **Automated pin bumps for the rest** (CI pins): Dependabot already moves
   action SHAs; runner images, the Rust toolchain and `node-version` are
   bumped by hand. Renovate could propose those too.
+- **Keep download logs on disk** (missing and moved files): each
+  download's Log tab lives in memory only (200 lines, oldest dropped), so a
+  restart empties it, including the record of Find file searches and
+  relinks. Append the INFO-level lines to a small per-download file, load
+  the last lines back at start, delete the file when the record is removed,
+  and drop logs older than a set age (90 days is a starting guess) with a
+  total size cap. Detailed lines stay in memory.
 - **Move CI to Ubuntu 26.04** (CI pins): the e2e job's `webkit2gtk-driver`
   is `webkitgtk-webdriver` there; check the other Tauri deps and bump the pin
   in its own PR. No rush: 24.04 is supported until 2029.
