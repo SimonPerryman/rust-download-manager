@@ -10,7 +10,7 @@
     "build": "tsc && vite build && node scripts/check-test-hooks.mjs absent",
     "build:e2e": "tsc && vite build --mode e2e && node scripts/check-test-hooks.mjs present",
     "preview": "vite preview",
-    "lint": "oxlint src e2e && node scripts/guard-e2e-webkit.mjs && node scripts/guard-ci-pins.mjs && node scripts/guard-release-workflow.mjs && node scripts/guard-release-workflow.mjs --self-test && node scripts/check-issue-templates.mjs",
+    "lint": "oxlint src e2e && node scripts/guard-e2e-webkit.mjs && node scripts/guard-ci-pins.mjs && node scripts/guard-action-allowlist.mjs && node scripts/guard-action-allowlist.mjs --self-test && node scripts/guard-release-workflow.mjs && node scripts/guard-release-workflow.mjs --self-test && node scripts/check-issue-templates.mjs",
     "format": "oxfmt src e2e",
     "format:check": "oxfmt --check src e2e",
     "test": "vitest run",

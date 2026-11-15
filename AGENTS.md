@@ -21,6 +21,11 @@ instruction sheet for any agent (and human) working in this repo.
   the image, not by version, because Ubuntu drops superseded versions,
   which breaks builds and blocks security fixes. Bump a pin in its own
   commit. Enforced by `gui/scripts/guard-ci-pins.mjs` (part of `pnpm lint`).
+- **Every third-party action a workflow uses is listed in
+  `.github/allowed-actions.txt`, and added to Settings > Actions > General
+  "Allow specified actions" before merge.** Why: the setting rejects unlisted
+  actions with `startup_failure`, and PR CI never runs the release workflows.
+  Enforced by `gui/scripts/guard-action-allowlist.mjs` (part of `pnpm lint`).
 - On Windows, build from a Developer PowerShell for VS (MSVC env loaded) so the
   linker (`link.exe`) and the Windows SDK are on PATH.
 

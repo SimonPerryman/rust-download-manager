@@ -126,4 +126,6 @@ third-party ones (Settings, Actions, General: "Allow specified actions").
 A workflow that uses any other third-party action fails at startup, before a
 job runs. Pull-request CI doesn't run the release workflows, so it won't
 catch this: have a new action's `owner/repo@*` pattern added there before
-the change that uses it is merged.
+the change that uses it is merged. `.github/allowed-actions.txt` mirrors that
+list, and `pnpm lint` (in `gui/`) fails if a workflow uses an action that isn't
+in it, so update both the file and the setting.

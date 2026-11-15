@@ -1,0 +1,9 @@
+# Third-party actions the repo may use. Mirrors Settings > Actions > General >
+# "Allow specified actions"; GitHub-owned (actions/*, github/*) are always allowed.
+# Checked by gui/scripts/guard-action-allowlist.mjs (part of `pnpm lint`).
+# One `owner/repo@*` pattern per line.
+Swatinem/rust-cache@*
+pnpm/action-setup@*
+taiki-e/install-action@*
+tauri-apps/tauri-action@*
+step-security/harden-runner@*
