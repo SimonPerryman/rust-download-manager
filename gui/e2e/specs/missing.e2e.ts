@@ -281,10 +281,11 @@ describe("rdm GUI missing files", () => {
 
     const panel = '[data-testid="find-candidates"]';
     await waitForText(panel, "2 possible matches found");
-    const radios = await $(panel).$$('[role="radio"]');
-    expect(radios.length).toBe(2);
-    await radios[1].click();
-    await expect(radios[1]).toHaveAttribute("aria-checked", "true");
+    expect((await $(panel).$$('[role="radio"]')).length).toBe(2);
+    // Pick by folder: the order of two folders at one level is the file system's, not fixed.
+    const pick = $(panel).$('.//*[@role="radio"][contains(., "found-many-b")]');
+    await pick.click();
+    await expect(pick).toHaveAttribute("aria-checked", "true");
     expect((await engineRow(f.id))!.file_missing).toBe(true);
 
     await $(panel).$("button=Relink").click();
