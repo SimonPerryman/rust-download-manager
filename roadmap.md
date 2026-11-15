@@ -38,6 +38,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M9 | In-app updater | done | [[milestone-09-in-app-updater]] |
 | M10 | Smarter connections | done | [[milestone-10-smarter-connections]] |
 | M11 | Missing and moved files | done | [[milestone-11-missing-and-moved-files]] |
+| M12 | Batch downloads | todo | [[milestone-12-batch-downloads]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 
@@ -55,7 +56,9 @@ order.
 
 Pick from the top; each is described in the backlog below.
 
-1. **Batch**: wildcard / URL-list downloads, site mirroring.
+1. **Batch** ([[milestone-12-batch-downloads]]): URL lists from the CLI and
+   GUI, numbered patterns such as `file[01-20].zip`, and batches you can
+   see and retry. Site mirroring isn't planned.
 2. **Scheduling & automation**: start/stop at a time, bandwidth schedules,
    post-download actions.
 3. **Protocols beyond HTTP**: FTP/SFTP, BitTorrent, metalink/mirror failover.
@@ -81,7 +84,7 @@ missing and moved files ([[milestone-11-missing-and-moved-files]]).
 The first five items of "Up next" come from here; beyond those, roughly in
 priority order, with the large or unrequested items last.
 
-- **Batch**: wildcard / URL-list downloads, site mirroring
+- **Batch**: site mirroring (the rest is [[milestone-12-batch-downloads]])
 - **Checksum lists**: import a `SHA256SUMS` file, verify many downloads at
   once, export sums for finished files.
 - **Post-download safety checks, beyond Mark-of-the-Web** (optional): a
