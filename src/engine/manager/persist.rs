@@ -1,14 +1,15 @@
 //! The saved download list: restoring it at load, and saving it back.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use tokio::sync::watch;
 
 use super::files::owns_partial;
 use super::{Entry, Inner, Manager, ManagerState};
+use crate::engine::download_log::{prune, DownloadLogs, LOG_MAX_AGE, LOG_TOTAL_CAP};
 use crate::engine::lock::lock;
 use crate::engine::store::{ChecksumState, Status, Store, StoreData, SCHEMA_VERSION};
 use crate::engine::{single_segment, state, tags, DownloadState, RateLimiter};
@@ -85,6 +86,24 @@ impl Manager {
             entries.insert(entry.record.id, entry);
         }
         let next_id = data.next_id.max(1);
+        let logs = Arc::new(DownloadLogs::new(store.logs_dir()));
+        for &id in &order {
+            logs.open(id);
+        }
+        if let Some(dir) = store.logs_dir() {
+            // Off the caller's thread: it walks the folder.
+            let live: HashSet<u64> = order.iter().copied().collect();
+            handle.spawn_blocking(move || {
+                prune(
+                    &dir,
+                    &live,
+                    next_id,
+                    SystemTime::now(),
+                    LOG_MAX_AGE,
+                    LOG_TOTAL_CAP,
+                );
+            });
+        }
         let settings = data.settings.clamped();
         let global = Arc::new(RateLimiter::new(settings.global_limit));
 
@@ -102,7 +121,7 @@ impl Manager {
             handle,
             closed: AtomicBool::new(false),
             global,
-            logs: Arc::default(),
+            logs,
             missing_tx: tokio::sync::broadcast::channel(64).0,
             missing_busy: Mutex::default(),
             find_tx: tokio::sync::broadcast::channel(2048).0,
