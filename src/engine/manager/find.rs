@@ -1067,10 +1067,16 @@ mod tests {
 
         assert_eq!(mgr.relink_found(&[(1, stray)]), 0, "not offered");
         assert!(mgr.snapshot()[0].file_missing);
+        let found_path = found.clone();
         assert_eq!(mgr.relink_found(&[(1, found.clone())]), 1);
         assert!(!mgr.snapshot()[0].file_missing);
         assert_eq!(mgr.snapshot()[0].final_path, Some(found));
         assert!(mgr.find_result(1).is_none(), "cleared on relink");
+        let logged: Vec<String> = mgr.download_log(1).into_iter().map(|l| l.message).collect();
+        assert!(
+            logged.contains(&format!("Relinked to {}", found_path.display())),
+            "{logged:?}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

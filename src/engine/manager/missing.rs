@@ -15,6 +15,7 @@ use serde::Serialize;
 use tokio::task::JoinHandle;
 
 use super::{Inner, Manager};
+use crate::engine::download_log::LogLevel;
 use crate::engine::lock::lock;
 use crate::engine::store::Status;
 use crate::engine::Checksum;
@@ -274,6 +275,11 @@ impl Manager {
         e.record.target = file.to_path_buf();
         let was_missing = std::mem::replace(&mut e.file_missing, false);
         lock(&self.inner.find_results).remove(&id);
+        self.inner.logs.record(
+            id,
+            LogLevel::Info,
+            format!("Relinked to {}", file.display()),
+        );
         if was_missing {
             let _ = self
                 .inner
