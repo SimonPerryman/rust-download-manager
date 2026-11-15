@@ -12,7 +12,6 @@ import { ListRemove } from "../icons/ListRemove";
 import { Pause } from "../icons/Pause";
 import { Play } from "../icons/Play";
 import { Retry } from "../icons/Retry";
-import { Search } from "../icons/Search";
 import { Stop } from "../icons/Stop";
 import { Trash } from "../icons/Trash";
 import type { RowHandlers } from "./rowHandlers";
@@ -24,7 +23,7 @@ const ICON: Record<RowActionKey, (p: { size?: number }) => React.ReactNode> = {
   resume: Play,
   stop: Stop,
   open: ExternalLink,
-  locate: Search,
+  locate: Folder,
   reveal: Folder,
   remove: ListRemove,
   archive: Archive,

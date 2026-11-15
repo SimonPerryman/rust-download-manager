@@ -192,8 +192,9 @@ export function retryAllMessage(failed: readonly DownloadSnapshot[]): string {
     : `Retrying ${failed.length} failed downloads`;
 }
 
-/** The details banner's heading for a finished download whose file is gone. */
-export const missingBannerText = "This file is no longer where it was saved.";
+/** The details banner for a finished download whose file is gone: what and why. */
+export const missingBannerHeading = "rdm can't locate this file";
+export const missingBannerText = "It was moved or deleted.";
 
 const lastPart = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 
@@ -209,17 +210,53 @@ export function relinkedMessage(oldPath: string, newPath: string): string {
   return `Relinked ${newName} (now in ${folder})`;
 }
 
-/** The same-folder offer's line after a Locate…: the others found in the new folder. */
-export function sameFolderOfferLine(count: number): string {
-  return count === 1
-    ? "1 other missing download from the old folder is in the folder you chose."
-    : `${count} other missing downloads from the old folder are in the folder you chose.`;
+/** The toast after relinking found files (Relink or Relink selected). */
+export function relinkedFilesMessage(n: number): string {
+  if (n === 0) return "Couldn't relink: the files have changed since.";
+  return n === 1 ? "Relinked 1 file." : `Relinked ${n} files.`;
 }
 
-/** The toast after the same-folder offer was accepted. */
-export function sameFolderAcceptedMessage(n: number): string {
-  if (n === 0) return "Couldn't relink them: the files have changed since.";
-  return n === 1 ? "Relinked 1 more download." : `Relinked ${n} more downloads.`;
+/** What a search can say about a candidate, as its badge. */
+export const matchBadge = {
+  SameNameAndSize: "Same name and size",
+  RenamedUniqueSize: "Possible match: renamed",
+  RenamedChecksumMatch: "Checksum match",
+} as const;
+
+/** The candidates panel's heading, for two or more candidates. */
+export const possibleMatchesHeading = (n: number) => `${n} possible matches found`;
+
+/** "4 folders searched" for a finished search. */
+export const foldersSearched = (n: number) => `${n} folder${n === 1 ? "" : "s"} searched`;
+
+/** The search progress line: folders finished of all. */
+export const foldersProgress = (done: number, total: number) =>
+  `${Math.min(done, total)} of ${total} folder${total === 1 ? "" : "s"}`;
+
+/** The bar for Find files, e.g. "Searching for 3 files · folder 3 of 5". */
+export function findFilesBarText(count: number, done: number, total: number): string {
+  const files = `Searching for ${count} file${count === 1 ? "" : "s"}`;
+  return total > 0 ? `${files} · folder ${Math.min(done + 1, total)} of ${total}` : files;
+}
+
+/** The review's heading: "Found 2 of 3 files", or "Found in <folder>" when all are in one. */
+export function reviewHeading(found: number, total: number, folder: string | null): string {
+  if (folder && found === total && found > 0) return `Found in ${folder}`;
+  return `Found ${found} of ${total} file${total === 1 ? "" : "s"}`;
+}
+
+/** The quiet note when a search hit a depth or entry limit. */
+export const truncatedNote = "Not every folder was fully searched";
+
+/** The same-folder offer's words around its two folders: the noun, verb and pronoun for the count. */
+export function sameFolderOfferWords(count: number): {
+  noun: string;
+  verb: string;
+  pronoun: string;
+} {
+  return count === 1
+    ? { noun: "1 more missing file", verb: "was", pronoun: "it" }
+    : { noun: `${count} more missing files`, verb: "were", pronoun: "them" };
 }
 
 /** The label of the toast action that jumps to the downloads Locate folder… didn't find. */

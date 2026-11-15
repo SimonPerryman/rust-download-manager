@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatAdded, formatBytes, formatLeft, statusCountsLine } from "./format";
+import { formatAdded, formatBytes, formatLeft, formatModified, statusCountsLine } from "./format";
 const MiB = 1024 * 1024;
 
 describe("formatBytes", () => {
@@ -72,5 +72,12 @@ describe("formatLeft", () => {
 
   it("is blank when unknown", () => {
     expect(formatLeft(null)).toBe("");
+  });
+});
+
+describe("formatModified", () => {
+  it("writes the local date and 24-hour time", () => {
+    const at = new Date(2026, 10, 9, 9, 4);
+    expect(formatModified(at.getTime() / 1000)).toBe("9 Nov 2026, 09:04");
   });
 });

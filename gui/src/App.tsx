@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as api from "./lib/api";
 import {
   addedMessage,
@@ -17,12 +17,14 @@ import { EMPTY_WORK } from "./lib/laneWork";
 import { selectionActions } from "./lib/menu";
 import { queueOrder, stepIndex } from "./lib/queue";
 import { pauseAllMode, totalSpeed } from "./lib/rowView";
-import { acceptOffer, locateFolderFor, locateOne } from "./lib/locate";
+import { inOldFolder, missingIds, reviewRows, searchingMany, searchingOne } from "./lib/find";
+import { locateFolderFor, locateOne } from "./lib/locate";
 import type { DownloadSnapshot, SameFolderOffer } from "./lib/types";
 import { useArchive } from "./lib/useArchive";
 import { useBulkCommands } from "./lib/useBulkCommands";
 import { useDetails } from "./lib/useDetails";
 import { useDownloads } from "./lib/useDownloads";
+import { useFind } from "./lib/useFind";
 import { useFinishMoment } from "./lib/useFinishMoment";
 import { useLaneWork } from "./lib/useLaneWork";
 import { usePrefs } from "./lib/usePrefs";
@@ -55,6 +57,8 @@ import { DownloadTable } from "./components/table/DownloadTable";
 import { RowMenu } from "./components/table/RowMenu";
 import { Toolbar } from "./components/toolbar/Toolbar";
 import { FirstRunCard } from "./components/updater/FirstRunCard";
+import { FindFilesBar } from "./components/missing/FindFilesBar";
+import { FindReviewPane } from "./components/missing/FindReviewPane";
 import { SameFolderOfferBar } from "./components/missing/SameFolderOfferBar";
 import { PausedForUpdateBar } from "./components/updater/PausedForUpdateBar";
 import { UpdateNotice } from "./components/updater/UpdateNotice";
@@ -150,26 +154,47 @@ export default function App() {
     [fail],
   );
 
+  const find = useFind(downloads, notify, fail);
+  const review = useMemo(
+    () => (find.state.review ? reviewRows(find.state.review, downloads, find.state.results) : null),
+    [find.state.review, find.state.results, downloads],
+  );
+  // Opening another row's details leaves the review.
+  const { closeReview } = find;
+  useEffect(() => closeReview(), [detailsId, closeReview]);
   const [sameFolderOffer, setSameFolderOffer] = useState<SameFolderOffer | null>(null);
+  // Why the last Locate… was refused (a file of a different size), shown where it was asked for.
+  const [locateError, setLocateError] = useState<{ id: number; message: string } | null>(null);
+  const detailsIdRef = useRef<number | null>(null);
+  detailsIdRef.current = detailsId;
   const locateDownload = useCallback(
     (d: DownloadSnapshot) => {
+      setLocateError(null);
       locateOne(d)
         .then(({ message, offer }) => {
           if (message) notify(message);
           setSameFolderOffer(offer);
         })
-        .catch(fail);
+        .catch((e) => {
+          // The pane (or the Find panels) say it beside Locate…; with no pane open, a toast does.
+          if (detailsIdRef.current === d.id) setLocateError({ id: d.id, message: String(e) });
+          else fail(e);
+        });
     },
     [notify, fail],
   );
-  const acceptSameFolderOffer = useCallback(() => {
-    setSameFolderOffer(null);
-    acceptOffer().then(notify).catch(fail);
-  }, [notify, fail]);
   const dismissSameFolderOffer = useCallback(() => {
     setSameFolderOffer(null);
     api.dismissSameFolderOffer().catch(fail);
   }, [fail]);
+  // Search looks for the files that were in the same old folder; the results are reviewed, so
+  // nothing is relinked until the user says.
+  const searchSameFolder = useCallback(() => {
+    if (!sameFolderOffer) return;
+    const ids = inOldFolder(downloads, sameFolderOffer.old_folder);
+    dismissSameFolderOffer();
+    find.startMany(ids.length ? ids : undefined);
+  }, [sameFolderOffer, downloads, dismissSameFolderOffer, find.startMany]);
   const { select: selectIds } = selection;
   const locateFolder = useCallback(
     (rows: DownloadSnapshot[]) => {
@@ -190,6 +215,17 @@ export default function App() {
         .catch(fail);
     },
     [notify, fail, setQuery, setFilter, selectIds],
+  );
+  // Find file shows its answer in the details pane, so the pane opens on the record.
+  const { start: startFind } = find;
+  const findDownload = useCallback(
+    (d: DownloadSnapshot) => {
+      setLocateError(null);
+      setPaneTab("overview");
+      setDetailsId(d.id);
+      startFind(d.id);
+    },
+    [startFind, setDetailsId],
   );
   // Only the record: the file is already gone, so there is nothing to ask about.
   const forgetMissing = useCallback(
@@ -229,6 +265,7 @@ export default function App() {
       open: openDownload,
       reveal: revealDownload,
       locate: locateDownload,
+      find: findDownload,
       forget: forgetMissing,
       remove: (d) => askRemove([d]),
       archive: (d) => archiver.archive([d]),
@@ -245,6 +282,7 @@ export default function App() {
       openDownload,
       revealDownload,
       locateDownload,
+      findDownload,
       forgetMissing,
       retryAll,
       askRemove,
@@ -260,6 +298,7 @@ export default function App() {
     open: openDownload,
     reveal: revealDownload,
     locate: locateDownload,
+    find: findDownload,
     locateFolder,
     forget: forgetMissing,
     retryAll,
@@ -330,6 +369,14 @@ export default function App() {
               ? retryAll
               : null
           }
+          onFindFiles={
+            view.kind === "status" &&
+            view.status === "missing" &&
+            visible.length > 0 &&
+            !find.state.active
+              ? () => find.startMany(missingIds(downloads))
+              : null
+          }
           query={query}
           onQuery={setQuery}
           pauseMode={pauseAllMode(downloads)}
@@ -390,9 +437,10 @@ export default function App() {
             onRetry={() => void updater.retry()}
             onDismiss={() => updater.dismiss()}
           />
+          <FindFilesBar search={searchingMany(find.state)} onCancel={find.cancel} />
           <SameFolderOfferBar
             offer={sameFolderOffer}
-            onAccept={acceptSameFolderOffer}
+            onSearch={searchSameFolder}
             onDismiss={dismissSameFolderOffer}
           />
           <PausedForUpdateBar
@@ -425,7 +473,18 @@ export default function App() {
           detailsId={detailsRow?.id ?? null}
           onDetails={onDetails}
         />
-        {detailsRow && (
+        {review && (
+          <FindReviewPane
+            // A new search is a new review; its ticks start over.
+            key={review.map((r) => r.d.id).join(",")}
+            rows={review}
+            height={pane.height}
+            onRelink={(choices) => void find.relink(choices)}
+            onLocate={locateDownload}
+            onClose={find.closeReview}
+          />
+        )}
+        {detailsRow && !review && (
           <DetailsPane
             d={detailsRow}
             work={laneWork.get(detailsRow.id) ?? EMPTY_WORK}
@@ -440,6 +499,15 @@ export default function App() {
             onReveal={revealDownload}
             onLocate={locateDownload}
             onForget={forgetMissing}
+            find={{
+              searching: searchingOne(find.state, detailsRow.id),
+              result: find.state.results[detailsRow.id],
+              locateError: locateError?.id === detailsRow.id ? locateError.message : null,
+              onFind: findDownload,
+              onCancel: find.cancel,
+              onRelink: (d, file) => void find.relink([{ id: d.id, path: file.path }]),
+              onSkip: (d) => find.skip(d.id),
+            }}
             spot={
               detailsRow.status === "queued" && queue.includes(detailsRow.id)
                 ? { index: queue.indexOf(detailsRow.id), count: queue.length }

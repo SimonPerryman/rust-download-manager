@@ -3,6 +3,7 @@ import { PANE_MIN_H, statePhrase } from "../../lib/details";
 import { filterKeyOf } from "../../lib/filters";
 import type { LaneWork } from "../../lib/laneWork";
 import type { DownloadSnapshot } from "../../lib/types";
+import type { FindControls } from "../missing/FindPanel";
 import { X } from "../icons/X";
 import { StatusGlyph } from "../table/StatusGlyph";
 import { LogTab } from "./LogTab";
@@ -31,6 +32,7 @@ type Props = {
   onReveal: (d: DownloadSnapshot) => void;
   onLocate: (d: DownloadSnapshot) => void;
   onForget: (d: DownloadSnapshot) => void;
+  find: FindControls;
   /** Where a waiting download sits in the queue, else null. */
   spot: QueueSpot | null;
   onMove: (delta: number) => void;
@@ -52,6 +54,7 @@ export function DetailsPane({
   onReveal,
   onLocate,
   onForget,
+  find,
   spot,
   onMove,
 }: Props) {
@@ -125,6 +128,7 @@ export function DetailsPane({
             onReveal={onReveal}
             onLocate={onLocate}
             onForget={onForget}
+            find={find}
             spot={spot}
             onMove={onMove}
           />

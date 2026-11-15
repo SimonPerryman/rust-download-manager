@@ -77,3 +77,10 @@ export function host(url: string): string {
     return url;
   }
 }
+
+/** A file's modified time, in local time: "9 Nov 2026, 09:14". */
+export function formatModified(epochSecs: number): string {
+  const at = new Date(epochSecs * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${at.getDate()} ${MONTHS[at.getMonth()]} ${at.getFullYear()}, ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}

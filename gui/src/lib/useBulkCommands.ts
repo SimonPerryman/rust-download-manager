@@ -18,6 +18,8 @@ type Deps = {
   open: (d: DownloadSnapshot) => void;
   reveal: (d: DownloadSnapshot) => void;
   locate: (d: DownloadSnapshot) => void;
+  /** Find file: search for a missing download's file. */
+  find: (d: DownloadSnapshot) => void;
   /** Locate folder… for these rows (the missing ones are used). */
   locateFolder: (rows: DownloadSnapshot[]) => void;
   forget: (d: DownloadSnapshot) => void;
@@ -43,7 +45,7 @@ export function useBulkCommands(deps: Deps): (cmd: MenuCommand, ids: readonly nu
 
   return useCallback((cmd: MenuCommand, ids: readonly number[]) => {
     const { downloads, queue, notify, fail, open, reveal, retryAll, askStop } = ref.current;
-    const { locate, locateFolder, forget } = ref.current;
+    const { locate, find, locateFolder, forget } = ref.current;
     const { askRemove, askTags, archive } = ref.current;
     const list = ids.flatMap((id) => downloads.find((d) => d.id === id) ?? []);
     const each = (
@@ -62,6 +64,9 @@ export function useBulkCommands(deps: Deps): (cmd: MenuCommand, ids: readonly nu
         return;
       case "locate":
         if (one && isMissing(one)) locate(one);
+        return;
+      case "find":
+        if (one && isMissing(one)) find(one);
         return;
       case "locateFolder":
         return locateFolder(list);

@@ -11,6 +11,7 @@ export type MenuCommand =
   | "open"
   | "reveal"
   | "locate"
+  | "find"
   | "locateFolder"
   | "forget"
   | "pause"
@@ -66,6 +67,7 @@ export function menuItems(
   const missing = one != null && isMissing(one);
   if (missing) {
     out.push(item("locate", "Locate…"));
+    out.push(item("find", "Find file"));
   } else if (list.filter(isMissing).length >= 2) {
     out.push(item("locateFolder", "Locate folder…"));
   } else if (any(done)) {
