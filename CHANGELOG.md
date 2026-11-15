@@ -7,6 +7,8 @@ desktop app share one version.
 
 ## Unreleased
 
+## 0.4.0 - 2026-11-15
+
 ### Added
 
 - `--proxy <url>` (CLI) downloads through an HTTP, HTTPS or SOCKS5 proxy
