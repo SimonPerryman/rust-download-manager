@@ -1,21 +1,22 @@
 import { useRef } from "react";
-import { PANE_TABS, type PaneTab } from "./tabs";
+import { type PaneTab, visibleTabs } from "./tabs";
 
-type Props = { tab: PaneTab; onTab: (t: PaneTab) => void };
+type Props = { tab: PaneTab; missing: boolean; onTab: (t: PaneTab) => void };
 
 export const tabId = (t: PaneTab) => `pane-tab-${t}`;
 export const PANEL_ID = "pane-panel";
 
 // The tab strip: one tab in the Tab order, arrows and Home/End move between them.
-export function PaneTabs({ tab, onTab }: Props) {
+export function PaneTabs({ tab, missing, onTab }: Props) {
+  const tabs = visibleTabs(missing);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const onKeyDown = (e: React.KeyboardEvent, i: number) => {
-    const last = PANE_TABS.length - 1;
+    const last = tabs.length - 1;
     const to =
       e.key === "ArrowRight"
-        ? (i + 1) % PANE_TABS.length
+        ? (i + 1) % tabs.length
         : e.key === "ArrowLeft"
-          ? (i + last) % PANE_TABS.length
+          ? (i + last) % tabs.length
           : e.key === "Home"
             ? 0
             : e.key === "End"
@@ -23,12 +24,12 @@ export function PaneTabs({ tab, onTab }: Props) {
               : null;
     if (to == null) return;
     e.preventDefault();
-    onTab(PANE_TABS[to].key);
+    onTab(tabs[to].key);
     refs.current[to]?.focus();
   };
   return (
     <div className="pane-tabs" role="tablist" aria-label="Details">
-      {PANE_TABS.map((t, i) => (
+      {tabs.map((t, i) => (
         <button
           key={t.key}
           ref={(el) => {

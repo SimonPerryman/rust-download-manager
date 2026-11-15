@@ -65,7 +65,7 @@ describe("missing file UI", () => {
   });
 
   it("draws the unopened Open soft, solid only through the row's hover rule", () => {
-    const d = snap({ status: "completed", filename: "a.iso", final_path: "C:\Downloads\a.iso" });
+    const d = snap({ status: "completed", filename: "a.iso", final_path: "/dl/a.iso" });
     act(() =>
       root.render(<RowActions d={d} lingering editor={editor} handlers={{} as RowHandlers} />),
     );
