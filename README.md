@@ -16,6 +16,7 @@ command-line tool and a desktop app.
 - **In control:** pause, resume, stop and speed limits.
 - **A queue (GUI):** downloads wait their turn; paste many links at once.
 - **Archive and tags (GUI):** archive finished downloads and filter by tag.
+- **Missing files (GUI):** finished downloads whose file moved are flagged, and rdm can find them again.
 - **Verified:** optional SHA-256 checksum checked before the file is saved.
 - **Proxies:** the system proxy by default, or your own HTTP or SOCKS5 proxy.
 - **Safe names:** files stay in your folder and never overwrite another.

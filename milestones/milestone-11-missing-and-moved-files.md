@@ -1,7 +1,7 @@
 ---
 id: M11
 title: Missing and moved files
-status: todo
+status: done
 depends-on: [M5, M7]
 tags: [engine, gui, persistence, testing]
 ---
@@ -58,23 +58,23 @@ docs and screenshots.
 - A CLI relink command (revisit if the CLI shares the GUI's download list).
 
 ## Tasks
-- [ ] `missing-detect`: engine check, Manager overlay and event, tests with
+- [x] `missing-detect`: engine check, Manager overlay and event, tests with
       temporary folders
-- [ ] `missing-flag-relink`: dimmed row, details banner, Missing filter,
+- [x] `missing-flag-relink`: dimmed row, details banner, Missing filter,
       Locate…, Remove from list
-- [ ] `missing-same-folder`: offer to check the new folder; multi-select
+- [x] `missing-same-folder`: offer to check the new folder; multi-select
       Locate folder…
-- [ ] `missing-find-it`: bounded search, candidates panel, progress,
+- [x] `missing-find-it`: bounded search, candidates panel, progress,
       cancel, context menu and "Find all"
-- [ ] `missing-docs`: `docs/gui.md`, `docs/how-it-works.md`, screenshots
+- [x] `missing-docs`: `docs/gui.md`, `docs/how-it-works.md`, screenshots
 
 ## Acceptance criteria
-- [ ] `cargo test` passes, with fixture tests for detection, relink, the
+- [x] `cargo test` passes, with fixture tests for detection, relink, the
       same-folder offer and the search (name+size, unique-size rename,
       checksum tie-break, bounded folders, cancel).
-- [ ] The GUI unit tests and a webview e2e spec cover the missing row,
+- [x] The GUI unit tests and a webview e2e spec cover the missing row,
       Locate…, Remove from list and the suggestion button.
-- [ ] No check runs on the UI thread, and a record on an unreachable drive
+- [x] No check runs on the UI thread, and a record on an unreachable drive
       does not block the list.
-- [ ] `docs/gui.md` and `docs/how-it-works.md` describe the behaviour, and
+- [x] `docs/gui.md` and `docs/how-it-works.md` describe the behaviour, and
       the screenshots are regenerated.
