@@ -190,6 +190,11 @@ describe("rdm GUI power features", () => {
 
   it("folds the sidebar into an icon rail in a narrow window", async () => {
     const all = $('button[data-testid="filter"][data-filter="all"]');
+    // The sidebar's speed only shows while something transfers.
+    ids.push(await addThroughDialog(`${baseUrl}/slow`));
+    await $('aside [data-testid="total-speed"]').waitForExist({
+      timeoutMsg: "the sidebar never showed a speed",
+    });
     const { width, height } = await browser.getWindowSize();
     try {
       await browser.setWindowSize(700, height);
@@ -202,7 +207,7 @@ describe("rdm GUI power features", () => {
       const speedFits = () =>
         browser.execute(() => {
           const aside = document.querySelector("aside")!;
-          const speed = document.querySelector<HTMLElement>('[data-testid="total-speed"]')!;
+          const speed = document.querySelector<HTMLElement>('aside [data-testid="total-speed"]')!;
           const num = speed.querySelector<HTMLElement>(".spark-num");
           const fits = () =>
             aside.scrollWidth <= aside.clientWidth &&
