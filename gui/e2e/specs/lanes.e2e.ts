@@ -326,8 +326,11 @@ describe("rdm GUI lanes and details pane", () => {
     const wrong = right.startsWith("f") ? `e${right.slice(1)}` : `f${right.slice(1)}`;
 
     await openDetails(id);
-    const summary = $(`${paneSelector(id)} [data-testid="summary"]`);
-    await expect(summary).toHaveText(expect.stringContaining("no checksum given"));
+    await expect($(CHECKSUM)).toHaveText(expect.stringContaining("No checksum given"));
+    // The checksum is stated once, in its own fact, not again in the summary.
+    await expect($(`${paneSelector(id)} [data-testid="summary"]`)).not.toHaveText(
+      expect.stringContaining("checksum"),
+    );
 
     await verify("not a hash");
     await expect($(`${CHECKSUM} [data-testid="verify-error"]`)).toHaveText(
@@ -345,10 +348,8 @@ describe("rdm GUI lanes and details pane", () => {
         ),
       { timeoutMsg: "focus didn't return to Verify checksum" },
     );
-    await expect(summary).toHaveText(expect.stringContaining("checksum doesn't match"));
 
     await verify(right);
     await waitForChecksumState("verified");
-    await expect(summary).toHaveText(expect.stringContaining("checksum verified"));
   });
 });

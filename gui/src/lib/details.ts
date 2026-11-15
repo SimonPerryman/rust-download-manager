@@ -18,17 +18,10 @@ export function formatElapsed(ms: number): string {
   return m ? `${Math.floor(s / 3600)} h ${m} min` : `${Math.floor(s / 3600)} h`;
 }
 
-const CHECKSUM_WORDS = {
-  verified: "checksum verified",
-  pending: "checking the checksum",
-  mismatch: "checksum doesn't match",
-  none: "no checksum given",
-} as const;
-
 /**
  * A finished download's one-line summary: "5.8 GB" then "in 2 min 14 s, average
- * 44.0 MB/s, checksum verified". Time and average need the engine's active time,
- * so one whose time is unknown says only its size and checksum.
+ * 44.0 MB/s". Time and average need the engine's active time, so one whose time
+ * is unknown says only its size. The checksum has its own fact beside it.
  */
 export function summaryParts(d: DownloadSnapshot): { size: string; rest: string } {
   const bytes = d.total ?? d.downloaded;
@@ -37,7 +30,6 @@ export function summaryParts(d: DownloadSnapshot): { size: string; rest: string 
     parts.push(`in ${formatElapsed(d.active_ms)}`);
     parts.push(`average ${formatSpeed(bytes / (Math.max(1, d.active_ms) / 1000))}`);
   }
-  parts.push(CHECKSUM_WORDS[d.checksum_state]);
   return { size: formatBytes(bytes), rest: parts.join(", ") };
 }
 
@@ -54,7 +46,7 @@ export function statePhrase(d: DownloadSnapshot): string {
     case "paused":
       return "Paused";
     case "completed":
-      return d.file_missing ? "Completed, file missing" : "Completed";
+      return "Completed";
     case "failed":
       return "Failed";
     case "cancelled":
@@ -69,7 +61,6 @@ export interface ChecksumView {
   hash: string | null;
   /** Offer "Verify checksum": the file is done and there's no good result yet. */
   canVerify: boolean;
-  hint: string | null;
 }
 
 const hexOf = (checksum: string | null) => checksum?.replace(/^sha256:/i, "") ?? null;
@@ -79,34 +70,30 @@ export function checksumView(d: DownloadSnapshot): ChecksumView {
   const hash = hexOf(d.checksum);
   switch (d.checksum_state) {
     case "pending":
-      return { text: "Checking SHA-256", tone: "checking", hash, canVerify: false, hint: null };
+      return { text: "Checking SHA-256", tone: "checking", hash, canVerify: false };
     case "verified":
-      return { text: "SHA-256 verified", tone: "ok", hash, canVerify: false, hint: null };
+      return { text: "SHA-256 verified", tone: "ok", hash, canVerify: false };
     case "mismatch":
       return {
         text: "SHA-256 doesn't match",
         tone: "bad",
         hash,
         canVerify: done,
-        hint: done ? null : "The download will start over when retried.",
       };
     case "none":
-      if (hash && done)
-        return { text: "Not checked yet", tone: "plain", hash, canVerify: true, hint: null };
+      if (hash && done) return { text: "Not checked yet", tone: "plain", hash, canVerify: true };
       if (hash)
         return {
           text: "Checks SHA-256 when done",
           tone: "plain",
           hash,
           canVerify: false,
-          hint: null,
         };
       return {
         text: "No checksum given",
         tone: "plain",
         hash: null,
         canVerify: done,
-        hint: done ? null : "You can verify one once it's done.",
       };
   }
 }

@@ -28,7 +28,7 @@ describe("formatElapsed", () => {
 });
 
 describe("summaryParts", () => {
-  it("gives size, time, average and the checksum", () => {
+  it("gives size, time and average", () => {
     const d = snap({
       status: "completed",
       total: 100 * MB,
@@ -38,36 +38,23 @@ describe("summaryParts", () => {
     });
     expect(summaryParts(d)).toEqual({
       size: "100.0 MB",
-      rest: "in 10 s, average 10.0 MB/s, checksum verified",
+      rest: "in 10 s, average 10.0 MB/s",
     });
   });
 
   it("averages a sub-second run over its real time", () => {
     const d = snap({ status: "completed", total: 2048, downloaded: 2048, active_ms: 50 });
-    expect(summaryParts(d).rest).toBe("in under 1 s, average 40.0 KB/s, no checksum given");
+    expect(summaryParts(d).rest).toBe("in under 1 s, average 40.0 KB/s");
   });
 
-  it("is a plain line when the engine doesn't know the active time", () => {
+  it("is the size alone when the engine doesn't know the active time", () => {
     const d = snap({ status: "completed", total: 2048, downloaded: 2048, active_ms: null });
-    expect(summaryParts(d)).toEqual({ size: "2.00 KB", rest: "no checksum given" });
+    expect(summaryParts(d)).toEqual({ size: "2.00 KB", rest: "" });
   });
 
   it("falls back to the bytes when the size was never known", () => {
-    const d = snap({
-      status: "completed",
-      total: null,
-      downloaded: 512,
-      checksum_state: "mismatch",
-    });
-    expect(summaryParts(d)).toEqual({ size: "512 B", rest: "checksum doesn't match" });
-  });
-});
-
-describe("statePhrase for a missing file", () => {
-  it("says the file is missing without changing the status", () => {
-    expect(statePhrase(snap({ status: "completed", file_missing: true }))).toBe(
-      "Completed, file missing",
-    );
+    const d = snap({ status: "completed", total: null, downloaded: 512, active_ms: 2000 });
+    expect(summaryParts(d)).toEqual({ size: "512 B", rest: "in 2 s, average 256 B/s" });
   });
 });
 
@@ -80,6 +67,8 @@ describe("statePhrase", () => {
     expect(statePhrase(snap({ status: "queued" }))).toBe("Queued for a free slot");
     expect(statePhrase(snap({ status: "paused" }))).toBe("Paused");
     expect(statePhrase(snap({ status: "completed" }))).toBe("Completed");
+    // The missing banner says the rest.
+    expect(statePhrase(snap({ status: "completed", file_missing: true }))).toBe("Completed");
     expect(statePhrase(snap({ status: "failed" }))).toBe("Failed");
     expect(statePhrase(snap({ status: "cancelled", partial_kept: true }))).toBe(
       "Stopped, partial file kept",
@@ -96,9 +85,9 @@ describe("checksumView", () => {
     expect(v).toMatchObject({ text: "No checksum given", canVerify: true, hash: null });
   });
 
-  it("explains that Verify comes once it's done", () => {
+  it("offers Verify only once it's done", () => {
     const v = checksumView(snap({ status: "downloading" }));
-    expect(v).toMatchObject({ canVerify: false, hint: "You can verify one once it's done." });
+    expect(v).toMatchObject({ canVerify: false });
   });
 
   it("shows the expected hash without its prefix", () => {

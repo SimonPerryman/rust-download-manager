@@ -14,18 +14,23 @@ const H = 40;
 const MIN_SCALE = 10 * 1024 * 1024;
 
 // The sidebar's total speed over the last minute, with the global limit dashed.
+// Absent while nothing moves and nothing did in the last minute; it sits at the
+// bottom of the sidebar, so showing or hiding it moves nothing above it.
 export function Sparkline({ speed, samples, globalLimit }: Props) {
+  if (speed === 0 && samples.every((s) => s === 0)) return null;
   const max = Math.max(...samples, globalLimit ?? 0, MIN_SCALE) * 1.15;
   const p: Plot = { width: W, height: H, top: 2, bottom: 2, left: 0, right: 0, max };
   // Split so the icon rail can stack the unit under the number.
   const [num, unit] = formatSpeed(speed).split(" ");
   return (
-    <div className="spark" data-testid="sparkline">
+    <div
+      className="spark"
+      data-testid="sparkline"
+      role="group"
+      aria-label="Total speed, last minute"
+    >
       <div className="spark-speed font-semibold tabular-nums" data-testid="total-speed">
         <span className="spark-num">{num}</span> <span className="spark-unit">{unit}</span>
-      </div>
-      <div className="spark-caption text-xs text-g400">
-        Total speed now; the line is the last minute
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
         {samples.length > 1 && (

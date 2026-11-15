@@ -33,8 +33,8 @@ Under **More options** you can give a SHA-256 checksum and a speed limit.
 ## Finding and selecting
 
 - **Filter** with the sidebar (by status, destination folder or
-  [tag](#archive-and-tags)) or by name from the toolbar. Click a column header to sort. The sidebar also shows the
-  total speed with a graph of the last minute. In a window narrower than about
+  [tag](#archive-and-tags)) or by name from the toolbar. Click a column header to sort. While anything transfers,
+  the sidebar also shows the total speed with a graph of the last minute. In a window narrower than about
   760 px the sidebar shrinks to an icon rail (hover an icon for its name; the
   total speed puts its unit under the number) and less important columns hide.
 - **Select** a row by clicking it; Ctrl+click adds or removes rows and
@@ -83,8 +83,8 @@ turns orange and the Speed column reads the speed against the limit:
   follows the row you select, including a selection that moves there from\n  elsewhere, and stays on its row while that row is still selected or has just\n  left the view (drag its top edge to resize).
   - **Overview** shows sizes, speed, time left, the lanes, the link, the
     folder and the checksum. A completed download gets a summary such as
-    "5.8 GB in 2 min 14 s, average 44 MB/s, checksum verified" and **Verify
-    checksum**, which checks the file against a SHA-256 you paste.
+    "5.8 GB in 2 min 14 s, average 44 MB/s"; the checksum fact beside it offers
+    **Verify checksum**, which checks the file against a SHA-256 you paste.
   - **The lanes** in Overview are one bar per open connection, top to
     bottom in lane order, headed with how many are open ("3 lanes"). A bar
     appears when rdm opens a lane and merges back up when it closes. Each

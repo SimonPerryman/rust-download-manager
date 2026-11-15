@@ -80,7 +80,6 @@ export function ChecksumFact({ d }: { d: DownloadSnapshot }) {
           {view.text}
         </div>
         {view.hash && <span className="hash font-mono">{view.hash}</span>}
-        {view.hint && <div className="text-xs text-g400">{view.hint}</div>}
         {view.canVerify &&
           (open ? (
             <>
