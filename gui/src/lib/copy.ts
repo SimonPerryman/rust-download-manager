@@ -38,10 +38,7 @@ const EMPTY: Record<Extract<ViewFilter, { kind: "status" }>["status"], [string, 
     "No failed downloads",
     "When a download fails, the reason and a Retry button show up here.",
   ],
-  missing: [
-    "No missing files",
-    "When a finished download's file is deleted or moved, it shows up here so you can find it again.",
-  ],
+  missing: ["No missing files", "Files that were moved or deleted show up here."],
   stopped: [
     "Nothing stopped",
     "Stopped downloads stay here. If you kept the partial file, you can resume them.",
@@ -259,18 +256,18 @@ export function sameFolderOfferWords(count: number): {
     : { noun: `${count} more missing files`, verb: "were", pronoun: "them" };
 }
 
-/** The label of the toast action that jumps to the downloads Locate folder… didn't find. */
+/** The label of the toast action that jumps to the files Locate folder… didn't find. */
 export const showNotFoundLabel = "Show not found";
 
-/** The toast after Locate folder…: how many of the selected downloads were found there. */
+/** The toast after Locate folder…: how many of the selected files were found there. */
 export function locateFolderMessage(relinked: number, notFound: number): string {
   if (relinked === 0) {
     return notFound === 1
-      ? "That download's file isn't in that folder."
-      : `None of the ${notFound} downloads' files are in that folder.`;
+      ? "That file isn't in that folder."
+      : `None of the ${notFound} files are in that folder.`;
   }
   if (notFound === 0) {
-    return relinked === 1 ? "Relinked 1 download." : `Relinked ${relinked} downloads.`;
+    return relinked === 1 ? "Relinked 1 file." : `Relinked ${relinked} files.`;
   }
   const rest = notFound === 1 ? "1 wasn't" : `${notFound} weren't`;
   return `Relinked ${relinked}. ${rest} found in that folder.`;

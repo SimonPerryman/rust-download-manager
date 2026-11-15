@@ -85,7 +85,10 @@ export function FindReviewPane({ rows, height, onRelink, onLocate, onClose }: Pr
                   <span className="text-g600">Not found</span>
                 )}
                 <span>{match && <MatchBadge reason={match.reason} />}</span>
-                <button className="text-link justify-self-end" onClick={() => onLocate(d)}>
+                <button
+                  className="btn btn-soft btn-sm justify-self-end"
+                  onClick={() => onLocate(d)}
+                >
                   Locate…
                 </button>
               </div>

@@ -95,7 +95,7 @@ describe("FindReviewPane", () => {
     expect(button("Relink selected").hasAttribute("disabled")).toBe(true);
   });
 
-  it("gives every row a Locate… link", () => {
+  it("gives every row a Locate… button", () => {
     show();
     const links = [...host.querySelectorAll("button")].filter((b) => b.textContent === "Locate…");
     expect(links).toHaveLength(3);

@@ -104,9 +104,6 @@ unrequested items last.
   notice; in-app updates for `.deb` installs (the plugin can, but it needs
   an admin password prompt that not every desktop has).
 - **Download list layout ideas** (from owner review of missing files):
-  the solid blue Open button is heavy when stacked down many rows, so try
-  showing it solid only on hover or on the selected row, with quiet icon
-  actions otherwise (a missing row's Locate… could stay always visible);
   finished rows leave Speed, Time left and Connections empty, so weigh
   fixed columns (today), per-view columns (e.g. Completed shows "Completed
   at" and location) or user-chosen and reorderable columns, bearing in mind
@@ -164,8 +161,8 @@ ramping follow-ups shipped in M10; window tuning is in "Up next". These are low 
   toasts the engine's wording, "download N's file is no longer on disk";
   reword it to point at Locate…. The Locate… row button lines up with
   the labelled Open button but not with the small icon Open shown after a
-  row has been opened (resolved if the row actions are reworked, see
-  "Download list layout ideas"). Locate… accepts any existing file; only
+  row has been opened; left as is, since a missing row never shows the
+  icon Open. Locate… accepts any existing file; only
   Find it checks name and size.
 
 ## Candidate crates

@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { PANE_MIN_H, statePhrase } from "../../lib/details";
-import { filterKeyOf } from "../../lib/filters";
+import { filterKeyOf, isMissing } from "../../lib/filters";
 import type { LaneWork } from "../../lib/laneWork";
 import type { DownloadSnapshot } from "../../lib/types";
 import type { FindControls } from "../missing/FindPanel";
@@ -10,7 +10,7 @@ import { LogTab } from "./LogTab";
 import { OverviewTab, type QueueSpot } from "./OverviewTab";
 import { PANEL_ID, PaneTabs, tabId } from "./PaneTabs";
 import { SpeedTab } from "./SpeedTab";
-import { PANE_ID, type PaneTab } from "./tabs";
+import { effectiveTab, PANE_ID, type PaneTab } from "./tabs";
 
 /** Pixels per ArrowUp / ArrowDown on the resize handle. */
 const KEY_STEP = 16;
@@ -43,7 +43,7 @@ type Props = {
 export function DetailsPane({
   d,
   work,
-  tab,
+  tab: chosenTab,
   onTab,
   height,
   maxHeight,
@@ -59,6 +59,8 @@ export function DetailsPane({
   onMove,
 }: Props) {
   const drag = useRef<{ y: number; h: number } | null>(null);
+  const missing = isMissing(d);
+  const tab = effectiveTab(chosenTab, missing);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
@@ -112,7 +114,7 @@ export function DetailsPane({
           <X size={16} />
         </button>
       </div>
-      <PaneTabs tab={tab} onTab={onTab} />
+      <PaneTabs tab={tab} missing={missing} onTab={onTab} />
       {/* Keyed by tab so each tab opens scrolled to its own top (Log scrolls to its end). */}
       <div
         key={tab}

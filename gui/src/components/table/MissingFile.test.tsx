@@ -64,6 +64,17 @@ describe("missing file UI", () => {
     expect(handlers.locate).toHaveBeenCalledWith(d);
   });
 
+  it("draws the unopened Open soft, solid only through the row's hover rule", () => {
+    const d = snap({ status: "completed", filename: "a.iso", final_path: "/dl/a.iso" });
+    act(() =>
+      root.render(<RowActions d={d} lingering editor={editor} handlers={{} as RowHandlers} />),
+    );
+    const open = host.querySelector<HTMLButtonElement>('button[aria-label="Open"]')!;
+    expect(open.className).toContain("btn-soft");
+    expect(open.className).toContain("btn-row-primary");
+    expect(open.className).not.toContain("btn-primary");
+  });
+
   it("shows the old path in the banner, with Locate…, Find file and Remove from list", () => {
     const onLocate = vi.fn();
     const onFind = vi.fn();

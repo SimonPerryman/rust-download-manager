@@ -12,7 +12,6 @@ import type { DownloadSnapshot, FindResult, FoundFile } from "../../lib/types";
 import { Folder } from "../icons/Folder";
 import { ListRemove } from "../icons/ListRemove";
 import { Loader } from "../icons/Loader";
-import { CheckCircle } from "../icons/CheckCircle";
 import { MatchBadge } from "./MatchBadge";
 
 /** What the details pane needs to search for a missing download's file and show the answer. */
@@ -192,11 +191,8 @@ function NoMatch({
           <p className="mt-1 text-g600">{foldersSearched(folders.length)}</p>
           <ul className="find-folders">
             {folders.map((f) => (
-              <li key={f} className="flex min-w-0 items-center gap-2 text-g600">
-                <CheckCircle size={14} className="text-success" />
-                <span className="min-w-0 truncate font-mono text-xs text-ink" title={f}>
-                  {f}
-                </span>
+              <li key={f} className="min-w-0 truncate font-mono text-xs text-g600" title={f}>
+                {f}
               </li>
             ))}
           </ul>

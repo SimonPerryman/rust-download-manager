@@ -177,6 +177,10 @@ describe("rdm GUI missing files", () => {
     const { id, oldPath, size } = await addAndLoseFile(ids);
     await openDetails(id);
     await waitForText(`${BANNER} [data-testid="missing-path"]`, path.basename(oldPath));
+    // A missing file has no speed to graph: the tab is gone, Overview and Log stay.
+    await expect($(PANE).$('button[role="tab"][data-tab="overview"]')).toBeDisplayed();
+    await expect($(PANE).$('button[role="tab"][data-tab="log"]')).toBeDisplayed();
+    await expect($(PANE).$('button[role="tab"][data-tab="speed"]')).not.toBeExisting();
 
     // The seam stands in for the OS file picker.
     mkdirSync(path.dirname(located), { recursive: true });
