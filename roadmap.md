@@ -53,25 +53,23 @@ order.
 
 ## Up next (in priority order)
 
-Pick from the top. Both items need the owner before any code: live
-measurements and a paid account respectively.
+Pick from the top; each is described in the backlog below.
 
-1. **Ramp window tuning** (M10 follow-up): with the 1 s window a download
-   needs ~7 s to reach 4 connections. Parked, low value: shrinking it saves
-   a fixed ~2-3 s per download, which only shows on 100 MB to 1 GB files
-   from hosts that cap each connection. A live run on 2026-11-14 (Ubuntu
-   24.04 ISO, 1000/500/250 ms builds) showed nothing: one connection
-   already fills a ~460 Mbit/s link, so every variant tried extra lanes and
-   dropped them, and 250 ms stopped one lane earlier (the noise risk). To
-   settle it, measure against a server that caps each connection: a local
-   fixture with a per-connection rate cap, or a distant mirror. Compare
-   time to 4 lanes, final speed and total time, over several runs. The
-   window is the `RAMP_WINDOW` constant in `src/engine/ramp.rs`, so each
-   variant is a rebuild.
-2. **Code signing** (cut from M6): sign the Windows binaries and installers
-   (e.g. Azure Trusted Signing) and sign and notarise the macOS app (Apple
-   Developer Program), so SmartScreen and Gatekeeper stop warning. Has a
-   running cost; move it up when rdm is promoted beyond its current users.
+1. **Batch**: wildcard / URL-list downloads, site mirroring.
+2. **Scheduling & automation**: start/stop at a time, bandwidth schedules,
+   post-download actions.
+3. **Protocols beyond HTTP**: FTP/SFTP, BitTorrent, metalink/mirror failover.
+4. **Content-aware / media**: HLS and DASH manifests, muxed to one file.
+5. **Browser integration**: native-messaging host and extension.
+
+Deferred: **Code signing** (cut from M6). Sign the Windows binaries and
+installers and sign and notarise the macOS app, so SmartScreen and
+Gatekeeper stop warning. The requirements are high, so it waits. Apple's
+program is a paid yearly membership, and Microsoft's Artifact Signing (the
+Azure service) is open to individuals only in the US and Canada (UK
+organisations qualify), so the alternative is a paid OV certificate from a
+certificate authority. Move it up when rdm is promoted beyond its current
+users.
 
 Shipped from this list: Mark-of-the-Web on Windows, and the smarter-connections
 work ([[milestone-10-smarter-connections]]: re-probe after a settle, shedding
@@ -80,8 +78,8 @@ missing and moved files ([[milestone-11-missing-and-moved-files]]).
 
 ## Backlog (not yet scheduled — parked on purpose)
 
-Roughly in priority order: batch and checksum work first, the large or
-unrequested items last.
+The first five items of "Up next" come from here; beyond those, roughly in
+priority order, with the large or unrequested items last.
 
 - **Batch**: wildcard / URL-list downloads, site mirroring
 - **Checksum lists**: import a `SHA256SUMS` file, verify many downloads at
@@ -144,8 +142,14 @@ unrequested items last.
 
 Known gaps left deliberately out of a milestone's scope. Each is small enough
 to be a single PR; promote one into a ticket when it's picked up. The M4
-ramping follow-ups shipped in M10; window tuning is in "Up next". These are low priority.
+ramping follow-ups shipped in M10; ramp window tuning was dropped (below). These are low priority.
 
+- **Ramp window tuning** (M10 follow-up): dropped for now. With the 1 s
+  window a download needs ~7 s to reach 4 connections, but a live run on
+  2026-11-14 (1000/500/250 ms builds) showed no difference on a link one
+  connection already fills, and settling it needs a server that caps each
+  connection. The window is the `RAMP_WINDOW` constant in
+  `src/engine/ramp.rs`.
 - **Add-time checksum "checking" state** (M5 PR A): the engine hashes inside
   finalize, so `checksum_state` never shows `pending` for it; an engine hook
   could publish it. Fold it into the next checksum work.
