@@ -117,6 +117,7 @@ describe("FindPanel", () => {
     expect(host.textContent).toContain("No match found");
     expect(host.textContent).toContain("4 folders searched");
     expect(host.querySelectorAll("li")).toHaveLength(4);
+    expect(host.querySelector("li svg")).toBeNull();
     expect(host.textContent).not.toContain("Not every folder");
     act(() => button("Search again").click());
     expect(actions.onFind).toHaveBeenCalledWith(d);

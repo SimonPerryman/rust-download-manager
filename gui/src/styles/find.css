@@ -73,7 +73,7 @@
   /* Fixed columns so names, folders, badges and links line up from row to row. */
   .find-row {
     @apply grid items-center gap-3 px-3 py-2;
-    grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1.3fr) 188px 64px;
+    grid-template-columns: 20px minmax(0, 1fr) minmax(0, 1.3fr) 188px 84px;
     box-shadow: inset 0 -1px 0 var(--line);
   }
   .find-row:last-child {
