@@ -38,6 +38,7 @@ impl Manager {
         let data = store.load()?;
         let mut entries = HashMap::new();
         let mut order = Vec::new();
+        let mut batch_limiters: HashMap<u64, Arc<RateLimiter>> = HashMap::new();
         for mut rec in data.downloads {
             // A download that was running at shutdown has no task now; restore
             // it paused so the user can resume it deliberately.
@@ -81,7 +82,14 @@ impl Manager {
             let limiter = Arc::new(RateLimiter::new(rec.limit));
             rec.limit = limiter.rate();
             order.push(rec.id);
+            let batch_limiter = rec.batch.zip(rec.batch_limit).map(|(batch, limit)| {
+                batch_limiters
+                    .entry(batch)
+                    .or_insert_with(|| Arc::new(RateLimiter::new(Some(limit))))
+                    .clone()
+            });
             let mut entry = Entry::new(rec, limiter);
+            entry.batch_limiter = batch_limiter;
             entry.segments = segments;
             entries.insert(entry.record.id, entry);
         }

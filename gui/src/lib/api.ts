@@ -48,7 +48,8 @@ export const addDownload = (
 /**
  * Add several links at once. With two or more and a `label` they become a batch (`folder`
  * puts them in a folder of that name inside `dir`); otherwise they are ordinary downloads.
- * `limit` (a rate like `"500K"`) and `tags` apply to each. Rejects on a bad name, tag or rate.
+ * `limit` (a rate like `"500K"`) and `tags` apply to each; `batchLimit` caps the batch's items
+ * combined (ignored without a label). Rejects on a bad name, tag or rate.
  */
 export const addBatch = (
   urls: readonly string[],
@@ -57,7 +58,8 @@ export const addBatch = (
   tags: string[],
   label: string | null,
   folder: boolean,
-) => invoke<BatchAdded>("add_batch", { urls, dir, limit, tags, label, folder });
+  batchLimit: string | null = null,
+) => invoke<BatchAdded>("add_batch", { urls, dir, limit, tags, label, folder, batchLimit });
 
 /** Retry the failed downloads of one batch. Resolves with how many were retried. */
 export const retryBatch = (batch: number) => invoke<number>("retry_batch", { batch });

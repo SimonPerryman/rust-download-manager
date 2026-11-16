@@ -164,6 +164,10 @@ pub struct DownloadRecord {
     /// The batch's name, as typed when it was added; set with `batch`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub batch_label: Option<String>,
+    /// The batch's shared speed cap in bytes/s, copied onto each item so a
+    /// restart rebuilds one limiter per batch; set with `batch`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_limit: Option<u64>,
 }
 
 /// Manager-wide download settings, persisted with the download list.
@@ -384,6 +388,7 @@ mod tests {
             paused_for_update: false,
             batch: None,
             batch_label: None,
+            batch_limit: None,
         }
     }
 

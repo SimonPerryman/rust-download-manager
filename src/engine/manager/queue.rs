@@ -39,7 +39,11 @@ impl Inner {
             // A fresh control each start: `cancel` latches and can't be
             // cleared, and the `.part` + sidecar, not the control, carry the
             // resume position. `with_limiters` must precede any clone.
-            let control = Control::new().with_limiters([e.limiter.clone(), self.global.clone()]);
+            let control = Control::new().with_limiters(
+                [e.limiter.clone(), self.global.clone()]
+                    .into_iter()
+                    .chain(e.batch_limiter.clone()),
+            );
             e.control = control.clone();
             e.record.status = Status::Downloading;
             if e.record.downloaded == 0 {

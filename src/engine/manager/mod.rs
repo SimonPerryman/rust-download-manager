@@ -161,6 +161,8 @@ struct Entry {
     /// Outlives each start's `Control`, so a limit set while queued or paused
     /// still applies.
     limiter: Arc<RateLimiter>,
+    /// Shared by every item of a batch that has a batch speed cap.
+    batch_limiter: Option<Arc<RateLimiter>>,
     live: Live,
     task: Option<JoinHandle<()>>,
     /// The running task was asked to stop keeping its partial; it reports
@@ -189,6 +191,7 @@ impl Entry {
             record,
             control: Control::new(),
             limiter,
+            batch_limiter: None,
             live: Live::default(),
             task: None,
             stop_keeping: false,
@@ -428,6 +431,7 @@ mod tests {
             paused_for_update: false,
             batch: None,
             batch_label: None,
+            batch_limit: None,
         }
     }
 }

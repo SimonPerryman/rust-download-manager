@@ -4,11 +4,12 @@
 //! download that queues, throttles and resumes like any other.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::{AddOptions, Manager, ManagerState};
 use crate::engine::lock::lock;
 use crate::engine::store::Status;
-use crate::engine::{filename, tags, Error, Result};
+use crate::engine::{filename, tags, Error, RateLimiter, Result};
 
 /// Longest batch name, in characters (after trimming).
 pub const MAX_BATCH_LABEL_LEN: usize = 64;
@@ -21,6 +22,18 @@ pub struct BatchSpec {
     pub label: String,
     /// Put the items in a folder named after the batch.
     pub folder: bool,
+    /// Speed cap in bytes/s shared by all the batch's items combined
+    /// (`None` or `Some(0)` is unlimited). It adds to each item's own limit
+    /// and the global one; the slowest applies.
+    pub limit: Option<u64>,
+}
+
+/// A batch as stamped on one new download: identity plus the limiter its
+/// items share.
+pub(super) struct BatchTag<'a> {
+    pub id: u64,
+    pub label: &'a str,
+    pub limiter: Option<Arc<RateLimiter>>,
 }
 
 /// How [`Manager::add_batch`] went. A link that couldn't be added never stops
@@ -75,14 +88,23 @@ impl Manager {
             }
             _ => dir,
         };
-        let batch = spec.as_ref().map(|s| (st.next_id, s.label.as_str()));
+        let limiter = spec
+            .as_ref()
+            .and_then(|s| s.limit)
+            .filter(|&l| l > 0)
+            .map(|l| Arc::new(RateLimiter::new(Some(l))));
+        out.batch = spec.as_ref().map(|_| st.next_id);
         let mut probes = Vec::new();
         for url in urls {
-            let (id, probe_url) = self.push_entry(st, url, dir.clone(), options.clone(), batch);
+            let tag = spec.as_ref().zip(out.batch).map(|(s, id)| BatchTag {
+                id,
+                label: &s.label,
+                limiter: limiter.clone(),
+            });
+            let (id, probe_url) = self.push_entry(st, url, dir.clone(), options.clone(), tag);
             out.added.push(id);
             probes.push((id, probe_url));
         }
-        out.batch = batch.map(|(id, _)| id);
         self.inner.schedule(st);
         self.inner.persist(st);
         self.inner.publish(st);
@@ -112,6 +134,16 @@ impl Manager {
                 .collect();
             Some(shared)
         })
+    }
+
+    /// Batch `batch`'s shared speed cap in bytes/s, or `None` when it has no
+    /// cap (or is unknown).
+    pub fn batch_limit(&self, batch: u64) -> Option<u64> {
+        let st = lock(&self.inner.state);
+        st.entries
+            .values()
+            .find(|e| e.record.batch == Some(batch))
+            .and_then(|e| e.batch_limiter.as_ref()?.rate())
     }
 
     /// Retry the failed downloads of batch `batch` (those not archived), and
