@@ -49,7 +49,7 @@ semver = "1"
 
 [dev-dependencies]
 # Signing the updater tests' fixture releases with a throwaway key.
-base64 = "0.22"
+base64 = "0.23"
 minisign = "0.10"
 tempfile = "3"
 # A mock app handle for the updater tests.
