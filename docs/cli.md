@@ -71,7 +71,9 @@ echo 'https://example.com/img[a-f].png' | rdm -i -
 rdm prints one line per file as it finishes, then a summary such as
 `8 done, 1 failed, 2 skipped lines`. A file that fails never stops the
 others; the exit code is `1` if any failed. Two links that would save under
-the same name get `name (1).ext`.
+the same name get `name (1).ext`. Named batches, group rows, Retry failed and a
+batch-wide speed limit are [GUI features](gui.md#batches); the CLI applies
+`--limit-rate` to each file.
 
 `-o` and `--checksum` name one file, so using them with `-i` or several
 links is a usage error. Ctrl-C pauses every running file; run the same
