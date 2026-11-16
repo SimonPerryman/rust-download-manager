@@ -499,6 +499,7 @@ export default function App() {
           onDetails={onDetails}
           onToggleBatch={toggleBatch}
           onRetryBatch={retryBatch}
+          onRevealBatch={(batch) => api.revealBatch(batch).catch(fail)}
         />
         {review && (
           <FindReviewPane

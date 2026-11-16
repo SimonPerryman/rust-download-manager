@@ -129,7 +129,18 @@
   }
   /* A batch's files sit indented under its group row. */
   .row.in-batch td.c-name {
-    padding-left: 32px;
+    position: relative;
+    padding-left: 52px;
+  }
+  /* A guide line down the batch's files, under the group row's chevron. */
+  .row.in-batch td.c-name::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 24px;
+    width: 2px;
+    background: var(--line-strong);
   }
   .batch-row td {
     height: 40px;

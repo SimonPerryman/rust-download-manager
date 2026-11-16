@@ -92,6 +92,28 @@ impl Manager {
         Ok(out)
     }
 
+    /// The folder batch `batch`'s files went into: the deepest folder holding
+    /// all their targets (the batch folder, or the destination when none was
+    /// made). `None` for an unknown batch. For a frontend's Open folder.
+    pub fn batch_folder(&self, batch: u64) -> Option<PathBuf> {
+        let st = lock(&self.inner.state);
+        let mut dirs = st
+            .entries
+            .values()
+            .filter(|e| e.record.batch == Some(batch))
+            .filter_map(|e| e.record.target.parent().map(Path::to_path_buf));
+        let first = dirs.next()?;
+        dirs.try_fold(first, |common, dir| {
+            let shared: PathBuf = common
+                .components()
+                .zip(dir.components())
+                .take_while(|(a, b)| a == b)
+                .map(|(a, _)| a)
+                .collect();
+            Some(shared)
+        })
+    }
+
     /// Retry the failed downloads of batch `batch` (those not archived), and
     /// no others. Returns how many were retried.
     pub fn retry_batch(&self, batch: u64) -> usize {

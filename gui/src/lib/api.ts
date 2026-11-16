@@ -62,6 +62,9 @@ export const addBatch = (
 /** Retry the failed downloads of one batch. Resolves with how many were retried. */
 export const retryBatch = (batch: number) => invoke<number>("retry_batch", { batch });
 
+/** Open the folder a batch's files went into. By batch id: the backend picks the path. */
+export const revealBatch = (batch: number) => invoke<void>("reveal_batch", { batch });
+
 /** The engine's manager-wide settings. */
 export const getSettings = () => invoke<Settings>("get_settings");
 

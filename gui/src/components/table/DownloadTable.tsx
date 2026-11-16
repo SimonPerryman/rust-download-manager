@@ -53,6 +53,8 @@ type Props = {
   onToggleBatch: (batch: number) => void;
   /** A group row's Retry failed. */
   onRetryBatch: (batch: number) => void;
+  /** A group row's Show in folder. */
+  onRevealBatch: (batch: number) => void;
 };
 
 // Every download in one sortable table; a failed row is followed by its error row.
@@ -81,6 +83,7 @@ export function DownloadTable({
   onDetails,
   onToggleBatch,
   onRetryBatch,
+  onRevealBatch,
 }: Props) {
   const drag = useQueueDrag(onQueueDrop);
   const dragClass = (id: number) =>
@@ -134,6 +137,7 @@ export function DownloadTable({
                   collapsed={item.collapsed}
                   onToggle={onToggleBatch}
                   onRetry={onRetryBatch}
+                  onReveal={onRevealBatch}
                 />
               );
             }

@@ -25,8 +25,8 @@ see [Installing rdm](install.md#desktop-app); to build it, see
 Add downloads with the **Add** button, by dragging a link onto the window, or
 by pressing Ctrl/Cmd+V (outside a text box) with one or more links on the
 clipboard. The dialog takes one link per line and previews each file's name
-and site, skipped lines and links already in your list or in your archive
-before anything starts ("Add 3 downloads"); a link you've archived is still
+and site, and links already in your list or in your archive, before anything
+starts ("Add 3 downloads"); a link you've archived is still
 added, so you can download it again. Ctrl+Enter adds. The folder starts at the
 one you used last. **Tags** (comma-separated) go on every download you add.
 Under **More options** you can give a SHA-256 checksum (for a single link) and
@@ -36,9 +36,13 @@ A `[a-b]` range in a link, such as `lesson[01-12].mp4` or `img[a-f].png`,
 adds every file in it. The preview shows one row ("lesson01.mp4 to
 lesson12.mp4", 12 links) that opens to list its files. A range that isn't
 valid, or makes more than 500 links, is explained under the box and left
-out. **N more** opens the rest of a range's files. [The CLI takes the same
+out. **N more** lists all the rest of a range's files (the preview scrolls),
+and becomes **Show less**; the range's chevron closes it too. [The CLI takes the same
 ranges.](cli.md#many-links-at-once) A link already in your list shows an info
 mark instead of a tick; it is still added.
+
+Beside "N links found", a quiet **N skipped** counts lines that aren't links
+and repeats; click it for the reasons. The lines themselves aren't listed.
 
 ## Batches
 
@@ -50,8 +54,9 @@ the destination; unticked, they go straight into it. A folder name that is
 taken gets `(1)` after it, as clashing file names do.
 
 - **Group row:** in the list, a batch's files sit under one row with a
-  progress bar and a count ("9 of 14 done"). Its chevron opens and closes the
-  files. While any file has failed the row shows how many, and **Retry
+  progress bar and, right after it, a count ("9 of 14 done"). The files sit
+  indented under it, along a guide line. Its chevron opens and closes the
+  files, and its **Show in folder** button opens the folder they went into. While any file has failed the row shows how many, and **Retry
   failed** retries those files of that batch only.
 - **Group batches:** a toolbar toggle beside the density button, shown once a
   batch exists, turns grouping off for a flat list. It is remembered.

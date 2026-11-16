@@ -183,17 +183,17 @@ export function addLabel(n: number): string {
   return n >= 2 ? `Add ${n} downloads` : "Add download";
 }
 
-/** The line above the preview: how many links, and what will be skipped. */
+/** The line above the preview: how many links, and what was skipped (listed only on request). */
 export function previewSummary(entries: readonly BatchEntry[]): {
   found: string;
-  skipped: string | null;
+  skipped: { label: string; reasons: string[] } | null;
 } {
   const n = linksToAdd(entries).length;
   const bad = entries.filter((e) => e.kind === "bad").length;
   const repeats = allLinks(entries).reduce((sum, l) => sum + l.count - 1, 0);
   const found = `${n} link${n === 1 ? "" : "s"} found`;
-  const parts: string[] = [];
-  if (bad) parts.push(bad === 1 ? "1 line isn't a link" : `${bad} lines aren't links`);
-  if (repeats) parts.push(repeats === 1 ? "1 repeat" : `${repeats} repeats`);
-  return { found, skipped: parts.length ? `${parts.join(" and ")}, skipped` : null };
+  const reasons: string[] = [];
+  if (bad) reasons.push(bad === 1 ? "1 line isn't a link" : `${bad} lines aren't links`);
+  if (repeats) reasons.push(repeats === 1 ? "1 repeat" : `${repeats} repeats`);
+  return { found, skipped: reasons.length ? { label: `${bad + repeats} skipped`, reasons } : null };
 }

@@ -197,6 +197,42 @@ async fn a_folder_per_batch_with_clashes() {
     );
 }
 
+/// A batch's folder is where its files went: the batch folder when there is
+/// one, else the destination; an unknown batch has none.
+#[tokio::test]
+async fn a_batch_knows_its_folder() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    let paths = ["/any/a.bin", "/any/b.bin"];
+    let with = mgr
+        .add_batch(
+            urls(&server, &paths),
+            dir.path(),
+            named("Set", true),
+            AddOptions::default(),
+        )
+        .unwrap();
+    let without = mgr
+        .add_batch(
+            urls(&server, &paths),
+            dir.path(),
+            named("Flat", false),
+            AddOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        mgr.batch_folder(with.batch.unwrap()),
+        Some(dir.path().join("Set"))
+    );
+    assert_eq!(
+        mgr.batch_folder(without.batch.unwrap()),
+        Some(dir.path().to_path_buf())
+    );
+    assert_eq!(mgr.batch_folder(9999), None);
+    finished(&mgr, &[with.added, without.added].concat()).await;
+}
+
 /// A name with path characters still makes one folder inside the destination.
 #[tokio::test]
 async fn a_folder_name_stays_inside_the_destination() {

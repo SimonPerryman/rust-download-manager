@@ -41,6 +41,7 @@ describe("archive and tags", () => {
     await api.addDownload("http://x/a", null, null, null, ["iso"]);
     await api.addBatch(["http://x/a", "http://x/b"], "/d", "500K", ["iso"], "Course files", true);
     await api.retryBatch(7);
+    await api.revealBatch(7);
     expect(invoke.mock.calls).toEqual([
       ["archive", { ids: [1, 2] }],
       ["unarchive", { ids: [2] }],
@@ -64,6 +65,7 @@ describe("archive and tags", () => {
         },
       ],
       ["retry_batch", { batch: 7 }],
+      ["reveal_batch", { batch: 7 }],
     ]);
   });
 });

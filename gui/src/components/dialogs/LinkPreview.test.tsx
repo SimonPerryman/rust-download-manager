@@ -61,7 +61,42 @@ describe("LinkPreview", () => {
     expect(rows("pattern-link").map((li) => li.textContent)).toEqual(
       Array.from({ length: 12 }, (_, i) => `lesson${String(i + 1).padStart(2, "0")}.mp4`),
     );
+    // The control stays, now reading Show less, and takes it back to the first few.
+    const less = rows("pattern-more")[0];
+    expect(less.textContent).toBe("Show less");
+    click(less.querySelector("button")!);
+    expect(rows("pattern-link")).toHaveLength(3);
+    expect(rows("pattern-more")[0].textContent).toBe("9 more");
+  });
+
+  it("collapses an expanded range from its chevron too", () => {
+    render();
+    click(host.querySelector('button[aria-expanded="false"]')!);
+    click(rows("pattern-more")[0].querySelector("button")!);
+    expect(rows("pattern-link")).toHaveLength(12);
+    click(host.querySelector('button[aria-expanded="true"]')!);
+    expect(rows("pattern-link")).toHaveLength(0);
     expect(rows("pattern-more")).toHaveLength(0);
+  });
+
+  it("counts what was skipped without listing it, until asked", () => {
+    const skipped: ParsedList = {
+      links: [{ url: "https://a.example/a.zip", count: 2, pattern: null }],
+      patterns: [],
+      skipped: [{ line: "nope", reason: "not_a_link", count: null }],
+    };
+    act(() => root.render(<LinkPreview entries={entriesFrom(skipped, new Map())} />));
+    const toggle = host.querySelector('[data-testid="skipped-toggle"]') as HTMLElement;
+    expect(toggle.textContent).toBe("2 skipped");
+    expect(toggle.className).not.toContain("danger");
+    expect(host.querySelector('[data-testid="preview-summary"]')!.className).not.toContain(
+      "danger",
+    );
+    expect(rows("bad")).toHaveLength(0);
+    expect(host.querySelector('[data-testid="skipped-reasons"]')).toBeNull();
+    click(toggle);
+    const reasons = [...host.querySelectorAll('[data-testid="skipped-reasons"] li')];
+    expect(reasons.map((li) => li.textContent)).toEqual(["1 line isn't a link", "1 repeat"]);
   });
 
   it("gives an open range room, and closing it starts the range over", () => {

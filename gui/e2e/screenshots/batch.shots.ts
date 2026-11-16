@@ -64,7 +64,9 @@ describe("batch screenshots", () => {
     const dialog = $(ADD_DIALOG);
     await setDestination(downloadDir);
     await dialog.$('button[aria-label^="Show lesson01.mp4"]').click();
-    await shoot("batch-add-pattern");
+    await shoot("batch-add-pattern-2");
+    await dialog.$("button=9 more").click();
+    await shoot("batch-add-pattern-show-less");
     await dialog.$("button=Cancel").click();
     await waitForGone(ADD_DIALOG);
 
@@ -79,7 +81,10 @@ describe("batch screenshots", () => {
     ]);
     await setDestination(downloadDir);
     await retype(dialog.$('input[aria-label="Batch name"]'), "Course files", { enter: false });
-    await shoot("batch-add-named");
+    await shoot("batch-add-named-2");
+    await dialog.$('[data-testid="skipped-toggle"]').click();
+    await shoot("batch-add-skipped-reasons");
+    await dialog.$('[data-testid="skipped-toggle"]').click();
     await dialog.$("button*=Add").click();
     await waitForGone(ADD_DIALOG);
 
@@ -100,9 +105,9 @@ describe("batch screenshots", () => {
       },
       { timeout: 120_000, interval: 500, timeoutMsg: "the batches never got going" },
     );
-    await shoot("batch-grouped-list");
+    await shoot("batch-grouped-list-2");
 
     await $('button[data-testid="batch-filter"][data-count="16"]').click();
-    await shoot("batch-sidebar-view");
+    await shoot("batch-sidebar-view-2");
   });
 });

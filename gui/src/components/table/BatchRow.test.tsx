@@ -32,6 +32,7 @@ describe("BatchRow", () => {
   const render = (ds: DownloadSnapshot[], collapsed = false) => {
     const onToggle = vi.fn();
     const onRetry = vi.fn();
+    const onReveal = vi.fn();
     act(() =>
       root.render(
         <BatchRow
@@ -39,10 +40,11 @@ describe("BatchRow", () => {
           collapsed={collapsed}
           onToggle={onToggle}
           onRetry={onRetry}
+          onReveal={onReveal}
         />,
       ),
     );
-    return { onToggle, onRetry };
+    return { onToggle, onRetry, onReveal };
   };
   const q = (id: string) => host.querySelector(`[data-testid="${id}"]`);
 
@@ -65,6 +67,15 @@ describe("BatchRow", () => {
     expect(q("batch-failed")!.textContent).toBe("2 failed");
     act(() => (q("batch-retry") as HTMLElement).click());
     expect(onRetry).toHaveBeenCalledWith(4);
+  });
+
+  it("puts the count right after the bar, and opens the batch's folder", () => {
+    const { onReveal } = render([file(1, { status: "queued" })]);
+    const cell = q("batch-rollup")!.closest("td")!;
+    const bar = cell.querySelector('[role="progressbar"]')!;
+    expect(bar.nextElementSibling).toBe(q("batch-rollup"));
+    act(() => (q("batch-reveal") as HTMLElement).click());
+    expect(onReveal).toHaveBeenCalledWith(4);
   });
 
   it("opens and closes with its chevron", () => {

@@ -8,7 +8,7 @@
 // removes its downloads and forgets the remembered folder when done, and saves
 // into a folder of its own.
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { $, $$, browser, expect } from "@wdio/globals";
 import {
@@ -112,9 +112,15 @@ describe("rdm GUI batch groups", () => {
     await expect(dialog.$$('li[data-kind="pattern-link"]')).toBeElementsArrayOfSize(3);
     await dialog.$("button=9 more").click();
     await expect(dialog.$$('li[data-kind="pattern-link"]')).toBeElementsArrayOfSize(12);
+    await expect(dialog.$("button=Show less")).toBeExisting();
     // Rows a comfortable height, and the list grew to show them.
     expect((await rectOf('li[data-kind="pattern-link"]')).height).toBeGreaterThanOrEqual(32);
     expect((await rectOf(list)).height).toBeGreaterThan(collapsed);
+    // Show less takes it back to the first few; the chevron closes the range.
+    await dialog.$("button=Show less").click();
+    await expect(dialog.$$('li[data-kind="pattern-link"]')).toBeElementsArrayOfSize(3);
+    await dialog.$('button[aria-label^="Hide set01.bin"]').click();
+    await expect(dialog.$$('li[data-kind="pattern-link"]')).toBeElementsArrayOfSize(0);
     await dialog.$("button=Cancel").click();
     await waitForGone(ADD_DIALOG);
   });
@@ -170,6 +176,15 @@ describe("rdm GUI batch groups", () => {
     await waitForText(`${row} [data-testid="batch-rollup"]`, "2 of 3 done");
     await waitForText(`${row} [data-testid="batch-failed"]`, "1 failed");
     await expect($(`${row}`)).toHaveAttribute("data-count", "3");
+    // Show in folder opens the batch's folder.
+    await $(`${row} [data-testid="batch-reveal"]`).click();
+    const opened = path.join(root, "E2E set");
+    await browser.waitUntil(
+      () => readFileSync(process.env.RDM_OPEN_LOG!, "utf8").includes(`reveal ${opened}`),
+      {
+        timeoutMsg: "the batch's folder never reached the open log",
+      },
+    );
     // The group row sits above its files, which follow it directly.
     const after = await browser.execute((id) => {
       const all = Array.from(document.querySelectorAll("tbody tr"));

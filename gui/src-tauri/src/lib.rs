@@ -490,6 +490,32 @@ async fn reveal_download(
     .await
 }
 
+/// Open the folder batch `batch`'s files went into in the OS file manager (the
+/// group row's Open folder). Errors if the batch is unknown or the folder isn't there.
+#[tauri::command]
+async fn reveal_batch(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    batch: u64,
+) -> Result<(), String> {
+    let manager = state.manager.clone();
+    commands_guard::contained("reveal_batch", async move {
+        let dir = manager
+            .batch_folder(batch)
+            .ok_or_else(|| "that batch is gone".to_string())?;
+        if let Some(log) = test_seam(OPEN_LOG_ENV) {
+            return append_open_log(&log, "reveal", &dir).map_err(|e| e.to_string());
+        }
+        if !dir.is_dir() {
+            return Err(format!("{} isn't there yet", dir.display()));
+        }
+        app.opener()
+            .open_path(dir.to_string_lossy(), None::<&str>)
+            .map_err(|e| e.to_string())
+    })
+    .await
+}
+
 /// The file of completed download `id`, after a fresh check that it is still
 /// on disk: a missing one flags its row (the snapshot carries it) and errors.
 async fn checked_file(manager: &Manager, id: u64) -> Result<PathBuf, String> {
@@ -1125,6 +1151,7 @@ pub fn run() {
             add_download,
             add_batch,
             retry_batch,
+            reveal_batch,
             get_settings,
             set_settings,
             set_limit,
