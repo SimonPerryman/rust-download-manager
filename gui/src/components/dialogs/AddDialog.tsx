@@ -406,6 +406,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
                       onChange={setBatchLimit}
                       onEnter={submit}
                     />
+                    <p className="text-xs text-g400">Empty = no limit.</p>
                   </Field>
                 )}
               </div>

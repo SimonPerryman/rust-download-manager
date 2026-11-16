@@ -37,8 +37,8 @@ adds every file in it. The preview shows one row ("lesson01.mp4 to
 lesson12.mp4", 12 links) that opens to list its files. A range that isn't
 valid, or makes more than 500 links, is explained under the box and left
 out. **N more** lists all the rest of a range's files (the preview scrolls),
-and becomes **Show less**; the range's chevron closes it too. [The CLI takes the same
-ranges.](cli.md#many-links-at-once) A link already in your list shows an info
+and becomes **Show less**; the range's chevron closes it too. The
+[CLI](cli.md#many-links-at-once) takes the same ranges and `-i` list files. A link already in your list shows an info
 mark instead of a tick; it is still added.
 
 Beside "N links found", a quiet **N skipped** counts lines that aren't links
@@ -48,10 +48,22 @@ and repeats; click it for the reasons. The lines themselves aren't listed.
 
 Two or more links become a **batch** when you give them a **Batch name**. A
 range fills the name in from the text before it (`lesson[01-12].mp4` gives
-"lesson"); clearing it makes them ordinary downloads again. With a name, a
-ticked **Create folder** box puts the files in a folder of that name inside
-the destination; unticked, they go straight into it. A folder name that is
-taken gets `(1)` after it, as clashing file names do. Under More options, **Speed limit for the batch** caps all the batch's files combined (it appears only with a name); **Speed limit per file** still applies to each file, and the slowest limit wins. The cap is kept, so Retry failed and a restart keep it.
+"lesson"); clearing it makes them ordinary downloads again (the name is
+limited to 64 characters). With a name, a ticked **Create folder** box puts
+the files in a folder of that name inside the destination; unticked, they go
+straight into it. A folder name that is taken gets `(1)` after it, so a second
+"Course files" goes in `Course files (1)`, and files that clash inside a
+folder become `name (1).ext`.
+
+![The Add dialog for a batch: 16 links found with a range row, the Batch name, the Create folder tick, and under More options the speed limit per file and for the batch](screenshots/batch-add-limits.png)
+
+Under More options, **Speed limit per file** applies to each file, and
+**Speed limit for the batch** (shown only with a name) caps all the batch's
+files combined. Both can be set; the slower one wins, and the
+[global limit](#speed-limits) still caps everything. The batch limit is
+kept, so Retry failed and a restart keep it. Leave a field empty for no limit.
+
+![The list grouped by batch: a Course files row with a progress bar, 14 of 16 done, 2 failed and Retry failed, above its files, then the Photos batch](screenshots/batch-grouped-list.png)
 
 - **Group row:** in the list, a batch's files sit under one row with a
   progress bar and, right after it, a count ("9 of 14 done"). Its chevron opens and closes the

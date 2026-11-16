@@ -64,7 +64,7 @@ describe("batch screenshots", () => {
     const dialog = $(ADD_DIALOG);
     await setDestination(downloadDir);
     await dialog.$('button[aria-label^="Show lesson01.mp4"]').click();
-    await shoot("batch-add-pattern-2");
+    await shoot("batch-add-pattern");
     await dialog.$("button=9 more").click();
     await shoot("batch-add-pattern-show-less");
     await dialog.$("button=Cancel").click();
@@ -81,10 +81,25 @@ describe("batch screenshots", () => {
     ]);
     await setDestination(downloadDir);
     await retype(dialog.$('input[aria-label="Batch name"]'), "Course files", { enter: false });
-    await shoot("batch-add-named-2");
+    await shoot("batch-add-named");
     await dialog.$('[data-testid="skipped-toggle"]').click();
     await shoot("batch-add-skipped-reasons");
     await dialog.$('[data-testid="skipped-toggle"]').click();
+
+    // More options open, scrolled so both speed fields are in view.
+    await dialog.$("button*=More options").click();
+    await $('input[aria-label="Speed limit for the batch"]').waitForDisplayed();
+    await browser.execute(() => {
+      const box = document.querySelector('input[aria-label="Speed limit for the batch"]');
+      for (let el = box?.parentElement; el; el = el.parentElement) {
+        if (el.scrollHeight > el.clientHeight && getComputedStyle(el).overflowY === "auto") {
+          el.scrollTop = el.scrollHeight;
+          break;
+        }
+      }
+    });
+    await shoot("batch-add-limits");
+    await dialog.$("button*=More options").click();
     await dialog.$("button*=Add").click();
     await waitForGone(ADD_DIALOG);
 
@@ -109,18 +124,20 @@ describe("batch screenshots", () => {
       async () => {
         const rows = await engineRows();
         return (
-          rows.filter((d) => d.status === "completed").length >= 6 &&
+          rows.filter((d) => d.status === "completed").length >= 20 &&
           rows.filter((d) => d.status === "failed").length === 3
         );
       },
       { timeout: 120_000, interval: 500, timeoutMsg: "the batches never got going" },
     );
-    await browser.execute(() =>
-      document.querySelector("tbody tr:last-child")?.scrollIntoView({ block: "end" }),
-    );
-    await shoot("batch-grouped-list-3");
+    await browser.execute(() => {
+      for (const el of document.querySelectorAll("*")) {
+        if (el.scrollTop > 0) el.scrollTop = 0;
+      }
+    });
+    await shoot("batch-grouped-list");
 
     await $('button[data-testid="batch-filter"][data-count="16"]').click();
-    await shoot("batch-sidebar-view-3");
+    await shoot("batch-sidebar-view");
   });
 });
