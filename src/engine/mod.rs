@@ -29,6 +29,7 @@ pub mod limit;
 mod lock;
 pub mod manager;
 mod mark_of_the_web;
+mod probe;
 pub mod progress;
 mod proxy;
 mod ramp;
@@ -55,6 +56,7 @@ pub use manager::{
     AddOptions, DownloadSnapshot, FindEvent, FindResult, FolderMatch, FolderRelink, FoundFile,
     Manager, MatchReason, MissingChange, SameFolderOffer,
 };
+pub use probe::PROBE_CONCURRENCY;
 pub use progress::{Progress, SpeedMeter};
 pub use proxy::{Proxy, ProxyMode};
 #[doc(hidden)]
@@ -397,24 +399,12 @@ pub async fn download(
 ) -> Result<Summary> {
     #[cfg(feature = "fault-injection")]
     fault::panic_on_request(&req.url);
-    install_crypto_provider();
-    let client = reqwest::Client::builder()
-        .user_agent(USER_AGENT)
-        .connect_timeout(CONNECT_TIMEOUT);
-    // reqwest reads the system proxy (env vars, then the OS settings) when
-    // the client is built, so a changed one applies from the next download.
-    let client = match &req.proxy {
-        ProxyMode::System => client,
-        ProxyMode::None => {
-            tracing::info!("Not using a proxy");
-            client.no_proxy()
-        }
-        ProxyMode::Custom(proxy) => {
-            tracing::info!("Through proxy {proxy}");
-            client.proxy(reqwest::Proxy::all(proxy.as_str())?)
-        }
+    match &req.proxy {
+        ProxyMode::System => {}
+        ProxyMode::None => tracing::info!("Not using a proxy"),
+        ProxyMode::Custom(proxy) => tracing::info!("Through proxy {proxy}"),
     }
-    .build()?;
+    let client = build_client(&req.proxy)?;
 
     // The target may not be known until the first response (derived filename),
     // but when it is known up front we can detect an existing resume. The
@@ -534,6 +524,23 @@ pub async fn download(
         // A pause/cancel cuts this short; the next iteration reports it.
         backoff(control, delay).await;
     }
+}
+
+/// The HTTP client every request is made with: rdm's User-Agent, the connect
+/// timeout and the chosen proxy. reqwest reads the system proxy (env vars,
+/// then the OS settings) when the client is built, so a changed one applies
+/// from the next client.
+pub(crate) fn build_client(proxy: &ProxyMode) -> Result<reqwest::Client> {
+    install_crypto_provider();
+    let client = reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .connect_timeout(CONNECT_TIMEOUT);
+    Ok(match proxy {
+        ProxyMode::System => client,
+        ProxyMode::None => client.no_proxy(),
+        ProxyMode::Custom(proxy) => client.proxy(reqwest::Proxy::all(proxy.as_str())?),
+    }
+    .build()?)
 }
 
 /// Bytes on disk for the target so far (0 while it is still unknown).

@@ -79,6 +79,10 @@ describe("sizeText", () => {
     expect(sizeText(snap({ total: 1024 * 1024 }))).toBe("1.00 MB");
     expect(sizeText(snap({ total: null, downloaded: 500 }))).toBe("");
   });
+
+  it("shows a queued row's size once the engine has probed it", () => {
+    expect(sizeText(snap({ status: "queued", total: 2048, downloaded: 0 }))).toBe("2.00 KB");
+  });
 });
 
 describe("rowActions", () => {

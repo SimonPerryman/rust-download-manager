@@ -24,6 +24,7 @@ mod find;
 mod missing;
 mod observe;
 mod persist;
+mod probe;
 mod queue;
 mod settings;
 mod tagging;
@@ -302,6 +303,9 @@ struct Inner {
     /// Cancel flags of the searches running now, by search id.
     finds: Mutex<HashMap<u64, Arc<AtomicBool>>>,
     next_find: std::sync::atomic::AtomicU64,
+    /// Turns for the size probes of queued downloads, so only
+    /// [`PROBE_CONCURRENCY`](crate::engine::PROBE_CONCURRENCY) run at once.
+    probes: Arc<tokio::sync::Semaphore>,
 }
 
 /// Coordinates many concurrent downloads over the engine's [`download`](crate::engine::download).

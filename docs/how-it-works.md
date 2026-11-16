@@ -133,6 +133,15 @@ network shares) leaves the file unmarked, and the download still succeeds.
 
 - **Queue (GUI):** at most 3 downloads run at once by default (configurable).
   The rest wait and start in order as slots free up.
+- **Size while waiting (GUI):** when a download is added and has to wait, the
+  app asks the server for its size and file name with a small request (a
+  `HEAD`, or if that is refused a one-byte range request), so the row shows
+  them before it starts. Up to 4 of these run at once, apart from the queue,
+  so they never take a download's slot or hold up adding. A server that
+  refuses both or sends no size leaves the size blank, as before, and nothing
+  reports an error. Once a download starts, its own first response is the
+  authority and a late answer is ignored. The CLI doesn't do this: it has no
+  queue.
 - **Speed limits:** `--limit-rate` on the CLI; in the GUI, a global limit and
   an optional per-download limit, both changeable while a download runs. A
   download's limit is shared across all of its connections.

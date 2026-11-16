@@ -114,6 +114,22 @@
 //!   and then no body bytes, ever.
 //! - `GET /seg-hang`   — `/seg`, but no ranged request is ever answered.
 //!
+//! Size-probe routes (`batch-size-probe`), answering the Manager's `HEAD` and
+//! one-byte `Range: bytes=0-0` probes; every other route refuses both probes
+//! (405) without counting them, so a queued row keeps a blank size there.
+//! The probes are counted in [`TestServer::probe_requests`].
+//! - `/probe/named`   — `HEAD` answers [`PROBE_SIZE`] and a `Content-Disposition`
+//!   filename ([`PROBE_NAME`]); a plain `GET` serves [`payload`].
+//! - `/probe/no-head` — `HEAD` is 405; a one-byte range gets a 206 whose
+//!   `Content-Range` total is [`PROBE_SIZE`]; a plain `GET` serves [`payload`].
+//! - `/probe/refused` — `HEAD` is 405 and the range request 403; a plain
+//!   `GET` serves [`payload`].
+//! - `/probe/no-size` — `HEAD` and the range request answer 200 with no
+//!   length; a plain `GET` serves [`payload`].
+//! - `/probe/gated`   — `HEAD` holds, counted in [`TestServer::probe_in_flight`],
+//!   until released through [`TestServer::probe_gate`], then answers
+//!   [`PROBE_SIZE`] and [`PROBE_NAME`]; a plain `GET` serves [`payload`].
+//!
 //! Aborting bodies wait [`ABORT_GRACE`] after their prefix before erroring, so
 //! the prefix really reaches the client. Every `/seg*` route, `/liar-etag`,
 //! `/norange`, `/liar`, `/gated`, `/stall` and `/hang` keeps [`RouteStats`] (see
@@ -136,10 +152,11 @@ use std::time::{Duration, Instant};
 
 use axum::{
     body::{Body, Bytes},
-    extract::{Path, State},
-    http::{header, HeaderMap, StatusCode},
+    extract::{Path, Request, State},
+    http::{header, HeaderMap, Method, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Redirect, Response},
-    routing::{get, MethodRouter},
+    routing::{get, head, MethodRouter},
     Router,
 };
 use tokio::net::TcpListener;
@@ -595,6 +612,13 @@ struct AppState {
     sig_uses: Mutex<HashMap<u64, usize>>,
     /// `/gated`: which held requests may finish.
     gate: Arc<Gate>,
+    /// The probe routes: `HEAD` and one-byte range requests answered.
+    probe_heads: AtomicUsize,
+    probe_ranges: AtomicUsize,
+    /// `/probe/gated`: which held `HEAD`s may finish, and how many are held.
+    probe_gate: Arc<Gate>,
+    probe_in_flight: AtomicUsize,
+    probe_max_in_flight: AtomicUsize,
     /// `/seg-ramp`: when the shared link can send its next chunk.
     ramp_next_free: Arc<Mutex<tokio::time::Instant>>,
     /// `/seg-ramp`: the shared link's rate in bytes/s (see
@@ -622,6 +646,11 @@ impl AppState {
             next_sig: AtomicU64::new(0),
             sig_uses: Mutex::new(HashMap::new()),
             gate: Arc::default(),
+            probe_heads: AtomicUsize::new(0),
+            probe_ranges: AtomicUsize::new(0),
+            probe_gate: Arc::default(),
+            probe_in_flight: AtomicUsize::new(0),
+            probe_max_in_flight: AtomicUsize::new(0),
             ramp_next_free: Arc::new(Mutex::new(tokio::time::Instant::now())),
             ramp_link: Arc::new(AtomicU64::new(SEG_RAMP_CAP)),
             ramp_slow_chunks: Arc::default(),
@@ -919,6 +948,119 @@ async fn gated_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         .header(header::CONTENT_TYPE, "application/octet-stream")
         .body(Body::from_stream(s))
         .unwrap()
+}
+
+/// The size the probe routes report.
+pub const PROBE_SIZE: u64 = 7777;
+
+/// The filename `/probe/named` reports.
+pub const PROBE_NAME: &str = "probed-name.bin";
+
+/// Whether this is a size probe: a `HEAD`, or the one-byte range request.
+fn is_probe(method: &Method, headers: &HeaderMap) -> bool {
+    method == Method::HEAD
+        || headers
+            .get(header::RANGE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v == "bytes=0-0")
+}
+
+/// Turn probes away from every route but `/probe/*`, uncounted, so the routes
+/// built for other tests see only the requests those tests make.
+async fn refuse_stray_probes(request: Request, next: Next) -> Response {
+    let stray = is_probe(request.method(), request.headers())
+        && !request.uri().path().starts_with("/probe/");
+    if stray {
+        return StatusCode::METHOD_NOT_ALLOWED.into_response();
+    }
+    next.run(request).await
+}
+
+/// What a `HEAD` for a sized file answers.
+fn probe_head_response(size: u64, disposition: Option<&str>) -> Response {
+    let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(header::CONTENT_LENGTH, size);
+    if let Some(cd) = disposition {
+        builder = builder.header(header::CONTENT_DISPOSITION, cd);
+    }
+    builder.body(Body::empty()).unwrap()
+}
+
+async fn probe_named_head(State(state): State<Arc<AppState>>) -> Response {
+    state.probe_heads.fetch_add(1, Ordering::SeqCst);
+    let disposition = format!("attachment; filename=\"{PROBE_NAME}\"");
+    probe_head_response(PROBE_SIZE, Some(&disposition))
+}
+
+async fn probe_no_size_head(State(state): State<Arc<AppState>>) -> Response {
+    state.probe_heads.fetch_add(1, Ordering::SeqCst);
+    Response::builder()
+        .status(StatusCode::OK)
+        .body(Body::empty())
+        .unwrap()
+}
+
+async fn probe_head_refused(State(state): State<Arc<AppState>>) -> Response {
+    state.probe_heads.fetch_add(1, Ordering::SeqCst);
+    StatusCode::METHOD_NOT_ALLOWED.into_response()
+}
+
+/// `GET` on a probe route: the one-byte range probe, or the real download.
+async fn probe_get(state: Arc<AppState>, kind: &str, headers: HeaderMap) -> Response {
+    if !is_probe(&Method::GET, &headers) {
+        return file_handler().await.into_response();
+    }
+    state.probe_ranges.fetch_add(1, Ordering::SeqCst);
+    match kind {
+        "no-head" => Response::builder()
+            .status(StatusCode::PARTIAL_CONTENT)
+            .header(header::CONTENT_RANGE, format!("bytes 0-0/{PROBE_SIZE}"))
+            .header(header::CONTENT_LENGTH, 1)
+            .body(Body::from(vec![0x50]))
+            .unwrap(),
+        "refused" => StatusCode::FORBIDDEN.into_response(),
+        // No length: a streamed body that never needs to be read.
+        _ => Response::builder()
+            .status(StatusCode::OK)
+            .body(Body::from_stream(futures_util::stream::pending::<
+                Result<Bytes, std::io::Error>,
+            >()))
+            .unwrap(),
+    }
+}
+
+/// The `GET` handler of the probe route `kind`.
+fn probe_get_of(kind: &'static str) -> MethodRouter<Arc<AppState>> {
+    get(
+        move |State(state): State<Arc<AppState>>, headers: HeaderMap| {
+            probe_get(state, kind, headers)
+        },
+    )
+}
+
+/// Counts a held `/probe/gated` request while it lives.
+struct ProbeHeld<'a>(&'a AppState);
+
+impl Drop for ProbeHeld<'_> {
+    fn drop(&mut self) {
+        self.0.probe_in_flight.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// `/probe/gated`: hold the `HEAD` until the test releases it.
+async fn probe_gated_head(State(state): State<Arc<AppState>>) -> Response {
+    state.probe_heads.fetch_add(1, Ordering::SeqCst);
+    let now = state.probe_in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+    state.probe_max_in_flight.fetch_max(now, Ordering::SeqCst);
+    let _held = ProbeHeld(&state);
+    let ticket = state.probe_gate.enter();
+    while !ticket.released() {
+        tokio::time::sleep(GATED_TRICKLE).await;
+    }
+    let disposition = format!("attachment; filename=\"{PROBE_NAME}\"");
+    probe_head_response(PROBE_SIZE, Some(&disposition))
 }
 
 /// `/huge`: a [`HUGE_LEN`] header, then a trickle that never ends.
@@ -1598,6 +1740,30 @@ impl TestServer {
         self.state.mutable_bumped.store(true, Ordering::SeqCst);
     }
 
+    /// How many probes the `/probe/*` routes have seen: `(HEAD requests,
+    /// one-byte range requests)`.
+    pub fn probe_requests(&self) -> (usize, usize) {
+        (
+            self.state.probe_heads.load(Ordering::SeqCst),
+            self.state.probe_ranges.load(Ordering::SeqCst),
+        )
+    }
+
+    /// `/probe/gated`'s hold, to release its `HEAD`s.
+    pub fn probe_gate(&self) -> &Gate {
+        &self.state.probe_gate
+    }
+
+    /// `/probe/gated` requests held now.
+    pub fn probe_in_flight(&self) -> usize {
+        self.state.probe_in_flight.load(Ordering::SeqCst)
+    }
+
+    /// The most `/probe/gated` requests held at once.
+    pub fn probe_max_in_flight(&self) -> usize {
+        self.state.probe_max_in_flight.load(Ordering::SeqCst)
+    }
+
     /// The bytes the `/seg*` routes serve on this server.
     pub fn seg_payload(&self) -> Vec<u8> {
         self.state.seg.to_vec()
@@ -1690,6 +1856,21 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/limited-once", get(limited_once_handler))
         .route("/stall", get(stall_handler))
         .route("/hang", get(hang_handler))
+        .route("/probe/named", head(probe_named_head).get(file_handler))
+        .route("/probe/gated", head(probe_gated_head).get(file_handler))
+        .route(
+            "/probe/no-head",
+            head(probe_head_refused).get(probe_get_of("no-head")),
+        )
+        .route(
+            "/probe/refused",
+            head(probe_head_refused).get(probe_get_of("refused")),
+        )
+        .route(
+            "/probe/no-size",
+            head(probe_no_size_head).get(probe_get_of("no-size")),
+        )
+        .layer(middleware::from_fn(refuse_stray_probes))
         .with_state(state);
     axum::serve(listener, app).await.expect("serve");
 }

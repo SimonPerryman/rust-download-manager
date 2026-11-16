@@ -19,6 +19,9 @@ desktop app share one version.
   ranges; the dialog shows one row for the range, which opens to its files,
   and explains a range it refuses (reversed, uneven padding, in the host, or
   more than 500 links).
+- A download waiting in the queue now shows its size and file name before it
+  starts, when the server provides them. Adding never waits for this, and a
+  server that refuses leaves the size blank as before.
 
 ## 0.4.0 - 2026-11-15
 

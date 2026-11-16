@@ -128,6 +128,9 @@ impl Manager {
             find_results: Mutex::default(),
             finds: Mutex::default(),
             next_find: std::sync::atomic::AtomicU64::new(1),
+            probes: Arc::new(tokio::sync::Semaphore::new(
+                crate::engine::PROBE_CONCURRENCY,
+            )),
             state: Mutex::new(st),
         });
         // Prime the channel with the restored list.
