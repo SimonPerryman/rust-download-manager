@@ -38,7 +38,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M9 | In-app updater | done | [[milestone-09-in-app-updater]] |
 | M10 | Smarter connections | done | [[milestone-10-smarter-connections]] |
 | M11 | Missing and moved files | done | [[milestone-11-missing-and-moved-files]] |
-| M12 | Batch downloads | todo | [[milestone-12-batch-downloads]] |
+| M12 | Batch downloads | done | [[milestone-12-batch-downloads]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 
@@ -56,15 +56,11 @@ order.
 
 Pick from the top; each is described in the backlog below.
 
-1. **Batch** ([[milestone-12-batch-downloads]]): URL lists from the CLI and
-   GUI, numbered patterns such as `file[01-20].zip`, and batches you can
-   see and retry. Site mirroring isn't planned. Still to ship: the batch
-   speed limit, then the docs pass.
-2. **Scheduling & automation**: start/stop at a time, bandwidth schedules,
+1. **Scheduling & automation**: start/stop at a time, bandwidth schedules,
    post-download actions.
-3. **Protocols beyond HTTP**: FTP/SFTP, BitTorrent, metalink/mirror failover.
-4. **Content-aware / media**: HLS and DASH manifests, muxed to one file.
-5. **Browser integration**: native-messaging host and extension.
+2. **Protocols beyond HTTP**: FTP/SFTP, BitTorrent, metalink/mirror failover.
+3. **Content-aware / media**: HLS and DASH manifests, muxed to one file.
+4. **Browser integration**: native-messaging host and extension.
 
 Deferred: **Code signing** (cut from M6). Sign the Windows binaries and
 installers and sign and notarise the macOS app, so SmartScreen and
