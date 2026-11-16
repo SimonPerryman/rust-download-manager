@@ -194,16 +194,36 @@ export interface FoundChoice {
 export interface ListLink {
   url: string;
   count: number;
+  /** Index into `ParsedList.patterns` of the range that first made this link, if one did. */
+  pattern: number | null;
+}
+
+/** A `[a-b]` range that expanded into links. */
+export interface ListPattern {
+  /** The name part before the range (`lesson`), else the host. */
+  stem: string;
+  count: number;
 }
 
 /** A piece of pasted text the engine left out, and why. */
 export interface SkippedLine {
   line: string;
-  reason: "not_a_link" | "unsupported_scheme";
+  reason:
+    | "not_a_link"
+    | "unsupported_scheme"
+    | "range_in_host"
+    | "range_invalid"
+    | "range_width_mismatch"
+    | "range_reversed"
+    | "multiple_ranges"
+    | "range_too_big";
+  /** For "range_too_big": how many links the range would make. */
+  count: number | null;
 }
 
 /** The engine's reading of a pasted list (`preview_list`). */
 export interface ParsedList {
   links: ListLink[];
+  patterns: ListPattern[];
   skipped: SkippedLine[];
 }

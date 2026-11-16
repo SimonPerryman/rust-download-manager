@@ -13,6 +13,12 @@ desktop app share one version.
   from standard input, and several links on the command line download as a
   batch. `-j <n>` sets how many run at once (default 3). Each file gets a
   line, a summary follows, and the exit code is non-zero if any failed.
+- A `[a-b]` range in a link's path or query adds every value in it:
+  `lesson[01-12].mp4` is twelve downloads (zero padding kept) and
+  `img[a-f].png` six. Both the CLI and the desktop app's Add dialog take
+  ranges; the dialog shows one row for the range, which opens to its files,
+  and explains a range it refuses (reversed, uneven padding, in the host, or
+  more than 500 links).
 
 ## 0.4.0 - 2026-11-15
 
