@@ -6,6 +6,8 @@ import {
   folderName,
   folderTickLabel,
   layoutRows,
+  UNGROUPED,
+  ungroupedText,
   retryBatchMessage,
   rollupText,
 } from "./batches";
@@ -54,7 +56,13 @@ describe("layoutRows", () => {
   const rows = [inBatch(1, 1), snap({ id: 2 }), inBatch(3, 1), inBatch(4, 2), inBatch(5, 1)];
   const groups = batchGroups(rows);
   const kinds = (items: ReturnType<typeof layoutRows>["items"]) =>
-    items.map((i) => (i.kind === "group" ? `group:${i.group.id}` : `row:${i.d.id}`));
+    items.map((i) =>
+      i.kind === "group"
+        ? `group:${i.group.id}`
+        : i.kind === "ungrouped"
+          ? "ungrouped"
+          : `row:${i.d.id}`,
+    );
 
   it("is the plain list when not grouped", () => {
     const { items, shown } = layoutRows(rows, groups, false, new Set());
@@ -62,24 +70,49 @@ describe("layoutRows", () => {
     expect(shown.map((d) => d.id)).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it("gathers a batch under one group row where its first file was", () => {
+  it("gathers a batch under one group row, with the rest last under Ungrouped", () => {
     const { items, shown } = layoutRows(rows, groups, true, new Set());
     expect(kinds(items)).toEqual([
       "group:1",
       "row:1",
       "row:3",
       "row:5",
-      "row:2",
       "group:2",
       "row:4",
+      "ungrouped",
+      "row:2",
     ]);
-    expect(shown.map((d) => d.id)).toEqual([1, 3, 5, 2, 4]);
+    expect(shown.map((d) => d.id)).toEqual([1, 3, 5, 4, 2]);
+    expect(items.find((i) => i.kind === "ungrouped")).toMatchObject({ count: 1 });
   });
 
   it("lists only the group row of a collapsed batch, and selection skips its files", () => {
     const { items, shown } = layoutRows(rows, groups, true, new Set([1]));
-    expect(kinds(items)).toEqual(["group:1", "row:2", "group:2", "row:4"]);
-    expect(shown.map((d) => d.id)).toEqual([2, 4]);
+    expect(kinds(items)).toEqual(["group:1", "group:2", "row:4", "ungrouped", "row:2"]);
+    expect(shown.map((d) => d.id)).toEqual([4, 2]);
+  });
+
+  it("collapses Ungrouped like a batch", () => {
+    const { items, shown } = layoutRows(rows, groups, true, new Set([UNGROUPED]));
+    expect(kinds(items).slice(-2)).toEqual(["row:4", "ungrouped"]);
+    expect(items[items.length - 1]).toMatchObject({ collapsed: true });
+    expect(shown.map((d) => d.id)).toEqual([1, 3, 5, 4]);
+  });
+
+  it("has no Ungrouped header without a batch in view, or without a loose download", () => {
+    const only = [inBatch(1, 1), inBatch(2, 1)];
+    expect(kinds(layoutRows(only, batchGroups(only), true, new Set()).items)).toEqual([
+      "group:1",
+      "row:1",
+      "row:2",
+    ]);
+    const loose = [snap({ id: 7 }), snap({ id: 8 })];
+    expect(kinds(layoutRows(loose, [], true, new Set()).items)).toEqual(["row:7", "row:8"]);
+  });
+
+  it("words the Ungrouped count", () => {
+    expect(ungroupedText(1)).toBe("1 download");
+    expect(ungroupedText(6)).toBe("6 downloads");
   });
 
   it("shows a group row over the files a filter left, rolled up over all of them", () => {

@@ -55,16 +55,21 @@ export function failedText(g: BatchGroup): string {
   return `${g.failed} failed`;
 }
 
-/** What the table lists: a batch's group row, or one download. */
+/** The collapse key of the Ungrouped header (batch ids are download ids, never negative). */
+export const UNGROUPED = -1;
+
+/** What the table lists: a batch's group row, the Ungrouped header, or one download. */
 export type TableItem =
   | { kind: "group"; group: BatchGroup; collapsed: boolean }
-  | { kind: "row"; d: DownloadSnapshot; inBatch: boolean };
+  | { kind: "ungrouped"; count: number; collapsed: boolean }
+  | { kind: "row"; d: DownloadSnapshot };
 
 /**
  * The table's items for `rows` (already filtered and sorted). With `grouped`, each
- * batch's rows gather under one group row placed where its first row was, and a
- * collapsed batch lists only that row. `shown` is the downloads listed, in order:
- * what selection and the keyboard move over.
+ * batch's rows gather under one group row placed where its first row was, and
+ * downloads in no batch close the list under an Ungrouped header (only while a batch
+ * is listed). A collapsed group lists only its header. `shown` is the downloads
+ * listed, in order: what selection and the keyboard move over.
  */
 export function layoutRows(
   rows: readonly DownloadSnapshot[],
@@ -73,38 +78,46 @@ export function layoutRows(
   collapsed: ReadonlySet<number>,
 ): { items: TableItem[]; shown: DownloadSnapshot[] } {
   if (!grouped) {
-    return { items: rows.map((d) => ({ kind: "row", d, inBatch: false })), shown: [...rows] };
+    return { items: rows.map((d) => ({ kind: "row", d })), shown: [...rows] };
   }
   const byId = new Map(groups.map((g) => [g.id, g]));
   const gathered = new Map<number, DownloadSnapshot[]>();
+  const loose: DownloadSnapshot[] = [];
   for (const d of rows) {
     if (d.batch != null && byId.has(d.batch)) {
       const list = gathered.get(d.batch);
       if (list) list.push(d);
       else gathered.set(d.batch, [d]);
-    }
+    } else loose.push(d);
   }
   const items: TableItem[] = [];
   const shown: DownloadSnapshot[] = [];
+  const add = (list: readonly DownloadSnapshot[]) => {
+    for (const d of list) {
+      items.push({ kind: "row", d });
+      shown.push(d);
+    }
+  };
   const placed = new Set<number>();
   for (const d of rows) {
     const group = d.batch == null ? undefined : byId.get(d.batch);
-    if (!group) {
-      items.push({ kind: "row", d, inBatch: false });
-      shown.push(d);
-      continue;
-    }
-    if (placed.has(group.id)) continue;
+    if (!group || placed.has(group.id)) continue;
     placed.add(group.id);
     const isCollapsed = collapsed.has(group.id);
     items.push({ kind: "group", group, collapsed: isCollapsed });
-    if (isCollapsed) continue;
-    for (const member of gathered.get(group.id)!) {
-      items.push({ kind: "row", d: member, inBatch: true });
-      shown.push(member);
-    }
+    if (!isCollapsed) add(gathered.get(group.id)!);
   }
+  if (placed.size > 0 && loose.length > 0) {
+    const isCollapsed = collapsed.has(UNGROUPED);
+    items.push({ kind: "ungrouped", count: loose.length, collapsed: isCollapsed });
+    if (!isCollapsed) add(loose);
+  } else add(loose);
   return { items, shown };
+}
+
+/** The Ungrouped header's count: "6 downloads". */
+export function ungroupedText(count: number): string {
+  return `${count} ${count === 1 ? "download" : "downloads"}`;
 }
 
 const NAME_TRIM = /[\s\-_.]+$/;

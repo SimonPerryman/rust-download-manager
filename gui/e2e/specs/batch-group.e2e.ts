@@ -252,12 +252,42 @@ describe("rdm GUI batch groups", () => {
     ).toBeElementsArrayOfSize(3);
   });
 
+  it("closes the list with an Ungrouped header over downloads in no batch", async () => {
+    const header = 'tr[data-testid="ungrouped-row"]';
+    const looseRow = `tr[data-testid="download-row"][data-id="${loose}"]`;
+    await $(header).waitForExist();
+    const order = await browser.execute(
+      (h, l) => {
+        const all = Array.from(document.querySelectorAll("tbody tr"));
+        const at = all.findIndex((r) => r.matches(h));
+        return {
+          last: all.slice(at + 1).every((r) => !r.matches('[data-testid="batch-row"]')),
+          looseAfter: all.findIndex((r) => r.matches(l)) > at,
+          count: all.slice(at + 1).filter((r) => r.matches('[data-testid="download-row"]')).length,
+        };
+      },
+      header,
+      looseRow,
+    );
+    expect(order.last && order.looseAfter).toBe(true);
+    await expect($(header)).toHaveAttribute("data-count", String(order.count));
+    // No bar, retry or folder button on it.
+    await expect($(`${header} [role="progressbar"]`)).not.toBeExisting();
+    await expect($(`${header} button`)).toHaveAttribute("aria-label", "Hide ungrouped downloads");
+
+    await $(`${header} button`).click();
+    await waitForGone(looseRow);
+    await $(`${header} button`).click();
+    await $(looseRow).waitForExist();
+  });
+
   it("turns grouping off for a flat list, and remembers it", async () => {
     const toggle = $(GROUP_TOGGLE);
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await waitForGone(BATCH_ROW);
+    await waitForGone('tr[data-testid="ungrouped-row"]');
     for (const id of items)
       await $(`tr[data-testid="download-row"][data-id="${id}"]`).waitForExist();
     const saved = await browser.execute((key) => localStorage.getItem(key), PREFS_KEY);

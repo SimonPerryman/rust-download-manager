@@ -95,19 +95,32 @@ describe("batch screenshots", () => {
     await dialog.$("button*=Add").click();
     await waitForGone(ADD_DIALOG);
 
+    // A few downloads in no batch: they close the list under Ungrouped.
+    await paste([
+      file(1 * MB, "setup.exe"),
+      `${baseUrl}/missing/manual.pdf`,
+      file(1 * MB, "song.mp3"),
+    ]);
+    await setDestination(downloadDir);
+    await dialog.$("button*=Add").click();
+    await waitForGone(ADD_DIALOG);
+
     await browser.waitUntil(
       async () => {
         const rows = await engineRows();
         return (
           rows.filter((d) => d.status === "completed").length >= 6 &&
-          rows.filter((d) => d.status === "failed").length === 2
+          rows.filter((d) => d.status === "failed").length === 3
         );
       },
       { timeout: 120_000, interval: 500, timeoutMsg: "the batches never got going" },
     );
-    await shoot("batch-grouped-list-2");
+    await browser.execute(() =>
+      document.querySelector("tbody tr:last-child")?.scrollIntoView({ block: "end" }),
+    );
+    await shoot("batch-grouped-list-3");
 
     await $('button[data-testid="batch-filter"][data-count="16"]').click();
-    await shoot("batch-sidebar-view-2");
+    await shoot("batch-sidebar-view-3");
   });
 });

@@ -54,10 +54,13 @@ the destination; unticked, they go straight into it. A folder name that is
 taken gets `(1)` after it, as clashing file names do.
 
 - **Group row:** in the list, a batch's files sit under one row with a
-  progress bar and, right after it, a count ("9 of 14 done"). The files sit
-  indented under it, along a guide line. Its chevron opens and closes the
+  progress bar and, right after it, a count ("9 of 14 done"). Its chevron opens and closes the
   files, and its **Show in folder** button opens the folder they went into. While any file has failed the row shows how many, and **Retry
   failed** retries those files of that batch only.
+- **Ungrouped:** with grouping on, downloads in no batch close the list under
+  an **Ungrouped** header with a plain count ("6 downloads") and the same
+  chevron, so they don't read as part of the last batch. It shows only while a
+  batch is listed and something is outside one.
 - **Group batches:** a toolbar toggle beside the density button, shown once a
   batch exists, turns grouping off for a flat list. It is remembered.
 - **Batches** in the sidebar lists each batch with its file count and filters

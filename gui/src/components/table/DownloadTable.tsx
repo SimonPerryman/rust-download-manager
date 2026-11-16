@@ -3,6 +3,7 @@ import type { TableItem } from "../../lib/batches";
 import type { EmptyCopy } from "../../lib/copy";
 import type { Modifiers, Selection } from "../../lib/selection";
 import type { SortKey, SortState } from "../../lib/sort";
+import { UngroupedRow } from "./UngroupedRow";
 import { BatchRow } from "./BatchRow";
 import { EmptyState } from "./EmptyState";
 import { ErrorRow } from "./ErrorRow";
@@ -141,12 +142,21 @@ export function DownloadTable({
                 />
               );
             }
+            if (item.kind === "ungrouped") {
+              return (
+                <UngroupedRow
+                  key="ungrouped"
+                  count={item.count}
+                  collapsed={item.collapsed}
+                  onToggle={onToggleBatch}
+                />
+              );
+            }
             const d = item.d;
             return (
               <Fragment key={d.id}>
                 <TableRow
                   d={d}
-                  inBatch={item.inBatch}
                   lingering={d.status === "completed" && unopened.has(d.id)}
                   freshAt={fresh.get(d.id)}
                   handlers={handlers}
