@@ -81,7 +81,6 @@ describe("batch screenshots", () => {
     ]);
     await setDestination(downloadDir);
     await retype(dialog.$('input[aria-label="Batch name"]'), "Course files", { enter: false });
-    await shoot("batch-add-named");
     await dialog.$('[data-testid="skipped-toggle"]').click();
     await shoot("batch-add-skipped-reasons");
     await dialog.$('[data-testid="skipped-toggle"]').click();
