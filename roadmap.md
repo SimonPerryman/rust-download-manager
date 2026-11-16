@@ -38,7 +38,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M9 | In-app updater | done | [[milestone-09-in-app-updater]] |
 | M10 | Smarter connections | done | [[milestone-10-smarter-connections]] |
 | M11 | Missing and moved files | done | [[milestone-11-missing-and-moved-files]] |
-| M12 | Batch downloads | todo | [[milestone-12-batch-downloads]] |
+| M12 | Batch downloads | done | [[milestone-12-batch-downloads]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 
@@ -56,14 +56,11 @@ order.
 
 Pick from the top; each is described in the backlog below.
 
-1. **Batch** ([[milestone-12-batch-downloads]]): URL lists from the CLI and
-   GUI, numbered patterns such as `file[01-20].zip`, and batches you can
-   see and retry. Site mirroring isn't planned.
-2. **Scheduling & automation**: start/stop at a time, bandwidth schedules,
+1. **Scheduling & automation**: start/stop at a time, bandwidth schedules,
    post-download actions.
-3. **Protocols beyond HTTP**: FTP/SFTP, BitTorrent, metalink/mirror failover.
-4. **Content-aware / media**: HLS and DASH manifests, muxed to one file.
-5. **Browser integration**: native-messaging host and extension.
+2. **Protocols beyond HTTP**: FTP/SFTP, BitTorrent, metalink/mirror failover.
+3. **Content-aware / media**: HLS and DASH manifests, muxed to one file.
+4. **Browser integration**: native-messaging host and extension.
 
 Deferred: **Code signing** (cut from M6). Sign the Windows binaries and
 installers and sign and notarise the macOS app, so SmartScreen and
@@ -169,6 +166,29 @@ ramping follow-ups shipped in M10; ramp window tuning was dropped (below). These
   row has been opened; left as is, since a missing row never shows the
   icon Open. Locate… accepts any existing file; only
   Find it checks name and size.
+
+### From batch downloads, in priority order
+
+1. **Flaky ramp tests** (#156): tests that wait on real time for a ramp
+   window time out on CI. Three different ones failed on one PR's Windows
+   job (`tests/common/ramp.rs:126`) and one on Ubuntu earlier, while local
+   runs pass. They block merges, so fix the waits before more PRs pile up.
+2. **Windows e2e failure** (#162): `missing.e2e.ts` "Find file lists
+   candidates when the file is in several folders" fails with "click
+   intercepted" on Windows, on main too. Linux CI doesn't show it.
+3. **Add to existing batch**: typing the name of a batch that already
+   exists offers to add the new links to it and its folder. Today the add
+   makes a second batch with the folder `name (1)`.
+4. **Already-downloaded detection**: flag a link that looks already
+   downloaded, and give the CLI a no-redownload option that prints the
+   existing file's location, with strict (size and checksum) and loose
+   (name and size) matching. It also fixes a rerun of `rdm -i` downloading
+   finished files again as `name (1)`. Larger than the rest.
+5. **Error banner inset**: a failed row's banner lines up with the file
+   name, as it always has. Revisit if it still looks off, across every
+   view.
+6. **Batch name length**: capped at 64 characters; a one-line change if it
+   should be shorter.
 
 ## Candidate crates
 
