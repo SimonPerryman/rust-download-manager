@@ -95,9 +95,12 @@ describe("rdm GUI batch groups", () => {
     await dialog.$("button*=More options").click();
     await expect(dialog.$('input[aria-label="SHA-256 checksum"]')).not.toBeExisting();
     await expect(dialog.$("label=Speed limit per file")).toBeExisting();
+    // A named batch can be capped as a whole; unnamed, the field goes.
+    await expect(dialog.$('input[aria-label="Speed limit for the batch"]')).toBeExisting();
 
     await retype(dialog.$(BATCH_NAME), "", { enter: false });
     await waitForGone(`${ADD_DIALOG} ${FOLDER_TICK}`);
+    await waitForGone(`${ADD_DIALOG} input[aria-label="Speed limit for the batch"]`);
     await dialog.$("button=Cancel").click();
     await waitForGone(ADD_DIALOG);
   });

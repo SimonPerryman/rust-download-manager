@@ -51,7 +51,7 @@ range fills the name in from the text before it (`lesson[01-12].mp4` gives
 "lesson"); clearing it makes them ordinary downloads again. With a name, a
 ticked **Create folder** box puts the files in a folder of that name inside
 the destination; unticked, they go straight into it. A folder name that is
-taken gets `(1)` after it, as clashing file names do.
+taken gets `(1)` after it, as clashing file names do. Under More options, **Speed limit for the batch** caps all the batch's files combined (it appears only with a name); **Speed limit per file** still applies to each file, and the slowest limit wins. The cap is kept, so Retry failed and a restart keep it.
 
 - **Group row:** in the list, a batch's files sit under one row with a
   progress bar and, right after it, a count ("9 of 14 done"). Its chevron opens and closes the
