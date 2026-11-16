@@ -47,6 +47,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
   // Once the name has been typed or cleared by hand, a pattern stops filling it in.
   const nameTouched = useRef(false);
   const [limit, setLimit] = useState<RateDraft>(NO_LIMIT);
+  const [batchLimit, setBatchLimit] = useState<RateDraft>(NO_LIMIT);
   const [moreOpen, setMoreOpen] = useState(false);
   const [globalLimit, setGlobalLimit] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +74,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     setMakeFolder(true);
     nameTouched.current = false;
     setLimit(NO_LIMIT);
+    setBatchLimit(NO_LIMIT);
     setMoreOpen(false);
     const last = loadLastDir();
     setDest(last ?? "");
@@ -162,11 +164,18 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     // An error about a field under "More options" must not be hidden there.
     const fail = (message: string) => {
       setError(message);
-      if ((single && checksum.trim()) || limit.amount) setMoreOpen(true);
+      if ((single && checksum.trim()) || limit.amount || (named && batchLimit.amount)) {
+        setMoreOpen(true);
+      }
     };
     const rate = composeRate(limit);
     if (!rate.ok) {
       fail(rate.error);
+      return;
+    }
+    const batchRate = named ? composeRate(batchLimit) : rate;
+    if (!batchRate.ok) {
+      fail(batchRate.error);
       return;
     }
     const tags = parseTags(tagsText);
@@ -191,6 +200,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
             tags,
             named ? batchName.trim() : null,
             named && makeFolder,
+            (named && batchRate.rate) || null,
           );
     } catch (e) {
       setBusy(false);
@@ -387,6 +397,17 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
                       : "Empty = no limit."}
                   </p>
                 </Field>
+
+                {named && (
+                  <Field label="Speed limit for the batch">
+                    <RateInput
+                      label="Speed limit for the batch"
+                      value={batchLimit}
+                      onChange={setBatchLimit}
+                      onEnter={submit}
+                    />
+                  </Field>
+                )}
               </div>
             </div>
 

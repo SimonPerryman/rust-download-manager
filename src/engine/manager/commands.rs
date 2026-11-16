@@ -70,7 +70,7 @@ impl Manager {
         url: String,
         dir: PathBuf,
         options: AddOptions,
-        batch: Option<(u64, &str)>,
+        batch: Option<super::batches::BatchTag<'_>>,
     ) -> (u64, String) {
         let id = st.next_id;
         st.next_id += 1;
@@ -104,11 +104,14 @@ impl Manager {
             archived: false,
             tags: options.tags,
             paused_for_update: false,
-            batch: batch.map(|(id, _)| id),
-            batch_label: batch.map(|(_, label)| label.to_string()),
+            batch: batch.as_ref().map(|b| b.id),
+            batch_label: batch.as_ref().map(|b| b.label.to_string()),
+            batch_limit: batch.as_ref().and_then(|b| b.limiter.as_ref()?.rate()),
         };
         st.order.push(id);
-        st.entries.insert(id, Entry::new(record, limiter));
+        let mut entry = Entry::new(record, limiter);
+        entry.batch_limiter = batch.and_then(|b| b.limiter);
+        st.entries.insert(id, entry);
         (id, probe_url)
     }
 

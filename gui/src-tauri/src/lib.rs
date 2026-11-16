@@ -132,6 +132,7 @@ fn add_batch(
     tags: Option<Vec<String>>,
     label: Option<String>,
     folder: Option<bool>,
+    batch_limit: Option<String>,
 ) -> Result<BatchAdded, String> {
     let dir = match dir {
         Some(d) if !d.trim().is_empty() => download_dir(&d)?,
@@ -142,11 +143,13 @@ fn add_batch(
         tags: tags.unwrap_or_default(),
         ..AddOptions::default()
     };
+    let batch_limit = parse_limit(batch_limit)?;
     let spec = label
         .filter(|l| !l.trim().is_empty())
         .map(|label| rdm::BatchSpec {
             label,
             folder: folder.unwrap_or(false),
+            limit: batch_limit,
         });
     let added = state
         .manager

@@ -42,7 +42,51 @@ fn named(label: &str, folder: bool) -> Option<BatchSpec> {
     Some(BatchSpec {
         label: label.into(),
         folder,
+        limit: None,
     })
+}
+
+/// A batch speed cap shared by its items: three ~100 KB files at 150 KiB/s
+/// combined can't all arrive faster than the cap allows (one-sided: slow CI
+/// only lengthens it), and a restarted manager rebuilds the same cap.
+#[tokio::test]
+async fn a_batch_limit_caps_the_items_combined() {
+    const RATE: u64 = 150 * 1024;
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    let size = common::payload().len() as u64;
+    let burst = rdm::RateLimiter::new(Some(RATE)).burst();
+    let ideal = Duration::from_secs_f64((3 * size - burst) as f64 / RATE as f64);
+
+    let started = Instant::now();
+    let added = mgr
+        .add_batch(
+            urls(&server, &["/any/a.bin", "/any/b.bin", "/any/c.bin"]),
+            dir.path(),
+            Some(BatchSpec {
+                label: "Capped".into(),
+                folder: false,
+                limit: Some(RATE),
+            }),
+            AddOptions::default(),
+        )
+        .unwrap();
+    finished(&mgr, &added.added).await;
+    let elapsed = started.elapsed();
+
+    for &id in &added.added {
+        assert_eq!(snap(&mgr, id).status, Status::Completed);
+    }
+    assert!(
+        elapsed >= ideal.mul_f64(0.95),
+        "took {elapsed:?}, expected at least ~{ideal:?}"
+    );
+
+    mgr.shutdown();
+    let again = manager_in(dir.path());
+    let capped = again.batch_limit(added.batch.unwrap());
+    assert_eq!(capped, Some(RATE));
 }
 
 fn urls(server: &common::TestServer, paths: &[&str]) -> Vec<String> {

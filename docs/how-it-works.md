@@ -145,7 +145,9 @@ network shares) leaves the file unmarked, and the download still succeeds.
 - **Batches (GUI):** an add of two or more links with a name gives each
   download the same batch id (the id of the first) and the name, saved with
   the list. Each file is an ordinary download: it waits in the queue, takes
-  the global limit and its own per-file limit. With a folder, the files go in
+  the global limit and its own per-file limit; an optional batch limit is one
+  limiter shared by the batch's files, so they stay under it combined (saved
+  with each file, and rebuilt as one limiter on load). With a folder, the files go in
   `<destination>/<name>`; a folder that already exists, or holds another
   download's file, makes it `<name> (1)`, and files that clash inside it
   become `name (1).ext`. Retry failed for a batch restarts only that batch's
