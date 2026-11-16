@@ -10,7 +10,14 @@
 //
 // `verify` checks a release; `generateKey` and `sign` exist for tests.
 
-import { createHash, createPublicKey, generateKeyPairSync, randomBytes, sign as edSign, verify as edVerify } from "node:crypto";
+import {
+  createHash,
+  createPublicKey,
+  generateKeyPairSync,
+  randomBytes,
+  sign as edSign,
+  verify as edVerify,
+} from "node:crypto";
 
 // DER prefix of an Ed25519 SubjectPublicKeyInfo; the raw 32-byte key follows.
 const SPKI_ED25519 = Buffer.from("302a300506032b6570032100", "hex");
@@ -21,17 +28,23 @@ const unbase64 = (text) => Buffer.from(text.trim(), "base64");
 function minisignLines(wrapped, what) {
   const text = unbase64(wrapped).toString("utf8");
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
-  if (!lines[0]?.startsWith("untrusted comment:")) throw new Error(`${what} is not a minisign file`);
+  if (!lines[0]?.startsWith("untrusted comment:"))
+    throw new Error(`${what} is not a minisign file`);
   return lines;
 }
 
 /** `{ keyId, key }` from a Tauri updater public key. */
 export function parsePublicKey(wrapped) {
   const raw = unbase64(minisignLines(wrapped, "public key")[1] ?? "");
-  if (raw.length !== 42 || raw.subarray(0, 2).toString() !== "Ed") throw new Error("not an Ed25519 minisign public key");
+  if (raw.length !== 42 || raw.subarray(0, 2).toString() !== "Ed")
+    throw new Error("not an Ed25519 minisign public key");
   return {
     keyId: raw.subarray(2, 10),
-    key: createPublicKey({ key: Buffer.concat([SPKI_ED25519, raw.subarray(10)]), format: "der", type: "spki" }),
+    key: createPublicKey({
+      key: Buffer.concat([SPKI_ED25519, raw.subarray(10)]),
+      format: "der",
+      type: "spki",
+    }),
   };
 }
 
@@ -51,7 +64,12 @@ export function verify(data, wrappedSig, wrappedPubkey) {
   const algorithm = sigRaw.subarray(0, 2).toString();
   if (!sigRaw.subarray(2, 10).equals(keyId)) throw new Error("signed with a different key");
   const signature = sigRaw.subarray(10);
-  const message = algorithm === "ED" ? createHash("blake2b512").update(data).digest() : algorithm === "Ed" ? data : null;
+  const message =
+    algorithm === "ED"
+      ? createHash("blake2b512").update(data).digest()
+      : algorithm === "Ed"
+        ? data
+        : null;
   if (!message) throw new Error(`unknown signature algorithm ${algorithm}`);
   if (!edVerify(null, message, key, signature)) throw new Error("signature doesn't match the file");
   const comment = trusted.slice("trusted comment: ".length);

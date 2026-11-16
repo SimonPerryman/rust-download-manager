@@ -30,6 +30,8 @@ export function snap(overrides: Partial<DownloadSnapshot> = {}): DownloadSnapsho
     active_ms: null,
     archived: false,
     tags: [],
+    batch: null,
+    batch_label: null,
     paused_for_update: false,
     file_missing: false,
     ...overrides,

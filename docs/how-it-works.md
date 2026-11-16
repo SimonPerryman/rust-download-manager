@@ -142,6 +142,14 @@ network shares) leaves the file unmarked, and the download still succeeds.
   reports an error. Once a download starts, its own first response is the
   authority and a late answer is ignored. The CLI doesn't do this: it has no
   queue.
+- **Batches (GUI):** an add of two or more links with a name gives each
+  download the same batch id (the id of the first) and the name, saved with
+  the list. Each file is an ordinary download: it waits in the queue, takes
+  the global limit and its own per-file limit. With a folder, the files go in
+  `<destination>/<name>`; a folder that already exists, or holds another
+  download's file, makes it `<name> (1)`, and files that clash inside it
+  become `name (1).ext`. Retry failed for a batch restarts only that batch's
+  failed downloads. Without a name the links are plain downloads.
 - **Speed limits:** `--limit-rate` on the CLI; in the GUI, a global limit and
   an optional per-download limit, both changeable while a download runs. A
   download's limit is shared across all of its connections.

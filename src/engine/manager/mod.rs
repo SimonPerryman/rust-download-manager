@@ -18,6 +18,7 @@
 //! decoupled from chunk rate. Lifecycle transitions publish immediately.
 
 mod archive;
+mod batches;
 mod commands;
 mod files;
 mod find;
@@ -46,6 +47,7 @@ use crate::engine::lock::lock;
 use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Store};
 use crate::engine::tally::Tally;
 use crate::engine::{Checksum, Control, RateLimiter, Segment};
+pub use batches::{BatchAdded, BatchSpec, MAX_BATCH_LABEL_LEN};
 use files::{has_partial, remove_partial};
 pub use find::{FindEvent, FindResult, FoundFile, MatchReason};
 pub use missing::{FolderMatch, FolderRelink, MissingChange, SameFolderOffer};
@@ -121,6 +123,10 @@ pub struct DownloadSnapshot {
     pub archived: bool,
     /// User labels, in the order added.
     pub tags: Vec<String>,
+    /// The batch it was added with: the id its items share, if any.
+    pub batch: Option<u64>,
+    /// The batch's name, set with `batch`.
+    pub batch_label: Option<String>,
     /// A completed download whose file was not found at its last check (see
     /// [`Manager::check_missing`]); derived, never saved. Still `Completed`.
     pub file_missing: bool,
@@ -237,6 +243,8 @@ impl Entry {
             active_ms: self.active_ms(),
             archived: self.record.archived,
             tags: self.record.tags.clone(),
+            batch: self.record.batch,
+            batch_label: self.record.batch_label.clone(),
             file_missing: self.file_missing && self.record.status == Status::Completed,
         }
     }
@@ -418,6 +426,8 @@ mod tests {
             archived: false,
             tags: Vec::new(),
             paused_for_update: false,
+            batch: None,
+            batch_label: None,
         }
     }
 }

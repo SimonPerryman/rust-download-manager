@@ -13,6 +13,7 @@ import { Retry } from "../icons/Retry";
 import { SettingsMenu } from "../settings/SettingsMenu";
 import type { UpdateSettingsProps } from "../settings/UpdateSettings";
 import { DensityToggle } from "./DensityToggle";
+import { GroupToggle } from "./GroupToggle";
 import { NameFilter } from "./NameFilter";
 import { SelectionBar } from "./SelectionBar";
 import { ThemeToggle } from "./ThemeToggle";
@@ -23,6 +24,10 @@ type Props = {
   count: number;
   /** The Failed view's bulk retry; null hides it. */
   onRetryAll: (() => void) | null;
+  /** A batch's own view: how it is doing, and its Retry failed (null while nothing failed). */
+  batch: { rollup: string; onRetry: (() => void) | null } | null;
+  /** Some batch exists, so the list can be grouped or flat. */
+  hasBatches: boolean;
   /** The Missing view's Find files; null hides it (every other view, or a search running). */
   onFindFiles: (() => void) | null;
   query: string;
@@ -81,6 +86,19 @@ export function Toolbar(p: Props) {
         <span data-testid="view-count" className="text-sm tabular-nums text-g400">
           {p.count}
         </span>
+        {p.batch && (
+          <>
+            <span data-testid="batch-view-rollup" className="text-sm tabular-nums text-g600">
+              {p.batch.rollup}
+            </span>
+            {p.batch.onRetry && (
+              <button className="btn btn-soft btn-sm" onClick={p.batch.onRetry}>
+                <Retry size={14} />
+                Retry failed
+              </button>
+            )}
+          </>
+        )}
         {p.onRetryAll && (
           <button className="btn btn-soft btn-sm" onClick={p.onRetryAll}>
             <Retry size={14} />
@@ -155,6 +173,7 @@ export function Toolbar(p: Props) {
         </button>
         <span className="mx-1 h-5 w-px bg-line-strong" />
         <DensityToggle density={p.prefs.density} onPrefs={p.onPrefs} />
+        {p.hasBatches && <GroupToggle grouped={p.prefs.groupBatches} onPrefs={p.onPrefs} />}
         <ThemeToggle resolved={p.resolved} onPrefs={p.onPrefs} />
         <SettingsMenu
           prefs={p.prefs}

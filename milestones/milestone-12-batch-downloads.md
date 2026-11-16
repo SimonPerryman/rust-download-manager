@@ -94,15 +94,17 @@ failed; opt-in folder per batch; docs and screenshots.
 ## Tasks
 Each is its own PR, in this order. Slices 4 and 5 need the owner's
 go-ahead after slice 3.
-- [ ] `batch-engine`: `engine::batch` (parse, dedupe, report bad lines),
+- [x] `batch-engine`: `engine::batch` (parse, dedupe, report bad lines),
       Tauri preview command, GUI preview switched over, `batch.ts` trimmed,
       tests
-- [ ] `batch-cli`: `-i` / `-i -` and repeated `<URL>`, Manager-backed run,
+- [x] `batch-cli`: `-i` / `-i -` and repeated `<URL>`, Manager-backed run,
       per-item lines, summary and exit code, `docs/cli.md`
-- [ ] `batch-patterns`: range expansion in the engine, preview count in the
+- [x] `batch-patterns`: range expansion in the engine, preview count in the
       Add dialog, 1000-link cap, docs
-- [ ] `batch-group`: batch id and label (schema v3), group row with rollup,
+- [x] `batch-group`: batch id and label (schema v3), group row with rollup,
       Retry failed, opt-in folder per batch, e2e spec and screenshots
+- [x] `batch-size-probe`: a size probe (`HEAD`, else a one-byte range) when a
+      download is added, so a waiting row shows its size
 - [ ] `batch-limit`: optional batch-wide speed cap shared by a batch's
       items (a per-batch limiter in the engine), field in the Add dialog's
       More options, test that the items' combined rate stays under it

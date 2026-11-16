@@ -1,4 +1,4 @@
-// Cosmetic GUI preferences (theme + row density), the finish moment's
+// Cosmetic GUI preferences (theme, row density and batch grouping), the finish moment's
 // "not opened yet" ids, the details pane's height, the Add dialog's last
 // folder, the Log tab's level and whether Remove asks first, kept in localStorage. Pure apart from the
 // storage/root handles passed in, so it is unit-testable.
@@ -12,10 +12,15 @@ export const DENSITIES = ["comfortable", "compact"] as const;
 
 export type ThemePref = (typeof THEMES)[number];
 export type Density = (typeof DENSITIES)[number];
-export type Prefs = { theme: ThemePref; density: Density };
+export type Prefs = {
+  theme: ThemePref;
+  density: Density;
+  /** The list gathers each batch's files under a group row. */
+  groupBatches: boolean;
+};
 
 export const PREFS_KEY = "rdm.gui.prefs";
-export const DEFAULT_PREFS: Prefs = { theme: "system", density: "compact" };
+export const DEFAULT_PREFS: Prefs = { theme: "system", density: "compact", groupBatches: true };
 
 type ReadStorage = Pick<Storage, "getItem">;
 type WriteStorage = Pick<Storage, "setItem">;
@@ -40,6 +45,7 @@ export function parsePrefs(raw: string | null): Prefs {
   return {
     theme: oneOf(THEMES, rec.theme, DEFAULT_PREFS.theme),
     density: oneOf(DENSITIES, rec.rows, DEFAULT_PREFS.density),
+    groupBatches: rec.groupBatches === false ? false : DEFAULT_PREFS.groupBatches,
   };
 }
 
@@ -67,7 +73,10 @@ export function savePrefs(
 ): boolean {
   try {
     if (!storage) return false;
-    storage.setItem(PREFS_KEY, JSON.stringify({ theme: prefs.theme, rows: prefs.density }));
+    storage.setItem(
+      PREFS_KEY,
+      JSON.stringify({ theme: prefs.theme, rows: prefs.density, groupBatches: prefs.groupBatches }),
+    );
     return true;
   } catch {
     return false;

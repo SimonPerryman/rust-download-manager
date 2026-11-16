@@ -17,12 +17,13 @@ use crate::engine::{segment, Error, ProxyMode, Result, DEFAULT_CONNECTIONS};
 /// Current store schema version. Bump when the on-disk shape changes in a
 /// way an older build mustn't silently drop; a document newer than this fails
 /// to load (see [`Error::UnsupportedStore`]). v2 added
-/// [`DownloadRecord::archived`] and [`DownloadRecord::tags`].
+/// [`DownloadRecord::archived`] and [`DownloadRecord::tags`]; v3 added
+/// [`DownloadRecord::batch`] and [`DownloadRecord::batch_label`].
 /// [`DownloadRecord::paused_for_update`] needed no bump: an older build
 /// dropping it only loses the offer to resume those downloads together.
 /// Nor did [`Settings::proxy`]: an older build has no proxy support to keep
 /// it for, and a bump would lock it out of the whole list instead.
-pub(crate) const SCHEMA_VERSION: u32 = 2;
+pub(crate) const SCHEMA_VERSION: u32 = 3;
 
 /// Lifecycle status of a managed download.
 ///
@@ -156,6 +157,13 @@ pub struct DownloadRecord {
     /// or forgotten.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub paused_for_update: bool,
+    /// The batch it was added with (see [`Manager::add_batch`](crate::engine::Manager::add_batch)):
+    /// the id of the batch's first download, shared by all its items.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch: Option<u64>,
+    /// The batch's name, as typed when it was added; set with `batch`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_label: Option<String>,
 }
 
 /// Manager-wide download settings, persisted with the download list.
@@ -374,6 +382,8 @@ mod tests {
             archived: false,
             tags: Vec::new(),
             paused_for_update: false,
+            batch: None,
+            batch_label: None,
         }
     }
 
@@ -432,6 +442,40 @@ mod tests {
         let store = JsonStore::new(&nested);
         store.save(&StoreData::default()).unwrap();
         assert!(nested.exists());
+    }
+
+    /// A store written before batches (schema v2) loads under v3 with no batch
+    /// on any download, and a batch saved under v3 comes back.
+    #[test]
+    fn v2_store_loads_under_v3_and_a_batch_roundtrips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        std::fs::write(
+            &path,
+            r#"{"version":2,"next_id":3,"downloads":[
+                {"id":1,"url":"u","target":"t","status":"completed","archived":true,"tags":["x"]},
+                {"id":2,"url":"v","target":"w","status":"failed"}]}"#,
+        )
+        .unwrap();
+        let store = JsonStore::new(&path);
+        let mut loaded = store.load().unwrap();
+        assert_eq!(loaded.version, SCHEMA_VERSION);
+        assert_eq!(loaded.downloads.len(), 2);
+        assert!(loaded.downloads.iter().all(|d| d.batch.is_none()));
+        assert_eq!(loaded.downloads[0].tags, ["x"]);
+
+        loaded.downloads[1].batch = Some(2);
+        loaded.downloads[1].batch_label = Some("Course files".into());
+        store.save(&loaded).unwrap();
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert!(saved.contains("\"version\": 3"));
+        let again = store.load().unwrap();
+        assert_eq!(again.downloads[0].batch, None);
+        assert_eq!(again.downloads[1].batch, Some(2));
+        assert_eq!(
+            again.downloads[1].batch_label.as_deref(),
+            Some("Course files")
+        );
     }
 
     #[test]
@@ -554,7 +598,7 @@ mod tests {
         store.save(&loaded).unwrap();
         let saved: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        assert_eq!(saved["version"], 2);
+        assert_eq!(saved["version"], 3);
         assert_eq!(store.load().unwrap(), loaded);
     }
 
@@ -564,12 +608,12 @@ mod tests {
     fn newer_store_version_is_rejected() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.json");
-        let newer = r#"{"version":3,"next_id":2,"downloads":[{"id":1,"url":"u","target":"t","status":"shelved"}]}"#;
+        let newer = r#"{"version":4,"next_id":2,"downloads":[{"id":1,"url":"u","target":"t","status":"shelved"}]}"#;
         std::fs::write(&path, newer).unwrap();
 
         let err = JsonStore::new(&path).load().unwrap_err();
-        assert!(matches!(err, Error::UnsupportedStore(3)), "{err:?}");
-        assert!(err.to_string().contains("version 3"), "{err}");
+        assert!(matches!(err, Error::UnsupportedStore(4)), "{err:?}");
+        assert!(err.to_string().contains("version 4"), "{err}");
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             newer,

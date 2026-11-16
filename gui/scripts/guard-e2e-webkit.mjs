@@ -41,9 +41,9 @@ const CHECKS = {
     rule: "no getSize() / getLocation() (the driver's element-rect command)",
     fix:
       "use `rectOf(selector)` from gui/e2e/helpers.ts (getBoundingClientRect via browser.execute) — " +
-      "WebKitGTK's driver answers element-rect with \"element not interactable\" for elements like " +
+      'WebKitGTK\'s driver answers element-rect with "element not interactable" for elements like ' +
       "table rows (AGENTS.md, Testing philosophy: " +
-      "\"When an e2e spec needs an element's size or position\")",
+      '"When an e2e spec needs an element\'s size or position")',
   },
 };
 
@@ -96,7 +96,10 @@ for (const file of tsFiles(e2eDir)) {
     for (const [, , text] of args.matchAll(LITERAL)) {
       if (/(.)\1/.test(text)) report("keys", line, `literal "${text}" repeats a character`);
     }
-    const rest = args.replace(LITERAL, "").replace(/\bKey\.\w+/g, "").replace(/[\s,[\]]/g, "");
+    const rest = args
+      .replace(LITERAL, "")
+      .replace(/\bKey\.\w+/g, "")
+      .replace(/[\s,[\]]/g, "");
     if (rest) report("keys", line, `non-literal argument (\`${rest}\`) can't be checked`);
     if (/\bKey\.Shift\b/.test(args)) report("shift", line, "sends Key.Shift (a Shift chord)");
   }
@@ -119,7 +122,9 @@ if (violations.length) {
     if (!hits.length) continue;
     console.error(`guard-e2e-webkit: ${CHECKS[check].rule}\n`);
     for (const v of hits) {
-      console.error(`  ${relative(process.cwd(), v.file)}:${v.line}  ${v.snippet}\n    ${v.detail}`);
+      console.error(
+        `  ${relative(process.cwd(), v.file)}:${v.line}  ${v.snippet}\n    ${v.detail}`,
+      );
     }
     console.error(`\nFix: ${CHECKS[check].fix}\n`);
   }

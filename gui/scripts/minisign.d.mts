@@ -10,6 +10,10 @@ export interface TestKey {
 }
 
 export function parsePublicKey(wrapped: string): { keyId: Buffer; key: KeyObject };
-export function verify(data: Buffer, wrappedSig: string, wrappedPubkey: string): Record<string, string>;
+export function verify(
+  data: Buffer,
+  wrappedSig: string,
+  wrappedPubkey: string,
+): Record<string, string>;
 export function generateKey(): TestKey;
 export function sign(data: Buffer, key: TestKey, version: string): string;

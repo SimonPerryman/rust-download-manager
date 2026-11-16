@@ -18,6 +18,8 @@ import { PANE_ID } from "../details/tabs";
 
 type Props = {
   d: DownloadSnapshot;
+  /** Listed under its batch's group row: indented. */
+  inBatch: boolean;
   /** Finished this session and not opened yet: faint tint and a solid Open. */
   lingering: boolean;
   /** When this row's fresh tint started (ms since epoch), while it runs. */
@@ -50,6 +52,7 @@ const connectionsLabel = (n: number) => `${n} connection${n === 1 ? "" : "s"}`;
 // One download. The data-* attributes are the e2e contract (read by gui/e2e/helpers.ts).
 export function TableRow({
   d,
+  inBatch,
   lingering,
   freshAt,
   handlers,
@@ -109,9 +112,10 @@ export function TableRow({
       data-archived={d.archived ? "true" : undefined}
       data-missing={missing ? "true" : undefined}
       data-tags={d.tags.join(",")}
+      data-batch={d.batch ?? undefined}
       data-selected={details ? "true" : undefined}
       data-next-up={queueIndex === 0 ? "true" : undefined}
-      className={`row st-${filterKeyOf(d.status)}${lingering ? " linger" : ""}${missing ? " missing" : ""}${fresh ? " fresh" : ""}${selected ? " selected" : ""}${cursor ? " cursor" : ""}${drag ? ` ${drag}` : ""}`}
+      className={`row st-${filterKeyOf(d.status)}${lingering ? " linger" : ""}${missing ? " missing" : ""}${inBatch ? " in-batch" : ""}${fresh ? " fresh" : ""}${selected ? " selected" : ""}${cursor ? " cursor" : ""}${drag ? ` ${drag}` : ""}`}
       // A negative delay resumes the tint mid-way when the row remounts (a filter change).
       style={fresh ? ({ "--fresh-delay": freshDelay } as React.CSSProperties) : undefined}
       onMouseDown={(e) => {

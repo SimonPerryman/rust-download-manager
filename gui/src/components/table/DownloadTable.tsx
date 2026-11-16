@@ -1,8 +1,9 @@
 import { Fragment } from "react";
+import type { TableItem } from "../../lib/batches";
 import type { EmptyCopy } from "../../lib/copy";
 import type { Modifiers, Selection } from "../../lib/selection";
 import type { SortKey, SortState } from "../../lib/sort";
-import type { DownloadSnapshot } from "../../lib/types";
+import { BatchRow } from "./BatchRow";
 import { EmptyState } from "./EmptyState";
 import { ErrorRow } from "./ErrorRow";
 import type { RowHandlers } from "./rowHandlers";
@@ -21,7 +22,8 @@ const COLUMNS: { key: SortKey; label: string; col: string; numeric?: boolean }[]
 ];
 
 type Props = {
-  rows: DownloadSnapshot[];
+  /** The batches' group rows and the downloads, in table order. */
+  items: TableItem[];
   sort: SortState;
   onSort: (key: SortKey) => void;
   unopened: ReadonlySet<number>;
@@ -47,12 +49,16 @@ type Props = {
   /** The row shown in the details pane, if any. */
   detailsId: number | null;
   onDetails: (id: number, viaPointer: boolean) => void;
+  /** A group row's chevron: open or close its batch. */
+  onToggleBatch: (batch: number) => void;
+  /** A group row's Retry failed. */
+  onRetryBatch: (batch: number) => void;
 };
 
 // Every download in one sortable table; a failed row is followed by its error row.
 // The table takes focus for the keyboard map; rows are selected by click.
 export function DownloadTable({
-  rows,
+  items,
   sort,
   onSort,
   unopened,
@@ -73,6 +79,8 @@ export function DownloadTable({
   onQueueDrop,
   detailsId,
   onDetails,
+  onToggleBatch,
+  onRetryBatch,
 }: Props) {
   const drag = useQueueDrag(onQueueDrop);
   const dragClass = (id: number) =>
@@ -117,38 +125,53 @@ export function DownloadTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((d) => (
-            <Fragment key={d.id}>
-              <TableRow
-                d={d}
-                lingering={d.status === "completed" && unopened.has(d.id)}
-                freshAt={fresh.get(d.id)}
-                handlers={handlers}
-                refocus={refocusId === d.id}
-                onRefocused={onRefocused}
-                selected={selection.selected.has(d.id)}
-                cursor={selection.cursor === d.id}
-                queueIndex={d.status === "queued" ? queue.indexOf(d.id) : -1}
-                drag={dragClass(d.id)}
-                details={detailsId === d.id}
-                onSelect={onSelect}
-                onDetails={onDetails}
-                onMenu={onMenu}
-                onGripDown={drag.onGripDown}
-              />
-              {d.status === "failed" && (
-                <ErrorRow
-                  d={d}
-                  failedCount={failedCount}
-                  handlers={handlers}
-                  selected={selection.selected.has(d.id)}
+          {items.map((item) => {
+            if (item.kind === "group") {
+              return (
+                <BatchRow
+                  key={`batch-${item.group.id}`}
+                  group={item.group}
+                  collapsed={item.collapsed}
+                  onToggle={onToggleBatch}
+                  onRetry={onRetryBatch}
                 />
-              )}
-            </Fragment>
-          ))}
+              );
+            }
+            const d = item.d;
+            return (
+              <Fragment key={d.id}>
+                <TableRow
+                  d={d}
+                  inBatch={item.inBatch}
+                  lingering={d.status === "completed" && unopened.has(d.id)}
+                  freshAt={fresh.get(d.id)}
+                  handlers={handlers}
+                  refocus={refocusId === d.id}
+                  onRefocused={onRefocused}
+                  selected={selection.selected.has(d.id)}
+                  cursor={selection.cursor === d.id}
+                  queueIndex={d.status === "queued" ? queue.indexOf(d.id) : -1}
+                  drag={dragClass(d.id)}
+                  details={detailsId === d.id}
+                  onSelect={onSelect}
+                  onDetails={onDetails}
+                  onMenu={onMenu}
+                  onGripDown={drag.onGripDown}
+                />
+                {d.status === "failed" && (
+                  <ErrorRow
+                    d={d}
+                    failedCount={failedCount}
+                    handlers={handlers}
+                    selected={selection.selected.has(d.id)}
+                  />
+                )}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
-      {rows.length === 0 && <EmptyState copy={empty} onAdd={onAdd} />}
+      {items.length === 0 && <EmptyState copy={empty} onAdd={onAdd} />}
     </div>
   );
 }

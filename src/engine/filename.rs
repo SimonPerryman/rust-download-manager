@@ -127,7 +127,7 @@ fn from_url(raw: &str) -> Option<String> {
 /// outside the allowlist with `_`; strips leading/trailing dots and whitespace
 /// (no hidden dotfiles, nothing Windows would silently trim); defuses Windows
 /// device names; caps the length at [`MAX_NAME_BYTES`].
-fn sanitize(name: &str) -> String {
+pub(crate) fn sanitize(name: &str) -> String {
     let base = name
         .rsplit(['/', '\\'])
         .next()

@@ -219,7 +219,7 @@ async fn archive_and_tags_survive_a_restart() {
 
     let raw: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.path().join("state.json")).unwrap()).unwrap();
-    assert_eq!(raw["version"], 2);
+    assert_eq!(raw["version"], 3);
 
     let mgr = manager_in(dir.path());
     let after = mgr.snapshot();

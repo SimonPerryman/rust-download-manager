@@ -39,7 +39,9 @@ describe("minisign verify", () => {
   });
 
   it("rejects a changed file", () => {
-    expect(() => verify(Buffer.from("tampered\n"), TAURI_SIG, TAURI_PUBKEY)).toThrow(/doesn't match/);
+    expect(() => verify(Buffer.from("tampered\n"), TAURI_SIG, TAURI_PUBKEY)).toThrow(
+      /doesn't match/,
+    );
   });
 
   it("rejects another key's signature", () => {
@@ -49,7 +51,9 @@ describe("minisign verify", () => {
 
   it("round-trips its own test signatures", () => {
     const key = generateKey();
-    expect(verify(Buffer.from("x"), sign(Buffer.from("x"), key, "1.2.3"), key.publicKey).version).toBe("1.2.3");
+    expect(
+      verify(Buffer.from("x"), sign(Buffer.from("x"), key, "1.2.3"), key.publicKey).version,
+    ).toBe("1.2.3");
   });
 });
 
@@ -58,11 +62,18 @@ describe("buildManifest", () => {
 
   it("writes one verified entry per installer kind, and none for .deb", () => {
     const key = generateKey();
-    const { manifest, errors } = buildManifest({ tag: "v0.3.1", ...release(key), pubkey: key.publicKey, date });
+    const { manifest, errors } = buildManifest({
+      tag: "v0.3.1",
+      ...release(key),
+      pubkey: key.publicKey,
+      date,
+    });
     expect(errors).toEqual([]);
     expect(manifest.version).toBe("0.3.1");
     expect(manifest.pub_date).toBe("2026-11-10T12:00:00Z");
-    expect(manifest.notes).toBe("https://github.com/SimonPerryman/rust-download-manager/releases/tag/v0.3.1");
+    expect(manifest.notes).toBe(
+      "https://github.com/SimonPerryman/rust-download-manager/releases/tag/v0.3.1",
+    );
     expect(Object.keys(manifest.platforms).sort()).toEqual(Object.keys(ENTRIES).sort());
     expect(manifest.platforms["windows-x86_64-msi"].url).toBe(
       "https://github.com/SimonPerryman/rust-download-manager/releases/download/v0.3.1/rdm_0.3.1_x64_en-US.msi",
@@ -73,14 +84,24 @@ describe("buildManifest", () => {
   it("fails on bundles signed with a different key", () => {
     const signer = generateKey();
     const trusted = generateKey();
-    const { errors } = buildManifest({ tag: "v0.3.1", ...release(signer), pubkey: trusted.publicKey, date });
+    const { errors } = buildManifest({
+      tag: "v0.3.1",
+      ...release(signer),
+      pubkey: trusted.publicKey,
+      date,
+    });
     expect(errors).toHaveLength(Object.keys(ENTRIES).length);
     expect(errors[0]).toMatch(/different key/);
   });
 
   it("fails on a signature bound to another version", () => {
     const key = generateKey();
-    const { errors } = buildManifest({ tag: "v0.3.1", ...release(key, { version: "0.3.0" }), pubkey: key.publicKey, date });
+    const { errors } = buildManifest({
+      tag: "v0.3.1",
+      ...release(key, { version: "0.3.0" }),
+      pubkey: key.publicKey,
+      date,
+    });
     expect(errors[0]).toMatch(/signed for version 0\.3\.0, the tag is 0\.3\.1/);
   });
 
@@ -105,12 +126,17 @@ describe("configuredPubkey", () => {
     const root = mkdtempSync(join(tmpdir(), "rdm-pubkey-"));
     roots.push(root);
     mkdirSync(join(root, "gui", "src-tauri"), { recursive: true });
-    writeFileSync(join(root, "gui", "src-tauri", "tauri.conf.json"), JSON.stringify({ plugins: { updater: { pubkey } } }));
+    writeFileSync(
+      join(root, "gui", "src-tauri", "tauri.conf.json"),
+      JSON.stringify({ plugins: { updater: { pubkey } } }),
+    );
     return root;
   };
 
   it("refuses the placeholder", () => {
-    expect(() => configuredPubkey(repo("PLACEHOLDER: the update public key goes here"))).toThrow(/placeholder/);
+    expect(() => configuredPubkey(repo("PLACEHOLDER: the update public key goes here"))).toThrow(
+      /placeholder/,
+    );
   });
 
   it("returns a real key", () => {

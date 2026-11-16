@@ -58,6 +58,10 @@ export interface DownloadSnapshot {
   archived: boolean;
   /** User labels, in the order added; unique ignoring case. */
   tags: string[];
+  /** The batch it was added with (an id its files share), or null. */
+  batch: number | null;
+  /** The batch's name, set with `batch`. */
+  batch_label: string | null;
   /** Paused by an update restart and still paused (Resume all after the update resumes it). */
   paused_for_update: boolean;
   /**
@@ -219,6 +223,13 @@ export interface SkippedLine {
     | "range_too_big";
   /** For "range_too_big": how many links the range would make. */
   count: number | null;
+}
+
+/** What `add_batch` did: the batch it made (if any), how many links went in, and the ones that didn't. */
+export interface BatchAdded {
+  batch: number | null;
+  added: number;
+  failed: { url: string; error: string }[];
 }
 
 /** The engine's reading of a pasted list (`preview_list`). */
