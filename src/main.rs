@@ -132,7 +132,7 @@ async fn main() -> anyhow::Result<ExitCode> {
     install_panic_hook();
     let cli = Cli::parse();
 
-    if cli.input.is_some() || cli.urls.len() > 1 {
+    if cli.input.is_some() || cli.urls.len() > 1 || is_range_link(&cli.urls[0]) {
         if cli.output.is_some() || cli.checksum.is_some() {
             usage_error("-o and --checksum take a single link, not a batch");
         }
@@ -241,6 +241,16 @@ fn batch_list(cli: &Cli) -> anyhow::Result<rdm::ParsedList> {
     Ok(parse_list(&text)?)
 }
 
+/// Whether a lone `<URL>` holds a `[a-b]` range (or a refused one), which
+/// makes it a batch.
+fn is_range_link(url: &str) -> bool {
+    url.contains('[')
+        && parse_list(url).is_ok_and(|l| {
+            l.links.iter().any(|l| l.pattern.is_some())
+                || l.skipped.iter().any(|s| s.reason.is_range_problem())
+        })
+}
+
 /// Ctrl-C for a batch: stops new items from starting and pauses the running
 /// ones, which keep their `.part` to resume on a rerun.
 #[derive(Default)]
@@ -280,6 +290,13 @@ enum Item {
 /// summary. A failed link never stops the others.
 async fn run_batch(cli: Cli) -> anyhow::Result<ExitCode> {
     let list = batch_list(&cli)?;
+    for s in list.skipped.iter().filter(|s| s.reason.is_range_problem()) {
+        eprintln!(
+            "Skipped {}: {}",
+            redact_urls_in(&s.line),
+            s.reason.message(s.count)
+        );
+    }
     if list.links.is_empty() {
         usage_error("no links to download");
     }

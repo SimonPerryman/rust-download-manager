@@ -30,6 +30,12 @@ added, so you can download it again. Ctrl+Enter adds. The folder starts at the
 one you used last. **Tags** (comma-separated) go on every download you add.
 Under **More options** you can give a SHA-256 checksum and a speed limit.
 
+A `[a-b]` range in a link, such as `lesson[01-12].mp4` or `img[a-f].png`,
+adds every file in it. The preview shows one row ("lesson01.mp4 to
+lesson12.mp4", 12 links) that opens to list its files. A range that isn't
+valid, or makes more than 500 links, is explained under the box and left
+out. [The CLI takes the same ranges.](cli.md#many-links-at-once)
+
 ## Finding and selecting
 
 - **Filter** with the sidebar (by status, destination folder or

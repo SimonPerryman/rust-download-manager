@@ -44,6 +44,30 @@ lines and lines starting with `#` are ignored, a link listed twice is
 downloaded once, and anything that isn't an `http` or `https` link is
 skipped. A list can hold up to 5000 different links.
 
+A `[a-b]` range in a link's path or query stands for every value between,
+so one line can name a whole numbered set. Quote it so the shell leaves the
+brackets alone:
+
+```sh
+rdm 'https://example.com/lesson[01-12].mp4'
+echo 'https://example.com/img[a-f].png' | rdm -i -
+```
+
+- Numbers keep their zero padding: `[01-12]` gives `01` to `12`. If either
+  end has a leading zero, both must have the same number of digits
+  (`[01-015]` is refused). Single letters of one case work too (`[a-f]`).
+- One range per link, in the path or query and never the host, counting up,
+  making at most 500 links. A refused range is reported as `Skipped <link>:
+  <why>` (with how many links it would make, when it is too big) and the rest
+  of the list still downloads.
+- Ranges expand before repeats are removed, so `lesson[01-15]` with
+  `lesson[13-17]` is 17 links.
+- Only `[x-y]` with letters or digits is read as a range. Other brackets
+  (an IPv6 host like `http://[::1]/`, `?filter[name]=a`) stay as written;
+  write `%5B` for a literal bracket that would look like a range.
+- rdm can't know which numbers exist: every link is tried, and a missing
+  one fails on its own line.
+
 rdm prints one line per file as it finishes, then a summary such as
 `8 done, 1 failed, 2 skipped lines`. A file that fails never stops the
 others; the exit code is `1` if any failed. Two links that would save under

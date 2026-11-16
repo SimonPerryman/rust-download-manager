@@ -881,6 +881,60 @@ async fn batch_from_file_reports_each_item_and_fails_on_a_404() {
     );
 }
 
+/// A `[a-b]` range in a list expands to one download per value; a value the
+/// server doesn't have fails alone.
+#[tokio::test]
+async fn batch_expands_a_range_and_a_missing_one_fails_alone() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    // `/any/{*name}` serves everything under it; `/missing/{*name}` is a 404.
+    let ok = server.url("/any/file[1-3].bin");
+    let text = format!(
+        "{ok}
+{}
+",
+        server.url("/missing/gone.bin")
+    );
+
+    let (status, stdout, stderr) = run_rdm(dir.path(), &["-i", "-"], Some(&text)).await;
+
+    assert_eq!(
+        status.code(),
+        Some(1),
+        "stdout: {stdout}
+stderr: {stderr}"
+    );
+    assert_eq!(stdout.matches("Downloaded").count(), 3, "{stdout}");
+    assert!(stdout.contains("3 done, 1 failed"), "{stdout}");
+    assert!(stderr.contains("gone.bin"), "{stderr}");
+    assert_eq!(
+        files_in(dir.path()),
+        ["file1.bin", "file2.bin", "file3.bin"],
+        "{stdout}"
+    );
+}
+
+/// A range as the lone `<URL>` is a batch too, and a refused one says why.
+#[tokio::test]
+async fn a_range_argument_is_a_batch_and_a_bad_one_is_explained() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+
+    let url = server.url("/any/part[01-02].bin");
+    let (status, stdout, stderr) = run_rdm(dir.path(), &[&url], None).await;
+    assert!(
+        status.success(),
+        "stdout: {stdout}
+stderr: {stderr}"
+    );
+    assert_eq!(files_in(dir.path()), ["part01.bin", "part02.bin"]);
+
+    let url = server.url("/any/part[1-9999].bin");
+    let (status, _, stderr) = run_rdm(dir.path(), &[&url], None).await;
+    assert!(!status.success());
+    assert!(stderr.contains("that range makes 9999 links"), "{stderr}");
+}
+
 /// `-i -` reads the links from standard input.
 #[tokio::test]
 async fn batch_from_stdin() {

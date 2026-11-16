@@ -16,7 +16,7 @@ import type { ParsedList } from "../../lib/types";
 import { ChevronDown } from "../icons/ChevronDown";
 import { Folder } from "../icons/Folder";
 import { RateInput } from "../RateInput";
-import { LinkPreview } from "./LinkPreview";
+import { LinkPreview, RangeErrors } from "./LinkPreview";
 import { trapTab } from "./trapTab";
 
 type Props = {
@@ -216,6 +216,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
                 placeholder={"https://example.com/file.iso\nhttps://example.com/another.tar.gz"}
                 className="block max-h-40 min-h-20 w-full resize-y rounded-md border border-line-strong bg-raised px-3 py-2 font-mono text-xs leading-5 transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden"
               />
+              <RangeErrors entries={entries} />
               <p className="text-xs text-g400">
                 Press Ctrl+V anywhere in rdm to open this with your clipboard. Ctrl+Enter adds.
               </p>

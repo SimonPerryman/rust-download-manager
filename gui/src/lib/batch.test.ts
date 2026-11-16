@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  refusalMessage,
   addLabel,
   addLinks,
   entriesFrom,
@@ -15,12 +16,25 @@ const none = new Map<string, Known>();
 
 /** What the engine's `preview_list` answers (see src/engine/batch.rs). */
 const list = (links: [string, number?][], skipped: ParsedList["skipped"] = []): ParsedList => ({
-  links: links.map(([url, count]) => ({ url, count: count ?? 1 })),
+  links: links.map(([url, count]) => ({ url, count: count ?? 1, pattern: null })),
+  patterns: [],
   skipped,
 });
 const notLink = (line: string): ParsedList["skipped"][number] => ({
   line,
   reason: "not_a_link",
+  count: null,
+});
+
+/** A range of `n` links `https://a.example/lessonNN.mp4`, as the engine reports it. */
+const range = (n: number, extra: ParsedList["skipped"] = []): ParsedList => ({
+  links: Array.from({ length: n }, (_, i) => ({
+    url: `https://a.example/lesson${String(i + 1).padStart(2, "0")}.mp4`,
+    count: 1,
+    pattern: 0,
+  })),
+  patterns: [{ stem: "lesson", count: n }],
+  skipped: extra,
 });
 
 describe("entriesFrom", () => {
@@ -150,5 +164,81 @@ describe("addLinks / partialAddError", () => {
       if (url !== "a") throw "nope";
     });
     expect(partialAddError(outcome)).toBe("Added 1. These links couldn't be added: nope");
+  });
+});
+
+describe("a range's row", () => {
+  it("gathers a range's links under one row named by its first and last file", () => {
+    const list = range(12);
+    list.links.push({ url: "https://a.example/slides.pdf", count: 2, pattern: null });
+    const entries = entriesFrom(list, none);
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({
+      kind: "pattern",
+      label: "lesson01.mp4 to lesson12.mp4",
+    });
+    expect(entries[0].kind === "pattern" && entries[0].links).toHaveLength(12);
+    expect(entries[1]).toMatchObject({ kind: "link", name: "slides.pdf", count: 2 });
+  });
+
+  it("counts a range's links toward the total, and adds each once", () => {
+    const entries = entriesFrom(range(12), none);
+    expect(linksToAdd(entries)).toHaveLength(12);
+    expect(previewSummary(entries)).toEqual({ found: "12 links found", skipped: null });
+    expect(addLabel(linksToAdd(entries).length)).toBe("Add 12 downloads");
+  });
+
+  it("names a one-link range by its file", () => {
+    expect(entriesFrom(range(1), none)[0]).toMatchObject({
+      kind: "pattern",
+      label: "lesson01.mp4",
+    });
+  });
+
+  it("keeps a range's links split when a later link repeats one of them", () => {
+    const list = range(3);
+    list.links[1].count = 2;
+    expect(previewSummary(entriesFrom(list, none))).toEqual({
+      found: "3 links found",
+      skipped: "1 repeat, skipped",
+    });
+  });
+});
+
+describe("refused ranges", () => {
+  it("are their own entries, not links and not 'lines that aren't links'", () => {
+    const entries = entriesFrom(
+      list(
+        [["https://a.example/ok"]],
+        [
+          { line: "https://a.example/p[1-9000000000].bin", reason: "range_too_big", count: 9e9 },
+          notLink("nope"),
+        ],
+      ),
+      none,
+    );
+    expect(entries.map((e) => e.kind)).toEqual(["link", "refused", "bad"]);
+    expect(linksToAdd(entries)).toEqual(["https://a.example/ok"]);
+    expect(previewSummary(entries).skipped).toBe("1 line isn't a link, skipped");
+  });
+
+  it("say how big a too-big range is, with the cap", () => {
+    const [e] = entriesFrom(
+      list([], [{ line: "x", reason: "range_too_big", count: 9_000_000_000 }]),
+      none,
+    );
+    if (e.kind !== "refused") throw new Error("expected a refused range");
+    expect(refusalMessage(e)).toBe("That range makes 9,000,000,000 links. The most is 500.");
+  });
+
+  it("explain each other refusal", () => {
+    const say = (reason: Extract<ParsedList["skipped"][number]["reason"], `range_${string}`>) => {
+      const [e] = entriesFrom(list([], [{ line: "x", reason, count: null }]), none);
+      return e.kind === "refused" ? refusalMessage(e) : "";
+    };
+    expect(say("range_reversed")).toMatch(/count up/);
+    expect(say("range_width_mismatch")).toMatch(/same number of digits/);
+    expect(say("range_in_host")).toMatch(/host/);
+    expect(say("range_invalid")).toMatch(/numbers or both be single letters/);
   });
 });

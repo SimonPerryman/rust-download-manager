@@ -219,6 +219,16 @@ and only `http` and `https` links count. A link listed more than once is
 added once, and a list of more than 5000 distinct links is refused with its
 count.
 
+A `[a-b]` range in a link's path or query expands to every value between
+(`part[01-12].zip`, `file[a-f].txt`), keeping zero padding; the host never
+expands. The number of links is worked out from the two ends, never by
+generating them, so a huge range is refused instantly with its count (the
+limit is 500 links per range). A range counting down, with mixed kinds of
+ends, uneven padding, or a second range in the link is refused with its
+reason, and the rest of the list is kept. Ranges expand before repeats are
+removed. Only `[x-y]` of letters or digits counts as a range, so other
+brackets, such as an IPv6 host's, are part of the link.
+
 ## A download's log on disk
 
 Each download's Log tab keeps its last 200 informational lines (and up),
