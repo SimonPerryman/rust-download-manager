@@ -52,7 +52,12 @@ function topLevel(ls) {
 
 /** The job names a `needs:` entry lists, inline (`[a, b]`) or as a block. */
 function needsOf(ls, entry) {
-  if (entry.value) return entry.value.replace(/[[\]]/g, "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (entry.value)
+    return entry.value
+      .replace(/[[\]]/g, "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
   const out = [];
   for (let i = entry.at + 1; i < ls.length && ls[i].indent > ls[entry.at].indent; i++) {
     const m = /^-\s*([\w-]+)$/.exec(ls[i].text);
@@ -100,13 +105,21 @@ export function checkWorkflow(text, { reusable }) {
     const props = children(ls, job.at);
     const permissions = props.find((p) => p.key === "permissions");
     const allowed = reusable ? [] : (ALLOWED_WRITE[job.key] ?? []);
-    if (permissions) errors.push(...permissionViolations(ls, permissions, `job ${job.key}`, allowed));
-    if (props.some((p) => p.key === "secrets")) errors.push(`job ${job.key}: passes \`secrets:\` to a called workflow`);
+    if (permissions)
+      errors.push(...permissionViolations(ls, permissions, `job ${job.key}`, allowed));
+    if (props.some((p) => p.key === "secrets"))
+      errors.push(`job ${job.key}: passes \`secrets:\` to a called workflow`);
     const uses = props.find((p) => p.key === "uses");
-    if (reusable && uses) errors.push(`job ${job.key}: a called workflow must not call another (${uses.value})`);
+    if (reusable && uses)
+      errors.push(`job ${job.key}: a called workflow must not call another (${uses.value})`);
     const needs = props.find((p) => p.key === "needs");
     const condition = props.find((p) => p.key === "if")?.value ?? "";
-    if (!reusable && needs && needsOf(ls, needs).includes("announce") && !/\balways\(\)/.test(condition))
+    if (
+      !reusable &&
+      needs &&
+      needsOf(ls, needs).includes("announce") &&
+      !/\balways\(\)/.test(condition)
+    )
       errors.push(`job ${job.key}: needs announce, so its \`if:\` must use always()`);
   }
   return errors;
@@ -122,7 +135,9 @@ export function checkReleaseWorkflows(dir) {
       errors.push(`${RELEASE}: calls missing workflow ${m[1]}`);
       continue;
     }
-    errors.push(...checkWorkflow(readFileSync(file, "utf8"), { reusable: true }).map((e) => `${m[1]}: ${e}`));
+    errors.push(
+      ...checkWorkflow(readFileSync(file, "utf8"), { reusable: true }).map((e) => `${m[1]}: ${e}`),
+    );
   }
   return errors;
 }
@@ -133,19 +148,35 @@ export function selfTest(dir) {
   const mutations = {
     "a pull_request trigger": release.replace(/^on:\n/m, "on:\n  pull_request:\n"),
     "a workflow_dispatch trigger": release.replace(/^on:\n/m, "on:\n  workflow_dispatch:\n"),
-    "top-level contents: write": release.replace(/^permissions:\n {2}contents: read/m, "permissions:\n  contents: write"),
-    "top-level write-all": release.replace(/^permissions:\n {2}contents: read/m, "permissions: write-all"),
+    "top-level contents: write": release.replace(
+      /^permissions:\n {2}contents: read/m,
+      "permissions:\n  contents: write",
+    ),
+    "top-level write-all": release.replace(
+      /^permissions:\n {2}contents: read/m,
+      "permissions: write-all",
+    ),
     "no top-level permissions": release.replace(/^permissions:\n {2}contents: read\n/m, ""),
     "write on a build job": release.replace(
       /^ {2}build-global-artifacts:\n/m,
       "  build-global-artifacts:\n    permissions:\n      contents: write\n",
     ),
-    "secrets on a custom job": release.replace(/^( {4}uses: \.\/\.github\/workflows\/release-gui\.yml)$/m, "$1\n    secrets: inherit"),
-    "no always() on the release checks": release.replace(/^ {4}if: .*always\(\).*announce.*\n(?= {4}permissions:\n {6}contents: read\n {4}uses: \.\/\.github\/workflows\/release-checks\.yml)/m, ""),
-    "packages: write on the host job": release.replace(/^( {4}permissions:\n {6}contents: write)/m, "$1\n      packages: write"),
+    "secrets on a custom job": release.replace(
+      /^( {4}uses: \.\/\.github\/workflows\/release-gui\.yml)$/m,
+      "$1\n    secrets: inherit",
+    ),
+    "no always() on the release checks": release.replace(
+      /^ {4}if: .*always\(\).*announce.*\n(?= {4}permissions:\n {6}contents: read\n {4}uses: \.\/\.github\/workflows\/release-checks\.yml)/m,
+      "",
+    ),
+    "packages: write on the host job": release.replace(
+      /^( {4}permissions:\n {6}contents: write)/m,
+      "$1\n      packages: write",
+    ),
   };
   const escaped = [];
-  if (checkWorkflow(release, { reusable: false }).length) escaped.push("(the real release.yml fails)");
+  if (checkWorkflow(release, { reusable: false }).length)
+    escaped.push("(the real release.yml fails)");
   for (const [name, text] of Object.entries(mutations)) {
     if (text === release) escaped.push(`${name} (mutation didn't apply)`);
     else if (!checkWorkflow(text, { reusable: false }).length) escaped.push(name);
@@ -155,7 +186,8 @@ export function selfTest(dir) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const selfTestMode = process.argv[2] === "--self-test";
-  const dir = (selfTestMode ? process.argv[3] : process.argv[2]) ?? join("..", ".github", "workflows");
+  const dir =
+    (selfTestMode ? process.argv[3] : process.argv[2]) ?? join("..", ".github", "workflows");
   if (selfTestMode) {
     const escaped = selfTest(dir);
     if (escaped.length) {

@@ -136,12 +136,18 @@ describe("previewSummary", () => {
           none,
         ),
       ),
-    ).toEqual({ found: "2 links found", skipped: "1 line isn't a link, skipped" });
+    ).toEqual({
+      found: "2 links found",
+      skipped: { label: "1 skipped", reasons: ["1 line isn't a link"] },
+    });
     expect(
       previewSummary(
         entriesFrom(list([["https://a.example/x", 3]], [notLink("a"), notLink("b")]), none),
       ),
-    ).toEqual({ found: "1 link found", skipped: "2 lines aren't links and 2 repeats, skipped" });
+    ).toEqual({
+      found: "1 link found",
+      skipped: { label: "4 skipped", reasons: ["2 lines aren't links", "2 repeats"] },
+    });
   });
 });
 
@@ -200,7 +206,7 @@ describe("a range's row", () => {
     list.links[1].count = 2;
     expect(previewSummary(entriesFrom(list, none))).toEqual({
       found: "3 links found",
-      skipped: "1 repeat, skipped",
+      skipped: { label: "1 skipped", reasons: ["1 repeat"] },
     });
   });
 });
@@ -219,7 +225,7 @@ describe("refused ranges", () => {
     );
     expect(entries.map((e) => e.kind)).toEqual(["link", "refused", "bad"]);
     expect(linksToAdd(entries)).toEqual(["https://a.example/ok"]);
-    expect(previewSummary(entries).skipped).toBe("1 line isn't a link, skipped");
+    expect(previewSummary(entries).skipped?.reasons).toEqual(["1 line isn't a link"]);
   });
 
   it("say how big a too-big range is, with the cap", () => {

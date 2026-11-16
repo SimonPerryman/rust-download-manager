@@ -51,7 +51,9 @@ describe("checkReleaseVersion", () => {
 
   it("fails when only gui/package.json disagrees", () => {
     const root = fixture("1.2.3", { "gui/package.json": JSON.stringify({ version: "1.2.2" }) });
-    expect(checkReleaseVersion(root, "v1.2.3")).toEqual(["gui/package.json version is 1.2.2, tag is 1.2.3"]);
+    expect(checkReleaseVersion(root, "v1.2.3")).toEqual([
+      "gui/package.json version is 1.2.2, tag is 1.2.3",
+    ]);
   });
 
   it("fails when only the workspace version disagrees", () => {
@@ -74,7 +76,9 @@ describe("checkReleaseVersion", () => {
     const root = fixture("1.2.3", {
       "Cargo.toml": `[workspace.package]\nedition = "2021"\n\n[package]\nversion.workspace = true\n\n[other]\nversion = "1.2.3"\n`,
     });
-    expect(checkReleaseVersion(root, "v1.2.3")).toEqual(["Cargo.toml has no [workspace.package] version"]);
+    expect(checkReleaseVersion(root, "v1.2.3")).toEqual([
+      "Cargo.toml has no [workspace.package] version",
+    ]);
   });
 
   it("fails when Cargo.lock is stale", () => {
@@ -85,12 +89,16 @@ describe("checkReleaseVersion", () => {
   });
 
   it("fails when a crate doesn't inherit the workspace version", () => {
-    const root = fixture("1.2.3", { "gui/src-tauri/Cargo.toml": `[package]\nname = "rdm-gui"\nversion = "1.2.3"\n` });
+    const root = fixture("1.2.3", {
+      "gui/src-tauri/Cargo.toml": `[package]\nname = "rdm-gui"\nversion = "1.2.3"\n`,
+    });
     expect(checkReleaseVersion(root, "v1.2.3")).toHaveLength(1);
   });
 
   it("fails when tauri.conf.json pins its own version", () => {
-    const root = fixture("1.2.3", { "gui/src-tauri/tauri.conf.json": JSON.stringify({ version: "1.2.3" }) });
+    const root = fixture("1.2.3", {
+      "gui/src-tauri/tauri.conf.json": JSON.stringify({ version: "1.2.3" }),
+    });
     expect(checkReleaseVersion(root, "v1.2.3")).toHaveLength(1);
   });
 
@@ -105,7 +113,9 @@ describe("checkReleaseVersion", () => {
   });
 
   it("lets a pre-release use the Unreleased section", () => {
-    const root = fixture("1.2.3-rc.1", { "CHANGELOG.md": "# Changelog\n\n## Unreleased\n\n- New.\n" });
+    const root = fixture("1.2.3-rc.1", {
+      "CHANGELOG.md": "# Changelog\n\n## Unreleased\n\n- New.\n",
+    });
     expect(checkReleaseVersion(root, "v1.2.3-rc.1")).toEqual([]);
   });
 

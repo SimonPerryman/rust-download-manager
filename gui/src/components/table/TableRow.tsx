@@ -18,6 +18,7 @@ import { PANE_ID } from "../details/tabs";
 
 type Props = {
   d: DownloadSnapshot;
+  /** Listed under its batch's group row: indented. */
   /** Finished this session and not opened yet: faint tint and a solid Open. */
   lingering: boolean;
   /** When this row's fresh tint started (ms since epoch), while it runs. */
@@ -109,6 +110,7 @@ export function TableRow({
       data-archived={d.archived ? "true" : undefined}
       data-missing={missing ? "true" : undefined}
       data-tags={d.tags.join(",")}
+      data-batch={d.batch ?? undefined}
       data-selected={details ? "true" : undefined}
       data-next-up={queueIndex === 0 ? "true" : undefined}
       className={`row st-${filterKeyOf(d.status)}${lingering ? " linger" : ""}${missing ? " missing" : ""}${fresh ? " fresh" : ""}${selected ? " selected" : ""}${cursor ? " cursor" : ""}${drag ? ` ${drag}` : ""}`}

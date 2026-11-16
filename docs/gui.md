@@ -8,6 +8,7 @@ see [Installing rdm](install.md#desktop-app); to build it, see
 ## Contents
 
 - [Adding downloads](#adding-downloads)
+- [Batches](#batches)
 - [Finding and selecting](#finding-and-selecting)
 - [The queue](#the-queue)
 - [Lanes and details](#lanes-and-details)
@@ -24,22 +25,52 @@ see [Installing rdm](install.md#desktop-app); to build it, see
 Add downloads with the **Add** button, by dragging a link onto the window, or
 by pressing Ctrl/Cmd+V (outside a text box) with one or more links on the
 clipboard. The dialog takes one link per line and previews each file's name
-and site, skipped lines and links already in your list or in your archive
-before anything starts ("Add 3 downloads"); a link you've archived is still
+and site, and links already in your list or in your archive, before anything
+starts ("Add 3 downloads"); a link you've archived is still
 added, so you can download it again. Ctrl+Enter adds. The folder starts at the
 one you used last. **Tags** (comma-separated) go on every download you add.
-Under **More options** you can give a SHA-256 checksum and a speed limit.
+Under **More options** you can give a SHA-256 checksum (for a single link) and
+a speed limit (per file, when there are several links).
 
 A `[a-b]` range in a link, such as `lesson[01-12].mp4` or `img[a-f].png`,
 adds every file in it. The preview shows one row ("lesson01.mp4 to
 lesson12.mp4", 12 links) that opens to list its files. A range that isn't
 valid, or makes more than 500 links, is explained under the box and left
-out. [The CLI takes the same ranges.](cli.md#many-links-at-once)
+out. **N more** lists all the rest of a range's files (the preview scrolls),
+and becomes **Show less**; the range's chevron closes it too. [The CLI takes the same
+ranges.](cli.md#many-links-at-once) A link already in your list shows an info
+mark instead of a tick; it is still added.
+
+Beside "N links found", a quiet **N skipped** counts lines that aren't links
+and repeats; click it for the reasons. The lines themselves aren't listed.
+
+## Batches
+
+Two or more links become a **batch** when you give them a **Batch name**. A
+range fills the name in from the text before it (`lesson[01-12].mp4` gives
+"lesson"); clearing it makes them ordinary downloads again. With a name, a
+ticked **Create folder** box puts the files in a folder of that name inside
+the destination; unticked, they go straight into it. A folder name that is
+taken gets `(1)` after it, as clashing file names do.
+
+- **Group row:** in the list, a batch's files sit under one row with a
+  progress bar and, right after it, a count ("9 of 14 done"). Its chevron opens and closes the
+  files, and its **Show in folder** button opens the folder they went into. While any file has failed the row shows how many, and **Retry
+  failed** retries those files of that batch only.
+- **Ungrouped:** with grouping on, downloads in no batch close the list under
+  an **Ungrouped** header with a plain count ("6 downloads") and the same
+  chevron, so they don't read as part of the last batch. It shows only while a
+  batch is listed and something is outside one.
+- **Group batches:** a toolbar toggle beside the density button, shown once a
+  batch exists, turns grouping off for a flat list. It is remembered.
+- **Batches** in the sidebar lists each batch with its file count and filters
+  to it; the toolbar then shows the batch's progress and Retry failed. A batch
+  is fixed when it is added, unlike [tags](#archive-and-tags), which you edit.
 
 ## Finding and selecting
 
-- **Filter** with the sidebar (by status, destination folder or
-  [tag](#archive-and-tags)) or by name from the toolbar. Click a column header to sort. While anything transfers,
+- **Filter** with the sidebar (by status, destination folder,
+  [batch](#batches) or [tag](#archive-and-tags)) or by name from the toolbar. Click a column header to sort. While anything transfers,
   the sidebar also shows the total speed with a graph of the last minute. In a window narrower than about
   760 px the sidebar shrinks to an icon rail (hover an icon for its name; the
   total speed puts its unit under the number) and less important columns hide.
@@ -321,7 +352,7 @@ Whether to check, and the version that last ran, are kept in
 ## State
 
 The download list and settings are stored in `~/.rdm/state.json`. A list saved
-by an older rdm opens as is; one saved by a newer rdm is refused rather than
+by an older rdm opens as is (its downloads simply belong to no batch); one saved by a newer rdm is refused rather than
 opened and saved back without what this version doesn't understand: a dialog
 names its version, and rdm closes when you dismiss it, leaving the list
 untouched. rdm 0.1.0 predates that check, so going back to it opens the list,

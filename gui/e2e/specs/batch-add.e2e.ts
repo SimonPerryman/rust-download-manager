@@ -68,10 +68,13 @@ describe("rdm GUI batch add", () => {
     );
     const summary = dialog.$('[data-testid="preview-summary"]');
     await expect(summary).toHaveText("2 links found", { containing: true });
-    await expect(summary).toHaveText("1 line isn't a link, skipped", { containing: true });
-    await expect(
-      dialog.$$('[data-testid="link-preview"] li[data-kind="bad"]'),
-    ).toBeElementsArrayOfSize(1);
+    // Skipped lines are counted, and listed only on request.
+    await expect(summary).toHaveText("1 skipped", { containing: true });
+    await expect(dialog.$('[data-testid="skipped-reasons"]')).not.toBeExisting();
+    await dialog.$('[data-testid="skipped-toggle"]').click();
+    await expect(dialog.$('[data-testid="skipped-reasons"]')).toHaveText("1 line isn't a link", {
+      containing: true,
+    });
 
     await setDestination(batchDir);
     const add = dialog.$("button=Add 2 downloads");

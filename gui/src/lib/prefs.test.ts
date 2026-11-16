@@ -64,8 +64,8 @@ function fakeRoot() {
 }
 
 describe("parsePrefs", () => {
-  it("defaults to compact rows and the system theme", () => {
-    expect(DEFAULT_PREFS).toEqual({ theme: "system", density: "compact" });
+  it("defaults to compact rows, the system theme and grouped batches", () => {
+    expect(DEFAULT_PREFS).toEqual({ theme: "system", density: "compact", groupBatches: true });
   });
 
   it("returns defaults for missing, corrupt, or non-object values", () => {
@@ -78,10 +78,12 @@ describe("parsePrefs", () => {
     expect(parsePrefs(JSON.stringify({ theme: "neon", rows: "compact" }))).toEqual({
       theme: "system",
       density: "compact",
+      groupBatches: true,
     });
     expect(parsePrefs(JSON.stringify({ theme: "dark", rows: 3 }))).toEqual({
       theme: "dark",
       density: "compact",
+      groupBatches: true,
     });
     expect(parsePrefs(JSON.stringify({ rows: "comfortable" })).density).toBe("comfortable");
   });
@@ -90,14 +92,22 @@ describe("parsePrefs", () => {
     expect(parsePrefs(JSON.stringify({ theme: "dark", density: "comfortable" }))).toEqual({
       theme: "dark",
       density: "compact",
+      groupBatches: true,
     });
+  });
+
+  it("groups batches unless the stored choice is exactly off", () => {
+    expect(parsePrefs(JSON.stringify({ groupBatches: false })).groupBatches).toBe(false);
+    expect(parsePrefs(JSON.stringify({ groupBatches: true })).groupBatches).toBe(true);
+    expect(parsePrefs(JSON.stringify({ groupBatches: "no" })).groupBatches).toBe(true);
+    expect(parsePrefs(null).groupBatches).toBe(true);
   });
 });
 
 describe("loadPrefs / savePrefs", () => {
   it("round-trips through storage under the namespaced key", () => {
     const storage = memoryStorage();
-    const prefs: Prefs = { theme: "light", density: "compact" };
+    const prefs: Prefs = { theme: "light", density: "compact", groupBatches: false };
     expect(savePrefs(prefs, storage)).toBe(true);
     expect(Object.keys(storage.data)).toEqual([PREFS_KEY]);
     expect(loadPrefs(storage)).toEqual(prefs);
@@ -169,11 +179,11 @@ describe("resolveTheme / applyPrefs", () => {
 
   it("stamps data attributes and toggles the dark class", () => {
     const root = fakeRoot();
-    applyPrefs({ theme: "dark", density: "compact" }, root, false);
+    applyPrefs({ theme: "dark", density: "compact", groupBatches: true }, root, false);
     expect(root.dataset).toEqual({ theme: "dark", density: "compact" });
     expect(root.classes.has("dark")).toBe(true);
 
-    applyPrefs({ theme: "system", density: "comfortable" }, root, false);
+    applyPrefs({ theme: "system", density: "comfortable", groupBatches: true }, root, false);
     expect(root.dataset).toEqual({ theme: "system", density: "comfortable" });
     expect(root.classes.has("dark")).toBe(false);
   });

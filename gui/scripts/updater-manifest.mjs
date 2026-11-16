@@ -40,7 +40,9 @@ export function buildManifest({ tag, files, sigs, pubkey, date = new Date() }) {
   for (const [key, pattern] of Object.entries(ENTRIES)) {
     const names = Object.keys(files).filter((n) => pattern.test(n));
     if (names.length !== 1) {
-      errors.push(`${key}: expected one bundle matching ${pattern}, found ${names.length ? names.join(", ") : "none"}`);
+      errors.push(
+        `${key}: expected one bundle matching ${pattern}, found ${names.length ? names.join(", ") : "none"}`,
+      );
       continue;
     }
     const [name] = names;
@@ -52,7 +54,9 @@ export function buildManifest({ tag, files, sigs, pubkey, date = new Date() }) {
     try {
       const fields = verify(files[name], signature, pubkey);
       if (fields.version !== version)
-        errors.push(`${key}: ${name} is signed for version ${fields.version ?? "(none)"}, the tag is ${version}`);
+        errors.push(
+          `${key}: ${name} is signed for version ${fields.version ?? "(none)"}, the tag is ${version}`,
+        );
     } catch (e) {
       errors.push(`${key}: ${name}: ${e.message}`);
       continue;
@@ -76,27 +80,41 @@ export function configuredPubkey(root) {
   const conf = JSON.parse(readFileSync(join(root, "gui", "src-tauri", "tauri.conf.json"), "utf8"));
   const pubkey = conf.plugins?.updater?.pubkey ?? "";
   if (!pubkey || /placeholder/i.test(pubkey))
-    throw new Error("tauri.conf.json has no update public key (plugins.updater.pubkey is missing or a placeholder)");
+    throw new Error(
+      "tauri.conf.json has no update public key (plugins.updater.pubkey is missing or a placeholder)",
+    );
   return pubkey;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [tag, dir, root = join(dirname(fileURLToPath(import.meta.url)), "..", "..")] = process.argv.slice(2);
+  const [tag, dir, root = join(dirname(fileURLToPath(import.meta.url)), "..", "..")] =
+    process.argv.slice(2);
   try {
     const names = readdirSync(dir);
     const files = Object.fromEntries(
-      names.filter((n) => !n.endsWith(".sig") && n !== "latest.json").map((n) => [n, readFileSync(join(dir, n))]),
+      names
+        .filter((n) => !n.endsWith(".sig") && n !== "latest.json")
+        .map((n) => [n, readFileSync(join(dir, n))]),
     );
     const sigs = Object.fromEntries(
-      names.filter((n) => n.endsWith(".sig")).map((n) => [n.slice(0, -4), readFileSync(join(dir, n), "utf8")]),
+      names
+        .filter((n) => n.endsWith(".sig"))
+        .map((n) => [n.slice(0, -4), readFileSync(join(dir, n), "utf8")]),
     );
-    const { manifest, errors } = buildManifest({ tag, files, sigs, pubkey: configuredPubkey(root) });
+    const { manifest, errors } = buildManifest({
+      tag,
+      files,
+      sigs,
+      pubkey: configuredPubkey(root),
+    });
     if (errors.length) {
       for (const e of errors) console.error(`updater-manifest: ${e}`);
       process.exit(1);
     }
     writeFileSync(join(dir, "latest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-    console.log(`updater-manifest: ${Object.keys(manifest.platforms).length} entries verified for ${tag}`);
+    console.log(
+      `updater-manifest: ${Object.keys(manifest.platforms).length} entries verified for ${tag}`,
+    );
   } catch (e) {
     console.error(`updater-manifest: ${e.message}`);
     process.exit(1);

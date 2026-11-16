@@ -10,6 +10,7 @@ import {
   removeSelectedTitle,
   retryAllMessage,
 } from "./lib/copy";
+import { retryBatchMessage, rollupText } from "./lib/batches";
 import { finishedToArchive, toRemove } from "./lib/archive";
 import { knownUrls } from "./lib/batch";
 import { focusIsFree } from "./lib/focus";
@@ -90,10 +91,13 @@ export default function App() {
     view,
     inArchive,
     tags,
+    batches,
+    items,
+    toggleBatch,
     visible,
     failed,
     title,
-  } = useView(downloads);
+  } = useView(downloads, prefs.groupBatches);
 
   const [addOpen, setAddOpen] = useState(false);
   const [prefillText, setPrefillText] = useState("");
@@ -246,6 +250,16 @@ export default function App() {
       .catch(fail);
   }, [failed, notify, fail]);
 
+  const retryBatch = useCallback(
+    (batch: number) => {
+      api
+        .retryBatch(batch)
+        .then((n) => notify(retryBatchMessage(n)))
+        .catch(fail);
+    },
+    [notify, fail],
+  );
+
   const {
     stopIds,
     setStopIds,
@@ -354,6 +368,7 @@ export default function App() {
         counts={counts}
         folders={folders}
         archivedCount={archived}
+        batches={batches}
         tags={tags}
         bumpSeq={finish.bumpSeq}
         speed={totalSpeed(downloads)}
@@ -364,6 +379,16 @@ export default function App() {
         <Toolbar
           title={title}
           count={visible.length}
+          batch={(() => {
+            const group = view.kind === "batch" ? batches.find((b) => b.id === view.batch) : null;
+            return group
+              ? {
+                  rollup: rollupText(group),
+                  onRetry: group.failed > 0 ? () => retryBatch(group.id) : null,
+                }
+              : null;
+          })()}
+          hasBatches={batches.length > 0}
           onRetryAll={
             view.kind === "status" && view.status === "failed" && failed.length > 0
               ? retryAll
@@ -451,7 +476,7 @@ export default function App() {
           />
         </div>
         <DownloadTable
-          rows={visible}
+          items={items}
           sort={sort}
           onSort={onSort}
           unopened={finish.unopened}
@@ -472,6 +497,9 @@ export default function App() {
           onQueueDrop={onQueueDrop}
           detailsId={detailsRow?.id ?? null}
           onDetails={onDetails}
+          onToggleBatch={toggleBatch}
+          onRetryBatch={retryBatch}
+          onRevealBatch={(batch) => api.revealBatch(batch).catch(fail)}
         />
         {review && (
           <FindReviewPane

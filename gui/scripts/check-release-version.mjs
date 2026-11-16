@@ -26,7 +26,9 @@ export function checkReleaseVersion(root, tag) {
   const prerelease = version.includes("-");
 
   // Bounded by the next `[section]` header, so array values before `version` are fine.
-  const workspace = /^\[workspace\.package\]\s*$(?:(?!^\[)[\s\S])*?^version\s*=\s*"([^"]+)"/m.exec(read("Cargo.toml"));
+  const workspace = /^\[workspace\.package\]\s*$(?:(?!^\[)[\s\S])*?^version\s*=\s*"([^"]+)"/m.exec(
+    read("Cargo.toml"),
+  );
   if (!workspace) errors.push("Cargo.toml has no [workspace.package] version");
   else if (workspace[1] !== version)
     errors.push(`Cargo.toml [workspace.package] version is ${workspace[1]}, tag is ${version}`);
@@ -50,9 +52,9 @@ export function checkReleaseVersion(root, tag) {
   if ("version" in JSON.parse(read(join("gui", "src-tauri", "tauri.conf.json"))))
     errors.push("gui/src-tauri/tauri.conf.json sets version; drop it so Tauri uses the crate's");
 
-  const headings = [...read("CHANGELOG.md").matchAll(/^##\s+\[?([^\]\s]+)\]?(?:\s+-\s+.*)?\s*$/gm)].map(
-    (m) => m[1],
-  );
+  const headings = [
+    ...read("CHANGELOG.md").matchAll(/^##\s+\[?([^\]\s]+)\]?(?:\s+-\s+.*)?\s*$/gm),
+  ].map((m) => m[1]);
   const accepted = prerelease ? [version, "Unreleased"] : [version];
   if (!headings.some((h) => accepted.includes(h)))
     errors.push(`CHANGELOG.md has no "## ${accepted.join('" or "## ')}" heading`);
@@ -61,7 +63,8 @@ export function checkReleaseVersion(root, tag) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [tag, root = join(dirname(fileURLToPath(import.meta.url)), "..", "..")] = process.argv.slice(2);
+  const [tag, root = join(dirname(fileURLToPath(import.meta.url)), "..", "..")] =
+    process.argv.slice(2);
   const errors = checkReleaseVersion(root, tag);
   if (errors.length) {
     for (const e of errors) console.error(`check-release-version: ${e}`);

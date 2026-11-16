@@ -9,6 +9,7 @@ import type {
   DownloadSnapshot,
   FindEvent,
   FindResult,
+  BatchAdded,
   FolderOutcome,
   FoundChoice,
   InstallWhen,
@@ -43,6 +44,26 @@ export const addDownload = (
     limit: limit ?? null,
     tags: tags ?? null,
   });
+
+/**
+ * Add several links at once. With two or more and a `label` they become a batch (`folder`
+ * puts them in a folder of that name inside `dir`); otherwise they are ordinary downloads.
+ * `limit` (a rate like `"500K"`) and `tags` apply to each. Rejects on a bad name, tag or rate.
+ */
+export const addBatch = (
+  urls: readonly string[],
+  dir: string | null,
+  limit: string | null,
+  tags: string[],
+  label: string | null,
+  folder: boolean,
+) => invoke<BatchAdded>("add_batch", { urls, dir, limit, tags, label, folder });
+
+/** Retry the failed downloads of one batch. Resolves with how many were retried. */
+export const retryBatch = (batch: number) => invoke<number>("retry_batch", { batch });
+
+/** Open the folder a batch's files went into. By batch id: the backend picks the path. */
+export const revealBatch = (batch: number) => invoke<void>("reveal_batch", { batch });
 
 /** The engine's manager-wide settings. */
 export const getSettings = () => invoke<Settings>("get_settings");

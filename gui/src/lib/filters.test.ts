@@ -213,3 +213,21 @@ describe("the archive and tags", () => {
     expect(sameFilter({ kind: "archived" }, { kind: "archived" })).toBe(true);
   });
 });
+
+describe("batch filter", () => {
+  const inA = snap({ id: 1, batch: 7, batch_label: "A" });
+  const inB = snap({ id: 2, batch: 8, batch_label: "B" });
+  const loose = snap({ id: 3 });
+  const f: ViewFilter = { kind: "batch", batch: 7 };
+
+  it("shows one batch's working files only", () => {
+    expect([inA, inB, loose].filter((d) => matchesFilter(d, f)).map((d) => d.id)).toEqual([1]);
+    expect(matchesFilter({ ...inA, archived: true }, f)).toBe(false);
+  });
+
+  it("is the same view only for the same batch", () => {
+    expect(sameFilter(f, { kind: "batch", batch: 7 })).toBe(true);
+    expect(sameFilter(f, { kind: "batch", batch: 8 })).toBe(false);
+    expect(sameFilter(f, { kind: "status", status: "all" })).toBe(false);
+  });
+});

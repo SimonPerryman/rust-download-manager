@@ -6,7 +6,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use super::files::{discard_files, owned_elsewhere, owns_partial, unique_target};
-use super::{now_secs, AddOptions, Entry, Manager};
+use super::{now_secs, AddOptions, Entry, Manager, ManagerState};
 use crate::engine::lock::lock;
 use crate::engine::store::{ChecksumState, DownloadRecord, Status};
 use crate::engine::{filename, tags, Checksum, RateLimiter};
@@ -51,7 +51,27 @@ impl Manager {
     /// Add a download whose options are already valid.
     fn insert(&self, url: String, dir: PathBuf, options: AddOptions) -> u64 {
         let st = &mut *lock(&self.inner.state);
+        let (id, probe_url) = self.push_entry(st, url, dir, options, None);
+        self.inner.schedule(st);
+        self.inner.persist(st);
+        self.inner.publish(st);
+        self.inner
+            .spawn_probe(id, probe_url, st.settings.proxy.clone());
+        id
+    }
 
+    /// Put a new queued download in the list, tagged with `batch` (its id and
+    /// name) if it belongs to one. The caller schedules, persists, publishes
+    /// and probes, so a batch does that once. Returns the id and the URL to
+    /// probe.
+    pub(super) fn push_entry(
+        &self,
+        st: &mut ManagerState,
+        url: String,
+        dir: PathBuf,
+        options: AddOptions,
+        batch: Option<(u64, &str)>,
+    ) -> (u64, String) {
         let id = st.next_id;
         st.next_id += 1;
 
@@ -84,17 +104,12 @@ impl Manager {
             archived: false,
             tags: options.tags,
             paused_for_update: false,
+            batch: batch.map(|(id, _)| id),
+            batch_label: batch.map(|(_, label)| label.to_string()),
         };
-        let entry = Entry::new(record, limiter);
-
         st.order.push(id);
-        st.entries.insert(id, entry);
-        self.inner.schedule(st);
-        self.inner.persist(st);
-        self.inner.publish(st);
-        self.inner
-            .spawn_probe(id, probe_url, st.settings.proxy.clone());
-        id
+        st.entries.insert(id, Entry::new(record, limiter));
+        (id, probe_url)
     }
 
     /// Request a pause. A running task stops at the next chunk boundary,

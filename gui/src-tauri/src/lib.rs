@@ -103,6 +103,76 @@ fn add_download(
         .map_err(|e| e.to_string())
 }
 
+/// How [`add_batch`] went, for the Add dialog: the batch it made (if any), how
+/// many links went in, and the ones that didn't with why.
+#[derive(serde::Serialize)]
+struct BatchAdded {
+    batch: Option<u64>,
+    added: usize,
+    failed: Vec<FailedLink>,
+}
+
+#[derive(serde::Serialize)]
+struct FailedLink {
+    url: String,
+    error: String,
+}
+
+/// Add several links at once. With two or more and a `label` they become a
+/// batch (`folder` puts them in a folder of that name inside `dir`); otherwise
+/// they are ordinary downloads. `limit` and `tags` apply to each link.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+fn add_batch(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    urls: Vec<String>,
+    dir: Option<String>,
+    limit: Option<String>,
+    tags: Option<Vec<String>>,
+    label: Option<String>,
+    folder: Option<bool>,
+) -> Result<BatchAdded, String> {
+    let dir = match dir {
+        Some(d) if !d.trim().is_empty() => download_dir(&d)?,
+        _ => default_dir(&app)?,
+    };
+    let options = AddOptions {
+        limit: parse_limit(limit)?,
+        tags: tags.unwrap_or_default(),
+        ..AddOptions::default()
+    };
+    let spec = label
+        .filter(|l| !l.trim().is_empty())
+        .map(|label| rdm::BatchSpec {
+            label,
+            folder: folder.unwrap_or(false),
+        });
+    let added = state
+        .manager
+        .add_batch(urls, dir, spec, options)
+        .map_err(|e| e.to_string())?;
+    Ok(BatchAdded {
+        batch: added.batch,
+        added: added.added.len(),
+        failed: added
+            .failed
+            .into_iter()
+            .map(|(url, e)| FailedLink {
+                url,
+                error: e.to_string(),
+            })
+            .collect(),
+    })
+}
+
+/// Retry the failed downloads of one batch (Retry failed on its group row).
+/// Returns how many were retried.
+#[tauri::command]
+fn retry_batch(state: State<'_, AppState>, batch: u64) -> usize {
+    state.manager.retry_batch(batch)
+}
+
 /// Check a user-chosen destination: it must be an absolute path and, if it
 /// exists, a directory. A missing one is fine; the engine creates it when the
 /// download starts.
@@ -415,6 +485,32 @@ async fn reveal_download(
         }
         app.opener()
             .reveal_item_in_dir(path)
+            .map_err(|e| e.to_string())
+    })
+    .await
+}
+
+/// Open the folder batch `batch`'s files went into in the OS file manager (the
+/// group row's Open folder). Errors if the batch is unknown or the folder isn't there.
+#[tauri::command]
+async fn reveal_batch(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    batch: u64,
+) -> Result<(), String> {
+    let manager = state.manager.clone();
+    commands_guard::contained("reveal_batch", async move {
+        let dir = manager
+            .batch_folder(batch)
+            .ok_or_else(|| "that batch is gone".to_string())?;
+        if let Some(log) = test_seam(OPEN_LOG_ENV) {
+            return append_open_log(&log, "reveal", &dir).map_err(|e| e.to_string());
+        }
+        if !dir.is_dir() {
+            return Err(format!("{} isn't there yet", dir.display()));
+        }
+        app.opener()
+            .open_path(dir.to_string_lossy(), None::<&str>)
             .map_err(|e| e.to_string())
     })
     .await
@@ -1053,6 +1149,9 @@ pub fn run() {
         .invoke_handler(commands_guard::contain_panics(tauri::generate_handler![
             list,
             add_download,
+            add_batch,
+            retry_batch,
+            reveal_batch,
             get_settings,
             set_settings,
             set_limit,

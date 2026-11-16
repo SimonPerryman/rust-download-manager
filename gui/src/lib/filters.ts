@@ -21,6 +21,8 @@ export type ViewFilter =
   | { kind: "status"; status: StatusFilter }
   | { kind: "folder"; dir: string }
   | { kind: "archived" }
+  /** One batch's files, by the id they share. */
+  | { kind: "batch"; batch: number }
   /** A tag, among the archived rows ("Archived › tag") or the rest. */
   | { kind: "tag"; tag: string; archived: boolean };
 
@@ -67,6 +69,8 @@ export function matchesFilter(d: DownloadSnapshot, f: ViewFilter): boolean {
       return true;
     case "tag":
       return hasTag(d, f.tag);
+    case "batch":
+      return d.batch === f.batch;
     case "folder":
       return folderOf(d.target) === f.dir;
     case "status":
@@ -116,6 +120,8 @@ export function sameFilter(a: ViewFilter, b: ViewFilter): boolean {
       return b.kind === "folder" && a.dir === b.dir;
     case "archived":
       return b.kind === "archived";
+    case "batch":
+      return b.kind === "batch" && a.batch === b.batch;
     case "tag":
       return b.kind === "tag" && a.archived === b.archived && tagKey(a.tag) === tagKey(b.tag);
   }

@@ -1,7 +1,11 @@
 type Props = {
-  testId: "filter" | "folder-filter" | "tag-filter";
-  /** `data-filter` (status key, or "archived"), `data-dir` (full folder path) or `data-tag`. */
-  data: { "data-filter": string } | { "data-dir": string } | { "data-tag": string };
+  testId: "filter" | "folder-filter" | "tag-filter" | "batch-filter";
+  /** `data-filter` (status key, or "archived"), `data-dir` (full folder path), `data-tag` or `data-batch` (the id). */
+  data:
+    | { "data-filter": string }
+    | { "data-dir": string }
+    | { "data-tag": string }
+    | { "data-batch": string };
   icon: React.ReactNode;
   label: string;
   /** The full folder path, for a label shortened to its last part. */

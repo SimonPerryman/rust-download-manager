@@ -7,8 +7,15 @@ import { STATUS_FILTERS, type ViewFilter } from "./filters";
 import type { Folder } from "./folders";
 import type { DownloadSnapshot } from "./types";
 
-/** The toolbar heading for a view; a folder view takes the folder's label, a tag view the tag. */
-export function viewTitle(filter: ViewFilter, folders: readonly Folder[]): string {
+/** The toolbar heading for a view; a folder view takes the folder's label, a batch view its name, a tag view the tag. */
+export function viewTitle(
+  filter: ViewFilter,
+  folders: readonly Folder[],
+  batches: readonly { id: number; label: string }[] = [],
+): string {
+  if (filter.kind === "batch") {
+    return batches.find((b) => b.id === filter.batch)?.label ?? "Batch";
+  }
   if (filter.kind === "folder") {
     return folders.find((f) => f.dir === filter.dir)?.label ?? filter.dir;
   }
@@ -60,6 +67,13 @@ export function emptyCopy(filter: ViewFilter, title: string, query: string): Emp
       title: `Nothing in ${title}`,
       body: "Downloads saved to this folder show up here.",
       invitesAdd: true,
+    };
+  }
+  if (filter.kind === "batch") {
+    return {
+      title: `Nothing in ${title}`,
+      body: "Files added together as this batch show up here.",
+      invitesAdd: false,
     };
   }
   if (filter.kind === "archived") {

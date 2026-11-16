@@ -6,6 +6,7 @@ import {
   type StatusFilter,
   type ViewFilter,
 } from "../../lib/filters";
+import type { BatchGroup } from "../../lib/batches";
 import type { Folder as FolderEntry } from "../../lib/folders";
 import type { TagCount } from "../../lib/tags";
 import { Archive } from "../icons/Archive";
@@ -16,6 +17,7 @@ import { Clock } from "../icons/Clock";
 import { DownloadMark } from "../icons/DownloadMark";
 import { FileQuestion } from "../icons/FileQuestion";
 import { Folder } from "../icons/Folder";
+import { Group } from "../icons/Group";
 import { List } from "../icons/List";
 import { Pause } from "../icons/Pause";
 import { Stop } from "../icons/Stop";
@@ -40,6 +42,8 @@ type Props = {
   counts: Record<StatusFilter, number>;
   folders: FolderEntry[];
   archivedCount: number;
+  /** The Batches section: each batch's working files. */
+  batches: BatchGroup[];
   /** The Tags section: the archived rows' tags while an Archived view is shown, else the rest's. */
   tags: TagCount[];
   /** Bumps on each live finish; restarts the Done count's bump. 0 on load. */
@@ -57,6 +61,7 @@ export function Sidebar({
   counts,
   folders,
   archivedCount,
+  batches,
   tags,
   bumpSeq,
   speed,
@@ -140,6 +145,34 @@ export function Sidebar({
                       label={f.label}
                       title={f.dir}
                       count={f.count}
+                      selected={sameFilter(filter, view)}
+                      onClick={() => onFilter(view)}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+        {batches.length > 0 && !inArchive && (
+          <>
+            <h2
+              id="batches-head"
+              className="side-head px-2 pb-2 pt-6 text-xs font-semibold text-g400"
+            >
+              Batches
+            </h2>
+            <ul className="batch-list grid gap-0.5" aria-labelledby="batches-head">
+              {batches.map((b) => {
+                const view: ViewFilter = { kind: "batch", batch: b.id };
+                return (
+                  <li key={b.id}>
+                    <FilterButton
+                      testId="batch-filter"
+                      data={{ "data-batch": String(b.id) }}
+                      icon={<Group />}
+                      label={b.label}
+                      count={b.items.length}
                       selected={sameFilter(filter, view)}
                       onClick={() => onFilter(view)}
                     />

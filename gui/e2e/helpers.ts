@@ -52,6 +52,8 @@ export interface EngineRow {
   finished_at: number | null;
   archived: boolean;
   tags: string[];
+  batch: number | null;
+  batch_label: string | null;
   paused_for_update: boolean;
   file_missing: boolean;
 }
@@ -360,6 +362,8 @@ export async function addThroughDialog(url: string, dir?: string): Promise<numbe
   const before = new Set((await engineRows()).map((d) => d.id));
   const dialog = await openAddDialog(dir);
   await dialog.$(LINKS).setValue(url);
+  // The button stays disabled until the engine has read the link; a click before then does nothing.
+  await dialog.$("button=Add download").waitForEnabled();
   await dialog.$("button=Add download").click();
   await waitForGone(ADD_DIALOG);
 

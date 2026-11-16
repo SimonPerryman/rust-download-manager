@@ -39,6 +39,9 @@ describe("archive and tags", () => {
     await api.addTags([3], ["work"]);
     await api.removeTags([3], ["work"]);
     await api.addDownload("http://x/a", null, null, null, ["iso"]);
+    await api.addBatch(["http://x/a", "http://x/b"], "/d", "500K", ["iso"], "Course files", true);
+    await api.retryBatch(7);
+    await api.revealBatch(7);
     expect(invoke.mock.calls).toEqual([
       ["archive", { ids: [1, 2] }],
       ["unarchive", { ids: [2] }],
@@ -50,6 +53,19 @@ describe("archive and tags", () => {
         "add_download",
         { url: "http://x/a", dir: null, checksum: null, limit: null, tags: ["iso"] },
       ],
+      [
+        "add_batch",
+        {
+          urls: ["http://x/a", "http://x/b"],
+          dir: "/d",
+          limit: "500K",
+          tags: ["iso"],
+          label: "Course files",
+          folder: true,
+        },
+      ],
+      ["retry_batch", { batch: 7 }],
+      ["reveal_batch", { batch: 7 }],
     ]);
   });
 });

@@ -127,6 +127,22 @@
   .row:hover td {
     background: var(--hover);
   }
+  /* The Ungrouped header: a divider above it sets it off from the last batch. */
+  .batch-row.ungrouped td {
+    border-top: 1px solid var(--line-strong);
+  }
+  .batch-row td {
+    height: 40px;
+    background: var(--surface);
+  }
+  .batch-name {
+    @apply min-w-0 text-sm font-semibold;
+  }
+  .batch-pill {
+    @apply inline-flex h-5 shrink-0 items-center rounded-full px-2 text-xs font-medium;
+    background: var(--danger-soft);
+    color: var(--danger-ink);
+  }
   .row.linger td {
     background: var(--success-linger);
   }

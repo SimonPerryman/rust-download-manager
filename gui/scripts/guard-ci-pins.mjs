@@ -67,7 +67,9 @@ for (const name of readdirSync(dir).filter((n) => /\.ya?ml$/.test(n))) {
 
 if (violations.length) {
   for (const v of violations) {
-    console.error(`guard-ci-pins: ${v.check.rule}\n  ${relative(process.cwd(), v.file)}:${v.line}  ${v.snippet}\n  Fix: ${v.check.fix}\n`);
+    console.error(
+      `guard-ci-pins: ${v.check.rule}\n  ${relative(process.cwd(), v.file)}:${v.line}  ${v.snippet}\n  Fix: ${v.check.fix}\n`,
+    );
   }
   process.exit(1);
 }

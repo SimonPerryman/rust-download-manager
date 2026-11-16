@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../lib/api";
+import { batchNameFromStem, folderTickLabel, MAX_BATCH_NAME } from "../../lib/batches";
 import {
   addLabel,
   addLinks,
   entriesFrom,
   linksToAdd,
   partialAddError,
+  type AddOutcome,
   type Known,
 } from "../../lib/batch";
 import { formatSpeed } from "../../lib/format";
@@ -31,14 +33,19 @@ type Props = {
 };
 
 // The Add dialog: one link per line, a preview of what was found, and where
-// they go (the last folder used, else the OS download dir). Add calls
-// `add_download` once per link, in order. The backend owns everything after
-// that; this dialog is just a form.
+// they go (the last folder used, else the OS download dir). One link is
+// `add_download`; two or more are one `add_batch`, which names them a batch if
+// the form has a name. The backend owns everything after that; this dialog is
+// just a form.
 export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdded }: Props) {
   const [text, setText] = useState("");
   const [dest, setDest] = useState("");
   const [checksum, setChecksum] = useState("");
   const [tagsText, setTagsText] = useState("");
+  const [batchName, setBatchName] = useState("");
+  const [makeFolder, setMakeFolder] = useState(true);
+  // Once the name has been typed or cleared by hand, a pattern stops filling it in.
+  const nameTouched = useRef(false);
   const [limit, setLimit] = useState<RateDraft>(NO_LIMIT);
   const [moreOpen, setMoreOpen] = useState(false);
   const [globalLimit, setGlobalLimit] = useState<number | null>(null);
@@ -62,6 +69,9 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     setText(initialText);
     setChecksum("");
     setTagsText("");
+    setBatchName("");
+    setMakeFolder(true);
+    nameTouched.current = false;
     setLimit(NO_LIMIT);
     setMoreOpen(false);
     const last = loadLastDir();
@@ -119,6 +129,13 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     };
   }, [open, text]);
 
+  // A pattern names its batch by what comes before the range (lesson[01-12] gives "lesson").
+  const stem = list?.patterns[0]?.stem;
+  useEffect(() => {
+    if (nameTouched.current || !stem) return;
+    setBatchName(batchNameFromStem(stem));
+  }, [stem]);
+
   const entries = useMemo(
     () => (list ? entriesFrom(list, existingUrls) : []),
     [list, existingUrls],
@@ -126,6 +143,8 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
   const links = linksToAdd(entries);
   // A checksum names one file, so it only applies to a single link.
   const single = links.length <= 1;
+  // A batch needs two or more links and a name; the name is what makes it one.
+  const named = !single && batchName.trim() !== "";
 
   if (!open) return null;
 
@@ -159,9 +178,25 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     setBusy(true);
     setError(null);
     const dir = dest.trim() || null;
-    const outcome = await addLinks(links, (url) =>
-      api.addDownload(url, dir, (single && checksum.trim()) || null, rate.rate || null, tags),
-    );
+    let outcome: AddOutcome;
+    try {
+      outcome = single
+        ? await addLinks(links, (url) =>
+            api.addDownload(url, dir, checksum.trim() || null, rate.rate || null, tags),
+          )
+        : await api.addBatch(
+            links,
+            dir,
+            rate.rate || null,
+            tags,
+            named ? batchName.trim() : null,
+            named && makeFolder,
+          );
+    } catch (e) {
+      setBusy(false);
+      fail(String(e));
+      return;
+    }
     setBusy(false);
     const { added, failed } = outcome;
     if (added > 0 && dir) saveLastDir(dir);
@@ -189,15 +224,15 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
         aria-label="Add downloads"
         className="fixed left-1/2 top-1/2 z-50 w-full max-w-[600px] -translate-x-1/2 -translate-y-1/2 px-4"
       >
-        <div className="rounded-lg bg-raised text-ink shadow-dialog">
-          <div className="px-6 pt-6">
+        <div className="flex max-h-[calc(100vh-2rem)] flex-col rounded-lg bg-raised text-ink shadow-dialog">
+          <div className="shrink-0 px-6 pt-6">
             <h2 className="text-xl font-semibold tracking-tight">Add downloads</h2>
             <p className="mt-1 text-sm text-g600">
               Paste one link per line. You'll see what rdm found before anything starts.
             </p>
           </div>
 
-          <div className="space-y-4 px-6 py-4">
+          <div className="min-h-0 space-y-4 overflow-y-auto px-6 py-4">
             <Field label="Links" htmlFor="add-links">
               <textarea
                 id="add-links"
@@ -230,6 +265,30 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
               <LinkPreview entries={entries} />
             )}
 
+            {!single && (
+              <Field label="Batch name" htmlFor="add-batch-name">
+                <input
+                  id="add-batch-name"
+                  type="text"
+                  aria-label="Batch name"
+                  value={batchName}
+                  maxLength={MAX_BATCH_NAME}
+                  onChange={(e) => {
+                    nameTouched.current = true;
+                    setBatchName(e.target.value);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void submit();
+                    }
+                  }}
+                  placeholder="Optional, e.g. Course files"
+                  className="flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 text-sm transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden"
+                />
+              </Field>
+            )}
+
             <Field label="Destination folder" htmlFor="add-dest">
               <div className="flex gap-2">
                 <input
@@ -247,6 +306,19 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
               </div>
               <p className="text-xs text-g400">rdm remembers the last folder you used.</p>
             </Field>
+
+            {named && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  data-testid="batch-folder"
+                  checked={makeFolder}
+                  onChange={(e) => setMakeFolder(e.target.checked)}
+                  className="size-4 accent-(--btn)"
+                />
+                <span className="min-w-0 break-words">{folderTickLabel(batchName, dest)}</span>
+              </label>
+            )}
 
             <Field label="Tags" htmlFor="add-tags">
               <input
@@ -285,25 +357,24 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
                   It shares a wrapper with the toggle: as space-y's last child, a hidden panel would
                   leave a gap under the toggle. */}
               <div id="add-more-options" hidden={!moreOpen} className="mt-4 space-y-4">
-                <Field label="SHA-256 checksum" htmlFor="add-checksum">
-                  <input
-                    id="add-checksum"
-                    type="text"
-                    aria-label="SHA-256 checksum"
-                    value={checksum}
-                    disabled={!single}
-                    onChange={(e) => setChecksum(e.target.value)}
-                    placeholder="e3b0c44298fc1c149afbf4c8996fb924…"
-                    className="flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 font-mono text-xs transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden disabled:opacity-45"
-                  />
-                  <p className="text-xs text-g400">
-                    {single
-                      ? "If provided, the file is verified after download and discarded on mismatch."
-                      : "A checksum names one file. Add links one at a time to check each."}
-                  </p>
-                </Field>
+                {single && (
+                  <Field label="SHA-256 checksum" htmlFor="add-checksum">
+                    <input
+                      id="add-checksum"
+                      type="text"
+                      aria-label="SHA-256 checksum"
+                      value={checksum}
+                      onChange={(e) => setChecksum(e.target.value)}
+                      placeholder="e3b0c44298fc1c149afbf4c8996fb924…"
+                      className="flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 font-mono text-xs transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden"
+                    />
+                    <p className="text-xs text-g400">
+                      If provided, the file is verified after download and discarded on mismatch.
+                    </p>
+                  </Field>
+                )}
 
-                <Field label="Speed limit">
+                <Field label={single ? "Speed limit" : "Speed limit per file"}>
                   <RateInput
                     label="Speed limit"
                     value={limit}
@@ -313,9 +384,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
                   <p className="text-xs text-g400">
                     {globalLimit != null && exceeds(limit, globalLimit)
                       ? `The global limit is ${formatSpeed(globalLimit)} for all downloads combined, so ${single ? "this one" : "these"} won't go faster than that.`
-                      : single
-                        ? "Empty = no limit."
-                        : "Applies to each download. Empty = no limit."}
+                      : "Empty = no limit."}
                   </p>
                 </Field>
               </div>
@@ -324,7 +393,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
             {error && <p className="text-xs text-danger-ink">{error}</p>}
           </div>
 
-          <div className="flex items-center justify-end gap-2 rounded-b-lg bg-surface px-6 py-4">
+          <div className="flex shrink-0 items-center justify-end gap-2 rounded-b-lg bg-surface px-6 py-4">
             <button onClick={close} disabled={busy} className="btn btn-ghost">
               Cancel
             </button>
