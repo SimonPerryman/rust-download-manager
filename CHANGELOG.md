@@ -7,6 +7,13 @@ desktop app share one version.
 
 ## Unreleased
 
+### Added
+
+- `rdm -i urls.txt` (CLI) downloads every link in a file, `-i -` reads them
+  from standard input, and several links on the command line download as a
+  batch. `-j <n>` sets how many run at once (default 3). Each file gets a
+  line, a summary follows, and the exit code is non-zero if any failed.
+
 ## 0.4.0 - 2026-11-15
 
 ### Added

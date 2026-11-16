@@ -4,7 +4,8 @@
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use clap::{CommandFactory, Parser};
@@ -16,8 +17,9 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 use rdm::{
-    download, engine::state, parse_rate, redact_url, Checksum, Control, DownloadRequest, Error,
-    Proxy, ProxyMode, RateLimiter, Summary,
+    download, engine::state, parse_list, parse_rate, redact_url, redact_urls_in, run_limited,
+    Checksum, Control, DownloadRequest, Error, Proxy, ProxyMode, RateLimiter, Summary,
+    TargetClaims,
 };
 
 /// Printed when Ctrl-C paused the download.
@@ -39,8 +41,29 @@ const ISSUES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/issues");
 #[derive(Parser, Debug)]
 #[command(name = "rdm", version, about)]
 struct Cli {
-    /// URL to download.
-    url: String,
+    /// URL(s) to download. Several links download as a batch.
+    #[arg(value_name = "URL", required_unless_present = "input")]
+    urls: Vec<String>,
+
+    /// Download every link in this file (`-` reads standard input): one per
+    /// line or separated by spaces, `#` comments ignored. Can be combined
+    /// with links on the command line.
+    #[arg(
+        short = 'i',
+        long = "input-file",
+        value_name = "FILE",
+        conflicts_with_all = ["output", "checksum"]
+    )]
+    input: Option<PathBuf>,
+
+    /// How many links of a batch download at once.
+    #[arg(
+        short = 'j',
+        long = "jobs",
+        default_value_t = 3,
+        value_parser = clap::value_parser!(u8).range(1..=32)
+    )]
+    jobs: u8,
 
     /// Output file path (default: a name derived from the URL/headers, saved
     /// in the current directory).
@@ -109,9 +132,17 @@ async fn main() -> anyhow::Result<ExitCode> {
     install_panic_hook();
     let cli = Cli::parse();
 
+    if cli.input.is_some() || cli.urls.len() > 1 {
+        if cli.output.is_some() || cli.checksum.is_some() {
+            usage_error("-o and --checksum take a single link, not a batch");
+        }
+        return run_batch(cli).await;
+    }
+    let url = cli.urls.into_iter().next().expect("clap requires a URL");
+
     let mut req = match cli.output {
-        Some(out) => DownloadRequest::to_path(cli.url, out),
-        None => DownloadRequest::new(cli.url, std::env::current_dir()?),
+        Some(out) => DownloadRequest::to_path(url, out),
+        None => DownloadRequest::new(url, std::env::current_dir()?),
     }
     .with_connections(cli.connections);
     if let Some(checksum) = cli.checksum {
@@ -179,6 +210,156 @@ async fn main() -> anyhow::Result<ExitCode> {
         }
         Err(e) => Err(e).with_context(|| format!("failed to download {}", redact_url(&req.url))),
     }
+}
+
+/// Exit with a usage error (code 2) naming what is wrong.
+fn usage_error(message: &str) -> ! {
+    Cli::command()
+        .error(clap::error::ErrorKind::ArgumentConflict, message)
+        .exit()
+}
+
+/// The batch's links: the `-i` file (or stdin) first, then the command-line
+/// links, read by the engine's list rules.
+fn batch_list(cli: &Cli) -> anyhow::Result<rdm::ParsedList> {
+    let mut text = String::new();
+    match cli.input.as_deref() {
+        Some(p) if p.as_os_str() == "-" => {
+            io::Read::read_to_string(&mut io::stdin(), &mut text)
+                .context("failed to read links from standard input")?;
+        }
+        Some(p) => {
+            text = std::fs::read_to_string(p)
+                .with_context(|| format!("failed to read {}", p.display()))?;
+        }
+        None => {}
+    }
+    for url in &cli.urls {
+        text.push('\n');
+        text.push_str(url);
+    }
+    Ok(parse_list(&text)?)
+}
+
+/// Ctrl-C for a batch: stops new items from starting and pauses the running
+/// ones, which keep their `.part` to resume on a rerun.
+#[derive(Default)]
+struct BatchStop {
+    stopped: AtomicBool,
+    running: Mutex<Vec<Control>>,
+}
+
+impl BatchStop {
+    /// A control for the next item, or `None` once stopped.
+    fn start_item(&self, limit: Option<u64>) -> Option<Control> {
+        let mut running = self.running.lock().unwrap_or_else(|e| e.into_inner());
+        if self.stopped.load(Ordering::SeqCst) {
+            return None;
+        }
+        let control = Control::new().with_limiters([Arc::new(RateLimiter::new(limit))]);
+        running.push(control.clone());
+        Some(control)
+    }
+
+    fn stop(&self) {
+        let running = self.running.lock().unwrap_or_else(|e| e.into_inner());
+        self.stopped.store(true, Ordering::SeqCst);
+        running.iter().for_each(Control::pause);
+    }
+}
+
+/// How one link of a batch ended.
+enum Item {
+    Done,
+    Failed,
+    /// Paused by Ctrl-C, or never started because of it.
+    Stopped,
+}
+
+/// Download many links, at most `-j` at once, one line per link and a
+/// summary. A failed link never stops the others.
+async fn run_batch(cli: Cli) -> anyhow::Result<ExitCode> {
+    let list = batch_list(&cli)?;
+    if list.links.is_empty() {
+        usage_error("no links to download");
+    }
+    init_logging(&ProgressBar::hidden(), cli.verbose);
+    tracing::info!("rdm {VERSION} · {}", rdm::platform::os_description());
+
+    let dir = std::env::current_dir()?;
+    let proxy = cli.proxy.as_deref().map(parse_proxy);
+    let claims = TargetClaims::new();
+    let stop = Arc::new(BatchStop::default());
+    {
+        let stop = stop.clone();
+        tokio::spawn(async move {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                stop.stop();
+                if tokio::signal::ctrl_c().await.is_ok() {
+                    std::process::exit(INTERRUPTED.into());
+                }
+            }
+        });
+    }
+
+    let links: Vec<String> = list.links.into_iter().map(|l| l.url).collect();
+    let results = run_limited(links, cli.jobs.into(), |_, url| {
+        let (dir, stop, claims) = (dir.clone(), stop.clone(), claims.clone());
+        let (connections, proxy, no_proxy) = (cli.connections, proxy.clone(), cli.no_proxy);
+        let limit = cli.limit_rate;
+        async move {
+            let Some(control) = stop.start_item(limit) else {
+                return Item::Stopped;
+            };
+            let mut req = DownloadRequest::new(&url, dir)
+                .with_connections(connections)
+                .with_claim_target(claims.claim_target());
+            if let Some(proxy) = proxy {
+                req = req.with_proxy(proxy);
+            } else if no_proxy {
+                req = req.with_proxy(ProxyMode::None);
+            }
+            match download(&req, &control, |_| {}).await {
+                Ok(summary) => {
+                    println!("{}", done_message(&summary, None));
+                    Item::Done
+                }
+                Err(Error::Paused) => Item::Stopped,
+                Err(e) => {
+                    eprintln!(
+                        "Failed {}: {}",
+                        redact_url(&url),
+                        redact_urls_in(&e.to_string())
+                    );
+                    Item::Failed
+                }
+            }
+        }
+    })
+    .await;
+
+    let count = |wanted: fn(&Item) -> bool| results.iter().filter(|r| wanted(r)).count();
+    let done = count(|r| matches!(r, Item::Done));
+    let failed = count(|r| matches!(r, Item::Failed));
+    let stopped = count(|r| matches!(r, Item::Stopped));
+    let mut summary = format!("{done} done, {failed} failed");
+    if stopped > 0 {
+        summary.push_str(&format!(", {stopped} not finished"));
+    }
+    if !list.skipped.is_empty() {
+        summary.push_str(&format!(", {} skipped lines", list.skipped.len()));
+    }
+    println!("{summary}");
+
+    if stopped > 0 {
+        eprintln!("{PAUSED_MESSAGE}");
+        return Ok(ExitCode::from(INTERRUPTED));
+    }
+    Ok(if failed > 0 {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    })
 }
 
 /// Log a panic (a bug in rdm) as an ERROR event, let the default hook print
