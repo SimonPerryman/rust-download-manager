@@ -16,4 +16,5 @@ pub use engine::{
     Manager, MatchReason, MissingChange, ParsedList, Progress, Proxy, ProxyMode, RateLimiter,
     Result, RetryPolicy, SameFolderOffer, Segment, Settings, SkipReason, SkippedLine, Status,
     Store, StoreData, Summary, TargetClaims, LOG_LINES, MAX_LIST_LINKS, MAX_PATTERN_LINKS,
+    PROBE_CONCURRENCY,
 };

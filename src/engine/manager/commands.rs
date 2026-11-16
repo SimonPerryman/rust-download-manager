@@ -63,6 +63,7 @@ impl Manager {
             }
         };
         let limiter = Arc::new(RateLimiter::new(options.limit));
+        let probe_url = url.clone();
         let record = DownloadRecord {
             id,
             url,
@@ -91,6 +92,8 @@ impl Manager {
         self.inner.schedule(st);
         self.inner.persist(st);
         self.inner.publish(st);
+        self.inner
+            .spawn_probe(id, probe_url, st.settings.proxy.clone());
         id
     }
 

@@ -65,6 +65,9 @@ the first queued one says **Next up**. To reorder, drag a queued row by its
 handle, press Alt+↑/Alt+↓, or use **Start next**, **Move up** and **Move
 down** from its menu or the details pane.
 
+A queued row shows its size (and the file's real name) before it starts, when
+the server tells. If it doesn't, the size stays blank until the download runs.
+
 You can pause, resume or stop any download, and choose whether a stop keeps
 the partial file.
 
