@@ -1,21 +1,24 @@
 # CLI reference
 
-The `rdm` command-line tool downloads one URL per run. It needs no webview or
+The `rdm` command-line tool downloads one URL per run, or many links as a batch. It needs no webview or
 Node.js, and uses the same engine as the desktop app.
 
 ## Usage
 
 ```
-rdm [OPTIONS] <URL>
+rdm [OPTIONS] <URL>...
+rdm [OPTIONS] -i <FILE>
 ```
 
 | Argument | Description |
 |---|---|
-| `<url>` | The URL to download (required). |
-| `-o, --output <path>` | Output file path. Defaults to a name derived from the URL or headers, saved in the current directory. |
-| `--checksum <algo:hex>` | Verify the finished file against a checksum, e.g. `sha256:…`. |
+| `<url>` | The URL to download. Give several to download them as a [batch](#many-links-at-once). Required unless `-i` is used. |
+| `-i, --input-file <file>` | Download every link in this file, or on standard input with `-i -`. See [Many links at once](#many-links-at-once). |
+| `-j, --jobs <n>` | How many links of a batch download at once, 1-32 (default 3). |
+| `-o, --output <path>` | Output file path (one link only). Defaults to a name derived from the URL or headers, saved in the current directory. |
+| `--checksum <algo:hex>` | (One link only.) Verify the finished file against a checksum, e.g. `sha256:…`. |
 | `-c, --connections <n>` | Max parallel connections, 1–16 (default 4; `-c 1` for a single connection). Starts on one and adds more, up to `n`, while measured speed keeps rising. Used only for files of 2 MiB or more on servers that support range requests. |
-| `--limit-rate <rate>` | Cap the download speed in bytes/s, with an optional `K`/`M`/`G` suffix (×1024), e.g. `500K` or `2M`. Shared across all of the download's connections. |
+| `--limit-rate <rate>` | Cap the download speed in bytes/s, with an optional `K`/`M`/`G` suffix (×1024), e.g. `500K` or `2M`. Shared across all of the download's connections; in a batch it applies to each file. |
 | `--proxy <url>` | Download through this proxy instead of the system's: `http://`, `https://`, `socks5://` or `socks5h://` (host names resolved by the proxy), with an optional `user:pass@`, e.g. `socks5h://127.0.0.1:1080`. See [Proxies](#proxies). |
 | `--no-proxy` | Connect directly, ignoring the system's proxy. Can't be combined with `--proxy`. |
 | `-v, --verbose` | Also log informational engine events (how the download started, lanes added, resumes, the checksum result, where it was saved and a summary) to stderr. |
@@ -23,6 +26,33 @@ rdm [OPTIONS] <URL>
 
 [How it works](how-it-works.md) explains connections, retries and checksums
 in more detail.
+
+## Many links at once
+
+Give several links, or a file of them, and rdm downloads them into the
+current directory, up to `-j` at a time (3 by default):
+
+```sh
+rdm -i urls.txt
+rdm -i urls.txt https://example.com/extra.zip -j 5
+rdm https://example.com/a.zip https://example.com/b.zip
+cat urls.txt | rdm -i -
+```
+
+In a file, put links on separate lines or separate them with spaces. Blank
+lines and lines starting with `#` are ignored, a link listed twice is
+downloaded once, and anything that isn't an `http` or `https` link is
+skipped. A list can hold up to 5000 different links.
+
+rdm prints one line per file as it finishes, then a summary such as
+`8 done, 1 failed, 2 skipped lines`. A file that fails never stops the
+others; the exit code is `1` if any failed. Two links that would save under
+the same name get `name (1).ext`.
+
+`-o` and `--checksum` name one file, so using them with `-i` or several
+links is a usage error. Ctrl-C pauses every running file; run the same
+command again to resume each from where it stopped (files that had already
+finished are downloaded again, under a new name).
 
 ## Proxies
 
@@ -69,8 +99,8 @@ To discard a partial download instead, delete its `<file>.part` and
 
 | Code | Meaning |
 |---|---|
-| `0` | The download finished (and its checksum matched, if given). |
-| `1` | The download failed. |
+| `0` | The download finished (and its checksum matched, if given); for a batch, every file finished. |
+| `1` | The download failed; for a batch, at least one file failed. |
 | `2` | Invalid arguments (printed with the usage). |
 | `101` | rdm hit a bug (a panic); see [Troubleshooting](#troubleshooting-and-bug-reports). |
 | `130` | Paused by Ctrl-C; run the same command again to resume. |

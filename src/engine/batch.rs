@@ -6,8 +6,12 @@
 //! put). Blank lines and `#` comments are ignored; only `http` and `https`
 //! count. A link repeated in the list is kept once with its count.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::future::Future;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
+use futures_util::StreamExt;
 use serde::Serialize;
 use url::Url;
 
@@ -116,6 +120,70 @@ pub fn parse_list(text: &str) -> Result<ParsedList, ListError> {
     Ok(ParsedList { links, skipped })
 }
 
+/// Run `run` over `items`, at most `jobs` at a time (at least 1), and return
+/// the results in item order. `run` gets the item's index too.
+///
+/// A failing item is the caller's to report in its result; it never stops the
+/// others. Items start in order, so a caller can stop starting new ones by
+/// having `run` return early.
+pub async fn run_limited<I, T, F, Fut>(items: Vec<I>, jobs: usize, run: F) -> Vec<T>
+where
+    F: Fn(usize, I) -> Fut,
+    Fut: Future<Output = T>,
+{
+    let run = &run;
+    let mut done: Vec<(usize, T)> = futures_util::stream::iter(items.into_iter().enumerate())
+        .map(|(i, item)| async move { (i, run(i, item).await) })
+        .buffer_unordered(jobs.max(1))
+        .collect()
+        .await;
+    done.sort_by_key(|(i, _)| *i);
+    done.into_iter().map(|(_, t)| t).collect()
+}
+
+/// Keeps the files of one batch run apart: two links that derive the same
+/// filename get `name (1).ext` for the second, so concurrent `.part` files
+/// never collide. Clones share one set of claims.
+///
+/// Only this run's claims count, not what is on disk, so a rerun resumes an
+/// interrupted file from its `.part` under the same name.
+#[derive(Debug, Clone, Default)]
+pub struct TargetClaims(Arc<Mutex<HashSet<PathBuf>>>);
+
+impl TargetClaims {
+    /// An empty set of claims.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The hook for a [`DownloadRequest`](super::DownloadRequest) that claims
+    /// its target from this set.
+    pub fn claim_target(&self) -> impl Fn(&Path) -> PathBuf + Send + Sync + 'static {
+        let claims = self.clone();
+        move |proposed| claims.claim(proposed)
+    }
+
+    fn claim(&self, proposed: &Path) -> PathBuf {
+        let mut taken = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut candidate = proposed.to_path_buf();
+        let stem = proposed
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("download");
+        let ext = proposed.extension().and_then(|e| e.to_str());
+        let mut n = 0u32;
+        while !taken.insert(candidate.clone()) {
+            n += 1;
+            let name = match ext {
+                Some(ext) => format!("{stem} ({n}).{ext}"),
+                None => format!("{stem} ({n})"),
+            };
+            candidate = proposed.with_file_name(name);
+        }
+        candidate
+    }
+}
+
 fn is_separator(c: char) -> bool {
     c == ',' || c == '|'
 }
@@ -153,6 +221,36 @@ fn classify(piece: &str) -> Result<(), SkipReason> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claims_keep_same_names_apart() {
+        let claims = TargetClaims::new();
+        let a = claims.claim(Path::new("d/file.bin"));
+        let b = claims.claim(Path::new("d/file.bin"));
+        let c = claims.claim(Path::new("d/file.bin"));
+        assert_eq!(a, Path::new("d/file.bin"));
+        assert_eq!(b, Path::new("d/file (1).bin"));
+        assert_eq!(c, Path::new("d/file (2).bin"));
+    }
+
+    #[tokio::test]
+    async fn run_limited_keeps_order_and_the_limit() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let (now, peak) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        let out = run_limited((0..8).collect(), 3, |i, n: u32| {
+            let (now, peak) = (&now, &peak);
+            async move {
+                let running = now.fetch_add(1, Ordering::SeqCst) + 1;
+                peak.fetch_max(running, Ordering::SeqCst);
+                tokio::task::yield_now().await;
+                now.fetch_sub(1, Ordering::SeqCst);
+                (i, n * 2)
+            }
+        })
+        .await;
+        assert_eq!(out, (0..8).map(|n| (n as usize, n * 2)).collect::<Vec<_>>());
+        assert!(peak.load(Ordering::SeqCst) <= 3);
+    }
 
     fn urls(l: &ParsedList) -> Vec<(&str, usize)> {
         l.links.iter().map(|l| (l.url.as_str(), l.count)).collect()

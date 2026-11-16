@@ -792,3 +792,227 @@ async fn cli_rejects_proxy_with_no_proxy() {
     assert!(!stderr.contains("SECRETPW"), "stderr: {stderr}");
     assert!(!dir.path().join("f.bin").exists());
 }
+
+/// Run `rdm` in `dir` with `args`, optionally feeding `stdin`; returns
+/// (exit status, stdout, stderr).
+async fn run_rdm(
+    dir: &std::path::Path,
+    args: &[&str],
+    stdin: Option<&str>,
+) -> (std::process::ExitStatus, String, String) {
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .args(args)
+        .current_dir(dir)
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("spawn rdm");
+    if let Some(text) = stdin {
+        let mut pipe = child.stdin.take().unwrap();
+        pipe.write_all(text.as_bytes()).await.unwrap();
+    }
+    let out = child.wait_with_output().await.expect("wait for rdm");
+    (
+        out.status,
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// Names of the files in `dir`, sorted (so `.part`/`.rdm` leftovers show).
+fn files_in(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+/// `-i file` downloads every link, prints a line per item and a summary, and
+/// exits non-zero when one item fails while the others still finish.
+#[tokio::test]
+async fn batch_from_file_reports_each_item_and_fails_on_a_404() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let list = dir.path().join("urls.txt");
+    std::fs::write(
+        &list,
+        format!(
+            "# my links\n{}\n{}\n\nnot a link\n{}\n",
+            server.url("/file"),
+            server.url("/missing"),
+            server.url("/file?again=1"),
+        ),
+    )
+    .unwrap();
+
+    let (status, stdout, stderr) = run_rdm(dir.path(), &["-i", "urls.txt"], None).await;
+
+    assert_eq!(status.code(), Some(1), "stdout: {stdout}\nstderr: {stderr}");
+    assert_eq!(stdout.matches("Downloaded").count(), 2, "{stdout}");
+    assert!(stderr.contains("Failed"), "{stderr}");
+    assert!(stderr.contains("/missing"), "{stderr}");
+    assert!(
+        stdout.contains("2 done, 1 failed, 1 skipped lines"),
+        "{stdout}"
+    );
+    // Same derived name twice: the second gets a suffix, not an overwrite.
+    assert_eq!(
+        files_in(dir.path()),
+        ["file", "file (1)", "urls.txt"],
+        "{stdout}"
+    );
+    assert_eq!(
+        std::fs::read(dir.path().join("file")).unwrap(),
+        common::payload()
+    );
+    assert_eq!(
+        std::fs::read(dir.path().join("file (1)")).unwrap(),
+        common::payload()
+    );
+}
+
+/// `-i -` reads the links from standard input.
+#[tokio::test]
+async fn batch_from_stdin() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let text = format!("{}\n{}\n", server.url("/file"), server.url("/file?x=2"));
+
+    let (status, stdout, stderr) = run_rdm(dir.path(), &["-i", "-"], Some(&text)).await;
+
+    assert!(status.success(), "stdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("2 done, 0 failed"), "{stdout}");
+    assert_eq!(files_in(dir.path()), ["file", "file (1)"]);
+}
+
+/// Repeated `<URL>` arguments are a batch, and mix with `-i`.
+#[tokio::test]
+async fn batch_from_repeated_urls_and_mixed_with_a_file() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (server.url("/file"), server.url("/file?b=1"));
+
+    let (status, stdout, stderr) = run_rdm(dir.path(), &[&a, &b], None).await;
+    assert!(status.success(), "stdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("2 done, 0 failed"), "{stdout}");
+    assert_eq!(files_in(dir.path()).len(), 2);
+
+    let other = tempfile::tempdir().unwrap();
+    std::fs::write(other.path().join("l.txt"), format!("{a}\n")).unwrap();
+    let (status, stdout, stderr) = run_rdm(other.path(), &["-i", "l.txt", &b], None).await;
+    assert!(status.success(), "stdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("2 done, 0 failed"), "{stdout}");
+}
+
+/// `-o` and `--checksum` mean one file: with several links or `-i` they are
+/// a usage error (exit 2), and nothing is downloaded.
+#[tokio::test]
+async fn batch_refuses_output_and_checksum() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (server.url("/file"), server.url("/file?b=1"));
+    std::fs::write(dir.path().join("l.txt"), format!("{a}\n")).unwrap();
+    let sum = format!("sha256:{}", "0".repeat(64));
+
+    for args in [
+        vec!["-i", "l.txt", "-o", "x.bin"],
+        vec!["-i", "l.txt", "--checksum", sum.as_str()],
+        vec![a.as_str(), b.as_str(), "-o", "x.bin"],
+        vec![a.as_str(), b.as_str(), "--checksum", sum.as_str()],
+    ] {
+        let (status, stdout, stderr) = run_rdm(dir.path(), &args, None).await;
+        assert_eq!(status.code(), Some(2), "{args:?}\n{stdout}\n{stderr}");
+    }
+    assert_eq!(files_in(dir.path()), ["l.txt"]);
+}
+
+/// `-j N` caps how many links download at once: with `/gated` holding every
+/// response open, exactly N are in flight until the gate releases them.
+#[tokio::test]
+async fn batch_runs_at_most_j_at_once() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let urls: Vec<String> = (0..4)
+        .map(|n| server.url(&format!("/gated?n={n}")))
+        .collect();
+    let mut args = vec!["-j".to_string(), "2".to_string()];
+    args.extend(urls);
+
+    let dir_path = dir.path().to_path_buf();
+    let run = tokio::spawn(async move {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        run_rdm(&dir_path, &args, None).await
+    });
+
+    assert!(
+        wait_until(Duration::from_secs(15), || server.gate().holding() == 2).await,
+        "never reached two held downloads"
+    );
+    // Give a third every chance to (wrongly) start.
+    for _ in 0..10 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(server.gate().holding() <= 2, "more than -j 2 in flight");
+    }
+    server.gate().release_all();
+
+    let (status, stdout, stderr) = run.await.unwrap();
+    assert!(status.success(), "stdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("4 done, 0 failed"), "{stdout}");
+    assert_eq!(files_in(dir.path()).len(), 4);
+}
+
+/// Killed mid-batch, a rerun finishes each file from its `.part`.
+#[tokio::test]
+async fn batch_rerun_resumes_each_item() {
+    const HELD_CHUNKS: usize = 4;
+    let server = common::spawn_with(FixtureConfig {
+        slow_hold_after: Some(HELD_CHUNKS),
+        ..FixtureConfig::default()
+    })
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let held = (HELD_CHUNKS * common::STREAM_CHUNK) as u64;
+    let url = server.url("/slow");
+    let part = state::part_path(&dir.path().join("slow"));
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .args(["-i", "-"])
+        .current_dir(dir.path())
+        .stdin(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("spawn rdm");
+    {
+        use tokio::io::AsyncWriteExt;
+        let mut pipe = child.stdin.take().unwrap();
+        pipe.write_all(format!("{url}\n").as_bytes()).await.unwrap();
+    }
+    assert!(
+        wait_until(Duration::from_secs(15), || std::fs::metadata(&part)
+            .is_ok_and(|m| m.len() == held))
+        .await,
+        "`.part` never reached the held size to kill at"
+    );
+    child.kill().await.unwrap();
+    let _ = child.wait().await;
+    server.gate().release_all();
+
+    let (status, stdout, stderr) =
+        run_rdm(dir.path(), &["-i", "-"], Some(&format!("{url}\n"))).await;
+    assert!(status.success(), "stdout: {stdout}\nstderr: {stderr}");
+    assert_eq!(
+        std::fs::read(dir.path().join("slow")).unwrap(),
+        common::payload()
+    );
+    assert_eq!(files_in(dir.path()), ["slow"]);
+}

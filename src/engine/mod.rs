@@ -43,7 +43,8 @@ mod tally;
 mod wording;
 
 pub use batch::{
-    parse_list, ListError, ListLink, ParsedList, SkipReason, SkippedLine, MAX_LIST_LINKS,
+    parse_list, run_limited, ListError, ListLink, ParsedList, SkipReason, SkippedLine,
+    TargetClaims, MAX_LIST_LINKS,
 };
 pub use control::{Control, Flow};
 pub use download_log::{LogLevel, LogLine, LOG_LINES};
