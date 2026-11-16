@@ -39,7 +39,15 @@ describe("archive and tags", () => {
     await api.addTags([3], ["work"]);
     await api.removeTags([3], ["work"]);
     await api.addDownload("http://x/a", null, null, null, ["iso"]);
-    await api.addBatch(["http://x/a", "http://x/b"], "/d", "500K", ["iso"], "Course files", true, "2M");
+    await api.addBatch(
+      ["http://x/a", "http://x/b"],
+      "/d",
+      "500K",
+      ["iso"],
+      "Course files",
+      true,
+      "2M",
+    );
     await api.retryBatch(7);
     await api.revealBatch(7);
     expect(invoke.mock.calls).toEqual([
