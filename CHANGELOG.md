@@ -7,6 +7,8 @@ desktop app share one version.
 
 ## Unreleased
 
+## 0.5.0 - 2026-11-16
+
 ### Added
 
 - `rdm -i urls.txt` (CLI) downloads every link in a file, `-i -` reads them
@@ -22,6 +24,12 @@ desktop app share one version.
 - A download waiting in the queue now shows its size and file name before it
   starts, when the server provides them. Adding never waits for this, and a
   server that refuses leaves the size blank as before.
+- Named batches in the desktop app: give two or more links a **Batch name** in the Add dialog and they
+  share a folder, a group row in the list with overall progress, a **Retry failed** button, a
+  Batches section in the sidebar and a Group batches toggle. The dialog lists skipped links with
+  the reason, and a second batch with the same name gets its own folder (`Course files (1)`).
+- A batch speed limit in the Add dialog caps all of a batch's files together, next to the existing
+  per-file limit. It is kept when you retry failed files or restart rdm.
 
 ## 0.4.0 - 2026-11-15
 
