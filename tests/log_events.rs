@@ -245,7 +245,7 @@ async fn ramping_says_when_a_slowdown_sheds_a_lane() {
         control.cancel();
         before
     };
-    let (result, before) = tokio::join!(download(&req, &control, |_| {}), drive);
+    let (result, before) = tokio::join!(trace.watching(download(&req, &control, |_| {})), drive);
 
     assert!(matches!(result, Err(Error::Cancelled)), "got {result:?}");
     let concise = lines.concise();
@@ -302,7 +302,7 @@ async fn a_stuck_bottom_lane_does_not_hold_up_a_shed() {
         server.gate().release_all();
     };
     let control = Control::new();
-    let (result, ()) = tokio::join!(download(&req, &control, |_| {}), release);
+    let (result, ()) = tokio::join!(trace.watching(download(&req, &control, |_| {})), release);
     result.unwrap();
 
     let concise = lines.concise();
