@@ -103,6 +103,10 @@ instruction sheet for any agent (and human) working in this repo.
   milestone tickets; for status or plans, link `roadmap.md`.** Why:
   milestone numbers mean nothing to a newcomer and go stale as each one
   ships.
+- **Tickets, `docs/`, the README and code comments never reference a
+  gitignored path (`.ai-cache/`, `.context/`…).** Why: those files exist in
+  one checkout only, so the pointer is dead for everyone else. Keep mock-ups
+  and working notes there, and write what matters into the ticket.
 
 ## Definition of Done (every change & milestone)
 Standing gates — established in M0, apply to all work, and deliberately NOT
