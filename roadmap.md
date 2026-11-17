@@ -39,6 +39,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M10 | Smarter connections | done | [[milestone-10-smarter-connections]] |
 | M11 | Missing and moved files | done | [[milestone-11-missing-and-moved-files]] |
 | M12 | Batch downloads | done | [[milestone-12-batch-downloads]] |
+| M13 | Scheduling & automation | todo | [[milestone-13-scheduling]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 
