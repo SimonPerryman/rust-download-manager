@@ -86,9 +86,8 @@ is a time-aware layer on top, not a new scheduler. Roadmap index:
   - Open-the-folder on finish is not in this milestone.
   - Both are global. A command or shutdown that belongs to one batch or
     schedule is a later extension (backlog).
-- **One Schedules view** (sidebar, under Automation), mock-up kept locally
-  in `.ai-cache/mockup-schedules.html`. Top to bottom, in the order a user
-  acts on it:
+- **One Schedules view** (sidebar, under Automation). Top to bottom, in the
+  order a user acts on it:
   - a one-line status ("Downloading. The window closes at 08:00, then a
     5 MB/s cap applies"), with the missed notice above it when there is
     one;
