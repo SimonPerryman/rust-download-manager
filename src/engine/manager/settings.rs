@@ -59,7 +59,6 @@ impl Manager {
         let st = &mut *lock(&self.inner.state);
         change(&mut st.settings);
         st.settings = std::mem::take(&mut st.settings).clamped();
-        self.inner.global.set_rate(st.settings.global_limit);
         self.inner.apply_window(st);
         self.inner.schedule(st);
         self.inner.persist(st);

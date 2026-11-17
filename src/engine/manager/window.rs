@@ -16,7 +16,8 @@ use crate::engine::store::Status;
 /// a second's lag is invisible; it also notices the clock being changed.
 const POLL: Duration = Duration::from_secs(1);
 
-/// Whether the queue is open, and when that next changes.
+/// Whether the queue is open and which scheduled speed limit applies, and
+/// when each next changes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct QueueState {
     /// Downloads may start. True when no enabled queue window exists.
@@ -24,13 +25,24 @@ pub struct QueueState {
     /// The local time the queue next opens (if closed) or closes (if open);
     /// `None` if it never will.
     pub until: Option<LocalDateTime>,
+    /// The speed limit in bytes/s a schedule entry imposes now, replacing the
+    /// global one; `None` when the global limit applies.
+    pub limit: Option<u64>,
+    /// The local time the scheduled limit next changes; `None` if it never will.
+    pub limit_until: Option<LocalDateTime>,
+    /// The scheduled limit from `limit_until` on (`None`: the global one).
+    pub limit_then: Option<u64>,
 }
 
 impl QueueState {
     pub(super) fn at(schedule: &Schedule, now: LocalDateTime) -> Self {
+        let limit_until = schedule.next_speed_change(now);
         Self {
             open: schedule.queue_open(now),
             until: schedule.next_queue_change(now),
+            limit: schedule.speed_limit(now),
+            limit_until,
+            limit_then: limit_until.and_then(|t| schedule.speed_limit(t)),
         }
     }
 }
@@ -47,6 +59,12 @@ impl Inner {
     /// any change to the rules and on every clock tick.
     pub(super) fn apply_window(self: &Arc<Self>, st: &mut ManagerState) {
         let state = QueueState::at(&st.settings.schedule, self.clock.now());
+        // The limiter is shared by running downloads, so this takes effect
+        // mid-stream. Only touched on a change: set_rate settles the bucket.
+        let rate = state.limit.or(st.settings.global_limit);
+        if self.global.rate() != rate {
+            self.global.set_rate(rate);
+        }
         let was_open = std::mem::replace(&mut st.queue_open, state.open);
         if was_open && !state.open {
             self.pause_for_window(st);
@@ -100,6 +118,12 @@ impl Inner {
 }
 
 impl Manager {
+    /// The aggregate cap in bytes/s in force now: a speed entry's limit
+    /// inside its window, else the global limit; `None` is unlimited.
+    pub fn effective_global_limit(&self) -> Option<u64> {
+        self.inner.global.rate()
+    }
+
     /// Whether the queue is open and when that next changes, as of now.
     pub fn queue_state(&self) -> QueueState {
         QueueState::at(

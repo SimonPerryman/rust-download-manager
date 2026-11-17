@@ -204,6 +204,26 @@ impl Schedule {
         self.enabled_windows().filter_map(|w| w.next_edge(at)).min()
     }
 
+    /// The next moment after `at` the speed limit in force changes (to
+    /// another cap, or back to the global one); `None` if it never will.
+    pub fn next_speed_change(&self, at: LocalDateTime) -> Option<LocalDateTime> {
+        let limit = self.speed_limit(at);
+        let mut from = at.effective();
+        // As for the queue: overlapping entries can open without changing the cap.
+        for _ in 0..(self.speed_entries.len() * 16 + 16) {
+            from = self
+                .speed_entries
+                .iter()
+                .filter(|r| r.enabled)
+                .filter_map(|r| r.window.next_edge(from))
+                .min()?;
+            if self.speed_limit(from) != limit {
+                return Some(from);
+            }
+        }
+        None
+    }
+
     /// The next moment after `at` the queue flips between open and closed
     /// (what a status line says it is open or paused "until"); `None` if it
     /// never will, as with no queue window or one that is always open.
@@ -269,6 +289,42 @@ mod tests {
     }
 
     // 2026-03-09 is a Monday, so 10 is Tue, 11 Wed, 12 Thu.
+
+    #[test]
+    fn speed_entries_first_enabled_wins_and_changes_are_found() {
+        let weekdays = Days::new([Weekday::Mon, Weekday::Tue]).unwrap();
+        let mut off = speed(window("07:00", "19:00", Days::DAILY), 1);
+        off.enabled = false;
+        let s = Schedule {
+            speed_entries: vec![
+                off,
+                speed(window("08:00", "18:00", weekdays), 5),
+                speed(window("12:00", "20:00", Days::DAILY), 9),
+            ],
+            ..Schedule::default()
+        };
+        assert_eq!(s.speed_limit(at(2026, 3, 9, 7, 59)), None);
+        assert_eq!(s.speed_limit(at(2026, 3, 9, 8, 0)), Some(5));
+        assert_eq!(
+            s.speed_limit(at(2026, 3, 9, 18, 0)),
+            Some(9),
+            "falls to the next"
+        );
+        assert_eq!(s.speed_limit(at(2026, 3, 11, 13, 0)), Some(9));
+        // The 12:00 edge of the second entry changes nothing while the first holds.
+        assert_eq!(
+            s.next_speed_change(at(2026, 3, 9, 8, 0)),
+            Some(at(2026, 3, 9, 18, 0))
+        );
+        assert_eq!(
+            s.next_speed_change(at(2026, 3, 9, 20, 0)),
+            Some(at(2026, 3, 10, 8, 0))
+        );
+        assert_eq!(
+            Schedule::default().next_speed_change(at(2026, 3, 9, 8, 0)),
+            None
+        );
+    }
 
     #[test]
     fn weekday_and_date_arithmetic() {

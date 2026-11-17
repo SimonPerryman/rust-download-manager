@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use rdm::engine::schedule::{
-    Days, FakeClock, LocalDateTime, QueueWindow, Schedule, TimeOfDay, Weekday, Window,
+    Days, FakeClock, LocalDateTime, QueueWindow, Schedule, SpeedEntry, TimeOfDay, Weekday, Window,
 };
 use rdm::{DownloadSnapshot, JsonStore, Manager, Status, Store};
 
@@ -328,5 +328,106 @@ async fn a_boundary_in_the_repeated_hour_does_not_flap() {
     assert!(!mgr.queue_state().open, "02:00 after the repeat");
     clock.set(at(2026, 11, 1, 22, 0));
     mgr.check_schedule();
+    wait_status(&mgr, id, Status::Completed).await;
+}
+
+const MB: u64 = 1024 * 1024;
+
+fn weekday_cap(limit: u64) -> Schedule {
+    Schedule {
+        speed_entries: vec![SpeedEntry {
+            name: None,
+            enabled: true,
+            window: Window::new(tod("08:00"), tod("18:00"), Days::WEEKDAYS).unwrap(),
+            limit: std::num::NonZeroU64::new(limit).unwrap(),
+        }],
+        ..Schedule::default()
+    }
+}
+
+#[tokio::test]
+async fn a_speed_entry_replaces_the_global_limit_inside_its_window_mid_download() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(on(0, 7, 0)));
+    let mgr = manager(dir.path(), &clock);
+    mgr.set_global_limit(Some(2 * MB));
+    mgr.set_schedule(weekday_cap(5 * MB));
+    assert_eq!(
+        mgr.effective_global_limit(),
+        Some(2 * MB),
+        "outside: global"
+    );
+    assert_eq!(mgr.queue_state().limit_until, Some(on(0, 8, 0)));
+    assert_eq!(mgr.queue_state().limit_then, Some(5 * MB));
+
+    let gated = server.stats("/gated");
+    let id = mgr.add(server.url("/gated"), dir.path(), None, None);
+    assert_eq!(status(&mgr, id), Status::Downloading);
+    let deadline = Instant::now() + T;
+    while gated.requests() == 0 {
+        assert!(Instant::now() < deadline, "the download never connected");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    clock.set(on(0, 8, 0));
+    mgr.check_schedule();
+    assert_eq!(
+        status(&mgr, id),
+        Status::Downloading,
+        "still the same download"
+    );
+    assert_eq!(
+        mgr.effective_global_limit(),
+        Some(5 * MB),
+        "inside: the entry"
+    );
+    assert_eq!(mgr.queue_state().limit, Some(5 * MB));
+    assert_eq!(
+        mgr.settings().global_limit,
+        Some(2 * MB),
+        "the setting is untouched"
+    );
+
+    clock.set(on(0, 18, 0));
+    mgr.check_schedule();
+    assert_eq!(mgr.effective_global_limit(), Some(2 * MB), "outside again");
+    assert_eq!(gated.requests(), 1, "never restarted");
+
+    // Tuesday; an edit to the global limit inside the
+    // window must not override the entry.
+    clock.set(on(1, 9, 0));
+    mgr.check_schedule();
+    assert_eq!(mgr.effective_global_limit(), Some(5 * MB));
+    mgr.set_global_limit(Some(MB));
+    assert_eq!(mgr.effective_global_limit(), Some(5 * MB));
+    clock.set(on(1, 18, 0));
+    mgr.check_schedule();
+    assert_eq!(mgr.effective_global_limit(), Some(MB));
+    server.gate().release_all();
+    wait_status(&mgr, id, Status::Completed).await;
+}
+
+#[tokio::test]
+async fn a_speed_entry_applies_at_launch_and_a_download_limit_still_binds() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(on(0, 9, 0)));
+    manager(dir.path(), &clock).set_schedule(weekday_cap(5 * MB));
+
+    let mgr = manager(dir.path(), &clock);
+    assert_eq!(mgr.effective_global_limit(), Some(5 * MB));
+    let id = mgr.add(server.url("/gated"), dir.path(), None, None);
+    mgr.set_limit(id, Some(MB));
+    clock.set(on(0, 19, 0));
+    mgr.check_schedule();
+    assert_eq!(mgr.effective_global_limit(), None, "unlimited globally");
+    let snap = mgr.snapshot().into_iter().find(|s| s.id == id).unwrap();
+    assert_eq!(
+        snap.limit,
+        Some(MB),
+        "the schedule never touches a download's own limit"
+    );
+    server.gate().release_all();
     wait_status(&mgr, id, Status::Completed).await;
 }
