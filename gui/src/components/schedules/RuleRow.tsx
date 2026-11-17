@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { ruleName, ruleSummary } from "../../lib/schedule";
-import type { QueueWindow } from "../../lib/types";
+import { ruleName, ruleSummary, type Rule } from "../../lib/schedule";
 import { Switch } from "./Switch";
 
 type Props = {
-  rule: QueueWindow;
+  rule: Rule;
   onToggle: (on: boolean) => void;
   onEdit: () => void;
   onDuplicate: () => void;

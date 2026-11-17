@@ -2,12 +2,14 @@ import { useState } from "react";
 import {
   draftOf,
   NEW_WINDOW,
-  ruleOf,
+  ruleFromDraft,
+  rulesOf,
   statusLine,
   withCopy,
   withoutRule,
   withRule,
-  type WindowDraft,
+  type RuleDraft,
+  type RuleRef,
 } from "../../lib/schedule";
 import type { QueueState, Schedule } from "../../lib/types";
 import { RuleRow } from "./RuleRow";
@@ -25,16 +27,18 @@ type Props = {
 // The Schedules view: one line on where the queue stands, then the rules. Each change saves
 // at once; the engine applies it and says what the queue does now.
 export function SchedulesView({ schedule, queue, save, onError }: Props) {
-  // A form open for a new rule (null index) or for the rule at that index.
-  const [form, setForm] = useState<{ index: number | null } | null>(null);
+  // A form open for a new rule (null) or for the rule at that place.
+  const [form, setForm] = useState<{ at: RuleRef | null } | null>(null);
   if (!schedule) return <section className="min-h-0 flex-1 px-6 py-5" />;
 
   const change = (next: Schedule) => save(next).catch(onError);
-  const editing = form?.index != null ? schedule.queue_windows[form.index] : undefined;
+  const rules = rulesOf(schedule);
+  const at = form?.at ?? null;
+  const editing = at && rules.find((r) => r.kind === at.kind && r.index === at.index);
 
-  const submit = async (draft: WindowDraft) => {
-    const index = form?.index ?? undefined;
-    await save(withRule(schedule, ruleOf(draft, editing?.enabled ?? true), index));
+  const submit = async (draft: RuleDraft) => {
+    const rule = ruleFromDraft(draft, editing?.rule.enabled ?? true);
+    await save(withRule(schedule, rule, editing ? editing.index : undefined));
     setForm(null);
   };
 
@@ -49,7 +53,7 @@ export function SchedulesView({ schedule, queue, save, onError }: Props) {
         <button
           type="button"
           data-testid="new-schedule"
-          onClick={() => setForm({ index: null })}
+          onClick={() => setForm({ at: null })}
           className="btn btn-primary ml-auto"
         >
           New schedule
@@ -60,7 +64,7 @@ export function SchedulesView({ schedule, queue, save, onError }: Props) {
       </p>
 
       <h2 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-g400">Rules</h2>
-      {schedule.queue_windows.length === 0 ? (
+      {rules.length === 0 ? (
         <p data-testid="no-rules" className="text-g600">
           No rules yet.
         </p>
@@ -69,14 +73,14 @@ export function SchedulesView({ schedule, queue, save, onError }: Props) {
           data-testid="rules"
           className="rounded-lg bg-raised shadow-[inset_0_0_0_1px_var(--line)]"
         >
-          {schedule.queue_windows.map((rule, i) => (
+          {rules.map((r) => (
             <RuleRow
-              key={i}
-              rule={rule}
-              onToggle={(on) => change(withRule(schedule, { ...rule, enabled: on }, i))}
-              onEdit={() => setForm({ index: i })}
-              onDuplicate={() => change(withCopy(schedule, i))}
-              onDelete={() => change(withoutRule(schedule, i))}
+              key={`${r.kind}${r.index}`}
+              rule={r.rule}
+              onToggle={(on) => change(withRule(schedule, { ...r.rule, enabled: on }, r.index))}
+              onEdit={() => setForm({ at: r })}
+              onDuplicate={() => change(withCopy(schedule, r))}
+              onDelete={() => change(withoutRule(schedule, r))}
             />
           ))}
         </ul>
@@ -85,9 +89,9 @@ export function SchedulesView({ schedule, queue, save, onError }: Props) {
       {form && (
         <ScheduleForm
           // A new form each time, so one rule's fields never leak into the next.
-          key={form.index ?? "new"}
-          initial={editing ? draftOf(editing) : NEW_WINDOW}
-          editing={editing !== undefined}
+          key={at ? `${at.kind}${at.index}` : "new"}
+          initial={editing ? draftOf(editing.rule) : NEW_WINDOW}
+          editing={!!editing}
           onSubmit={submit}
           onClose={() => setForm(null)}
         />
