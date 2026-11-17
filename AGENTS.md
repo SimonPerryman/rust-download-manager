@@ -95,6 +95,10 @@ instruction sheet for any agent (and human) working in this repo.
   `docs/`. When the main view changes visibly, regenerate the screenshots
   (`pnpm screenshots` in `gui/e2e`).** Why: the README is the first
   impression and goes stale quietly.
+- **A new or changed CLI flag or exit code updates its `--help` text (the
+  doc comment on the flag; the `after_help` examples if it's a common use)
+  as well as `docs/cli.md`.** Why: agents and scripts read `rdm --help`
+  first, and it's the one place that can't drift from the binary.
 - **The README and `docs/` never name milestones (`M5`, `M6`…) or link
   milestone tickets; for status or plans, link `roadmap.md`.** Why:
   milestone numbers mean nothing to a newcomer and go stale as each one

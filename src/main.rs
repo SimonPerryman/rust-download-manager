@@ -38,8 +38,38 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const ISSUES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/issues");
 
 /// A download manager in Rust.
+///
+/// Downloads resume: Ctrl-C (or a crash) keeps the partial file as
+/// `<file>.part` with a `<file>.rdm` sidecar, and running the same command
+/// again continues where it stopped. Large files on servers that support
+/// range requests use several connections.
+///
+/// Exit codes: 0 done, 1 a download failed, 2 invalid arguments, 101 a bug
+/// in rdm, 130 paused by Ctrl-C.
 #[derive(Parser, Debug)]
-#[command(name = "rdm", version, about)]
+#[command(
+    name = "rdm",
+    version,
+    after_help = "\
+Examples:
+  # download to the current directory (run it again after Ctrl-C to resume)
+  rdm https://example.com/big.iso
+
+  # choose the output file
+  rdm -o out.zip https://example.com/a.zip
+
+  # 8 connections, capped at 2 MiB/s
+  rdm -c 8 --limit-rate 2M https://example.com/a.zip
+
+  # verify the finished file
+  rdm --checksum sha256:<hex> https://example.com/a.zip
+
+  # batch from a file, 5 at a time
+  rdm -i urls.txt -j 5
+
+  # a numbered range of links
+  rdm 'https://example.com/lesson[01-12].mp4'"
+)]
 struct Cli {
     /// URL(s) to download. Several links download as a batch.
     #[arg(value_name = "URL", required_unless_present = "input")]
