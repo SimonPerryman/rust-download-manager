@@ -1,6 +1,7 @@
+import { pausedNote } from "../../lib/schedule";
 import { formatSpeed, statusCountsLine } from "../../lib/format";
 import type { SettingsField } from "../../lib/settings";
-import type { Settings } from "../../lib/types";
+import type { QueueState, Settings } from "../../lib/types";
 import { ArrowDown } from "../icons/ArrowDown";
 import { GlobalLimit } from "./GlobalLimit";
 
@@ -9,13 +10,15 @@ type Props = {
   speed: number;
   downloading: number;
   waiting: number;
+  /** Whether the queue window is open; a closed one is noted here once, not on each row. */
+  queue: QueueState | null;
   settings: Settings | null;
   applySettings: (applied: Settings, fields: SettingsField[]) => void;
 };
 
 // The window's heartbeat along the bottom: total speed, what's running and
 // waiting, and the global limit.
-export function StatusBar({ speed, downloading, waiting, settings, applySettings }: Props) {
+export function StatusBar({ speed, downloading, waiting, queue, settings, applySettings }: Props) {
   return (
     <footer
       data-testid="status-bar"
@@ -32,6 +35,11 @@ export function StatusBar({ speed, downloading, waiting, settings, applySettings
       <span data-testid="status-counts" className="sb-counts">
         {statusCountsLine(downloading, waiting)}
       </span>
+      {pausedNote(queue) && (
+        <span data-testid="queue-paused" className="font-medium text-warn-ink">
+          {pausedNote(queue)}
+        </span>
+      )}
       <span className="flex-1" />
       <GlobalLimit settings={settings} apply={applySettings} />
     </footer>

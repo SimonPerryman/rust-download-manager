@@ -174,19 +174,30 @@ impl Date {
     }
 }
 
-/// A wall-clock moment in the machine's local zone, to the minute. It carries
-/// no offset: across a clock change the wall clock skips or repeats an hour,
-/// and rules follow the wall clock.
+/// A wall-clock moment in the machine's local zone, to the minute. Rules
+/// follow the wall clock, so across a clock change a window is an hour shorter
+/// or longer. When the clock falls back, the hour repeats; a moment in the
+/// second pass carries where the repeat ends (see
+/// [`repeating_until`](Self::repeating_until)), so a rule boundary inside it
+/// isn't crossed a second time. The mark lives only in values a [`Clock`]
+/// reads; text and rules never carry it.
+///
+/// [`Clock`]: super::Clock
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LocalDateTime {
     date: Date,
     time: TimeOfDay,
+    repeat_end: Option<(Date, TimeOfDay)>,
 }
 
 impl LocalDateTime {
     /// Combine a date and a time of day.
     pub fn new(date: Date, time: TimeOfDay) -> Self {
-        Self { date, time }
+        Self {
+            date,
+            time,
+            repeat_end: None,
+        }
     }
 
     /// A literal moment, `None` if it isn't a real one.
@@ -212,12 +223,45 @@ impl LocalDateTime {
         self.date.weekday()
     }
 
+    /// Wall minutes from `earlier` to this moment (negative if before it).
+    pub(crate) fn minutes_since(self, earlier: LocalDateTime) -> i64 {
+        (self.date.days_since_epoch() - earlier.date.days_since_epoch()) * MINUTES_PER_DAY
+            + i64::from(self.time.0)
+            - i64::from(earlier.time.0)
+    }
+
     /// The moment `minutes` later on the wall clock (earlier if negative).
     pub fn add_minutes(self, minutes: i64) -> Self {
         let total = i64::from(self.time.0) + minutes;
         let date = self.date.add_days(total.div_euclid(MINUTES_PER_DAY));
         let time = TimeOfDay(total.rem_euclid(MINUTES_PER_DAY) as u16);
-        Self { date, time }
+        Self::new(date, time)
+    }
+
+    /// This moment marked as the second pass through a repeated stretch of
+    /// the wall clock that ends at `end` (the wall time the clock was set
+    /// back from).
+    pub fn repeating_until(self, end: LocalDateTime) -> Self {
+        Self {
+            repeat_end: Some((end.date, end.time)),
+            ..self
+        }
+    }
+
+    /// Where the repeated stretch this moment is in ends, if it is in its
+    /// second pass.
+    pub fn repeat_end(self) -> Option<LocalDateTime> {
+        self.repeat_end.map(|(date, time)| Self::new(date, time))
+    }
+
+    /// The wall moment rules are judged at. Every boundary inside a repeated
+    /// stretch was met on the first pass, so the second pass stands at the
+    /// last minute of the stretch: it changes nothing a second time.
+    pub fn effective(self) -> Self {
+        match self.repeat_end() {
+            Some(end) => end.add_minutes(-1),
+            None => self,
+        }
     }
 }
 

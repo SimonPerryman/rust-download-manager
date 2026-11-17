@@ -16,6 +16,8 @@ import type {
   LocateOutcome,
   LogLine,
   ParsedList,
+  QueueState,
+  Schedule,
   Settings,
   Status,
   UpdateInfo,
@@ -221,3 +223,16 @@ export const saveTextFile = (defaultName: string, text: string) =>
 export const onDownloadsChanged = (
   cb: (snapshots: DownloadSnapshot[]) => void,
 ): Promise<UnlistenFn> => listen<DownloadSnapshot[]>("downloads-changed", (e) => cb(e.payload));
+
+/** The saved schedule rules. */
+export const getSchedule = () => invoke<Schedule>("get_schedule");
+
+/** Replace the whole rule set and save it. Rejects with why a rule was refused. */
+export const setSchedule = (schedule: Schedule) => invoke<void>("set_schedule", { schedule });
+
+/** Whether the queue window is open now, and when that next changes. */
+export const getQueueState = () => invoke<QueueState>("get_queue_state");
+
+/** Subscribe to the queue opening or closing, or its rules changing. */
+export const onQueueStateChanged = (cb: (state: QueueState) => void): Promise<UnlistenFn> =>
+  listen<QueueState>("queue-state-changed", (e) => cb(e.payload));

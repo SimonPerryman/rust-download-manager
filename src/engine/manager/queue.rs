@@ -14,7 +14,7 @@ impl Inner {
     /// Start queued downloads, in display order, while fewer than
     /// `max_concurrent` are running. Called with the state lock held.
     pub(super) fn schedule(self: &Arc<Self>, st: &mut ManagerState) {
-        if self.closed.load(Ordering::SeqCst) {
+        if self.closed.load(Ordering::SeqCst) || !self.queue_open(st) {
             return;
         }
         let cap = st.settings.max_concurrent;

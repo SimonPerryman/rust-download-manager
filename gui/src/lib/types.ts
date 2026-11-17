@@ -238,3 +238,35 @@ export interface ParsedList {
   patterns: ListPattern[];
   skipped: SkippedLine[];
 }
+
+/** A day of the week as the engine saves it. */
+export type Weekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+/** A recurring span of the day on chosen days; it may cross midnight. */
+export interface RuleWindow {
+  /** "HH:MM". */
+  start: string;
+  end: string;
+  days: Weekday[];
+}
+
+/** Downloads start only inside the window (`get_schedule`). */
+export interface QueueWindow {
+  name?: string;
+  enabled: boolean;
+  window: RuleWindow;
+  /** Let running downloads finish when the window closes, rather than pausing them. */
+  finish_running: boolean;
+}
+
+/** The saved rule set. Speed entries are passed through untouched. */
+export interface Schedule {
+  queue_windows: QueueWindow[];
+  speed_entries: unknown[];
+}
+
+/** Whether the queue is open, and when that next flips (local "YYYY-MM-DDTHH:MM"). */
+export interface QueueState {
+  open: boolean;
+  until: string | null;
+}

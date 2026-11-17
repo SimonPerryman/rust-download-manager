@@ -8,9 +8,11 @@ use std::time::{Instant, SystemTime};
 use tokio::sync::watch;
 
 use super::files::owns_partial;
+use super::window::QueueState;
 use super::{Entry, Inner, Manager, ManagerState};
 use crate::engine::download_log::{prune, DownloadLogs, LOG_MAX_AGE, LOG_TOTAL_CAP};
 use crate::engine::lock::lock;
+use crate::engine::schedule::{Clock, SystemClock};
 use crate::engine::store::{ChecksumState, Status, Store, StoreData, SCHEMA_VERSION};
 use crate::engine::{single_segment, state, tags, DownloadState, RateLimiter};
 
@@ -34,6 +36,16 @@ impl Manager {
     pub fn load(
         store: Box<dyn Store>,
         handle: tokio::runtime::Handle,
+    ) -> crate::engine::Result<Self> {
+        Self::load_with_clock(store, handle, Arc::new(SystemClock::new()))
+    }
+
+    /// [`load`](Self::load) with the clock the schedule rules are judged
+    /// against, so a test can move time by hand.
+    pub fn load_with_clock(
+        store: Box<dyn Store>,
+        handle: tokio::runtime::Handle,
+        clock: Arc<dyn Clock>,
     ) -> crate::engine::Result<Self> {
         let data = store.load()?;
         let mut entries = HashMap::new();
@@ -115,13 +127,16 @@ impl Manager {
         let settings = data.settings.clamped();
         let global = Arc::new(RateLimiter::new(settings.global_limit));
 
+        let queue = QueueState::at(&settings.schedule, clock.now());
         let st = ManagerState {
             next_id,
             order,
             entries,
+            queue_open: queue.open,
             settings,
         };
         let (tx, _rx) = watch::channel(Vec::new());
+        let (queue_tx, _rx) = watch::channel(queue);
         let inner = Arc::new(Inner {
             tx,
             store,
@@ -139,8 +154,11 @@ impl Manager {
             probes: Arc::new(tokio::sync::Semaphore::new(
                 crate::engine::PROBE_CONCURRENCY,
             )),
+            clock,
+            queue_tx,
             state: Mutex::new(st),
         });
+        inner.spawn_window_clock();
         // Prime the channel with the restored list.
         {
             let st = lock(&inner.state);

@@ -506,6 +506,8 @@ const COUNTED_ROUTES: &[&str] = &[
     "/norange",
     "/liar",
     "/gated",
+    "/slow",
+    "/crawl",
     "/stall",
     "/hang",
 ];
@@ -815,11 +817,13 @@ async fn ranged_handler(headers: HeaderMap) -> Response {
 /// chunks with a short delay — a window to kill or pause mid-stream. Range and
 /// If-Range are honoured so a resume finishes quickly.
 async fn slow_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    state.stats("/slow").record(&headers);
     slow_response(&state, &headers, None, payload())
 }
 
 /// `/crawl`: `/slow` over a [`CRAWL_LEN`] payload.
 async fn crawl_handler(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    state.stats("/crawl").record(&headers);
     let body = (0..CRAWL_LEN).map(|i| (i % 251) as u8).collect();
     slow_response(&state, &headers, None, body)
 }

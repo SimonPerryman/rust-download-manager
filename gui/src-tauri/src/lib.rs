@@ -258,6 +258,30 @@ fn set_settings(
     Ok(state.manager.settings().into())
 }
 
+/// The saved schedule rules.
+#[tauri::command]
+fn get_schedule(state: State<'_, AppState>) -> rdm::engine::schedule::Schedule {
+    state.manager.settings().schedule
+}
+
+/// Replace the schedule rules and apply them now. A rule the engine refuses
+/// (no days, a window with no length) never gets here: it fails to parse as
+/// the argument, with its reason.
+#[tauri::command]
+fn set_schedule(
+    state: State<'_, AppState>,
+    schedule: rdm::engine::schedule::Schedule,
+) -> Result<(), String> {
+    state.manager.set_schedule(schedule);
+    Ok(())
+}
+
+/// Whether the queue window is open and when that next changes.
+#[tauri::command]
+fn get_queue_state(state: State<'_, AppState>) -> rdm::engine::QueueState {
+    state.manager.queue_state()
+}
+
 /// Cap one download's speed; `limit` is a rate string (blank or absent =
 /// unlimited). Applies live and persists. Returns the limit as the engine
 /// stored it.
@@ -916,6 +940,16 @@ fn init_manager(
         }
     });
 
+    // Forward each open/closed change of the queue window.
+    let queue_app = find_app.clone();
+    let mut queue = manager.subscribe_queue();
+    tauri::async_runtime::spawn(async move {
+        while queue.changed().await.is_ok() {
+            let state = queue.borrow().clone();
+            let _ = queue_app.emit("queue-state-changed", state);
+        }
+    });
+
     // Forward Find file progress, results and completion as `find-event`.
     let app = find_app;
     let mut find = manager.subscribe_find();
@@ -1157,6 +1191,9 @@ pub fn run() {
             reveal_batch,
             get_settings,
             set_settings,
+            get_schedule,
+            set_schedule,
+            get_queue_state,
             set_limit,
             pause,
             resume,
