@@ -152,6 +152,21 @@ network shares) leaves the file unmarked, and the download still succeeds.
   download's file, makes it `<name> (1)`, and files that clash inside it
   become `name (1).ext`. Retry failed for a batch restarts only that batch's
   failed downloads. Without a name the links are plain downloads.
+- **Queue window (GUI):** a rule gives the queue hours of the day and days of
+  the week, in the machine's local time; it may cross midnight (22:00 to
+  06:00). Outside every enabled window nothing starts; downloads wait as
+  queued, and the status bar says so once. When the window closes, running
+  downloads pause with their `.part` and sidecar kept (not an error) and
+  carry on from there when it opens, with no new download. Two exceptions:
+  a download whose server can't resume is left to finish, since pausing would
+  throw its bytes away, and a window set to *Finish downloads in progress*
+  stops only new starts. A download you paused yourself is never resumed by a
+  window. The window follows the wall clock, so on a night the clock changes
+  it is an hour shorter or longer; a close inside the hour that repeats when
+  the clock falls back is crossed once, not again. Rules are checked every
+  second, apply at launch, and are saved with the settings. Rdm only
+  schedules while it is running. See the [roadmap](../roadmap.md) for what
+  comes next.
 - **Speed limits:** `--limit-rate` on the CLI; in the GUI, a global limit and
   an optional per-download limit, both changeable while a download runs. A
   download's limit is shared across all of its connections.

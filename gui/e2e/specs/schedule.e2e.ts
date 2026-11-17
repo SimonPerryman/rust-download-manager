@@ -145,7 +145,7 @@ describe("rdm GUI queue window", () => {
 
   it("deletes a rule from its menu", async () => {
     await $(`${RULE}:nth-child(2) [data-testid="rule-menu-button"]`).click();
-    await $('[data-testid="rule-menu"] button=Delete').click();
+    await $('[data-testid="rule-menu"]').$("button=Delete").click();
     await waitForRules(1);
     expect((await getSchedule()).queue_windows).toHaveLength(1);
     await waitForText(PAUSED, "Queue paused until");
