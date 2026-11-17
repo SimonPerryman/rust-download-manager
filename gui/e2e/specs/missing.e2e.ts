@@ -288,6 +288,9 @@ describe("rdm GUI missing files", () => {
     expect((await $(panel).$$('[role="radio"]')).length).toBe(2);
     // Pick by folder: the order of two folders at one level is the file system's, not fixed.
     const pick = $(panel).$('.//*[@role="radio"][contains(., "found-many-b")]');
+    // The window is short: the panel's lower cards sit under the status bar until scrolled to
+    // the middle, and WebView2 refuses a click that lands on the footer.
+    await browser.execute((el) => el.scrollIntoView({ block: "center" }), await pick);
     await pick.click();
     await expect(pick).toHaveAttribute("aria-checked", "true");
     expect((await engineRow(f.id))!.file_missing).toBe(true);
