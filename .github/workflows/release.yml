@@ -212,7 +212,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24.22.2
+          node-version: 26.13.0
       # Only the Tauri CLI is needed, at the lockfile's version; no install
       # scripts run next to the signing key.
       - name: Install the Tauri CLI
