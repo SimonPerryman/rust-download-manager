@@ -2,16 +2,15 @@
 //! test waits on what the ramp decided rather than on time passing: a loaded
 //! runner stretches and skews the windows, but each still says what it saw.
 
-use std::time::{Duration, Instant};
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::Layer;
 
 use super::{Captured, Lines};
-
-/// How long a wait goes without a single new ramp window before it fails:
-/// the download stopped measuring, so no window budget would ever run out.
-const SILENT: Duration = Duration::from_secs(30);
 
 /// One `ramp window` trace line: what the ramp measured and decided.
 #[derive(Debug, Clone)]
@@ -77,13 +76,20 @@ fn windows(log: &[String]) -> Vec<RampWindow> {
 }
 
 /// A running download's ramp windows, read as they're traced.
-pub struct RampTrace(Captured);
+///
+/// Waits are bounded by windows and by the download ending
+/// ([`RampTrace::watching`]), never by wall-clock time: a stalled runner then
+/// only slows a wait down, instead of failing it.
+pub struct RampTrace {
+    log: Captured,
+    ended: Arc<AtomicBool>,
+}
 
 impl RampTrace {
     /// Trace this thread's ramp windows until the guard drops.
     pub fn capture() -> (Self, tracing::subscriber::DefaultGuard) {
         let (log, guard) = super::capture_log("rdm=trace");
-        (Self(log), guard)
+        (Self::new(log), guard)
     }
 
     /// [`RampTrace::capture`], and the concise and detail lines into `lines`
@@ -100,16 +106,37 @@ impl RampTrace {
         let subscriber = tracing_subscriber::registry()
             .with(lines.clone())
             .with(trace);
-        (Self(log), tracing::subscriber::set_default(subscriber))
+        (Self::new(log), tracing::subscriber::set_default(subscriber))
+    }
+
+    fn new(log: Captured) -> Self {
+        Self {
+            log,
+            ended: Arc::default(),
+        }
+    }
+
+    /// Run the download under watch: once it returns, no more windows will
+    /// come, so a wait still pending fails at once instead of timing out.
+    pub async fn watching<T>(&self, download: impl Future<Output = T>) -> T {
+        let result = download.await;
+        self.ended.store(true, Ordering::SeqCst);
+        result
+    }
+
+    /// Whether the watched download has returned.
+    pub fn ended(&self) -> bool {
+        self.ended.load(Ordering::SeqCst)
     }
 
     /// Every window so far.
     pub fn windows(&self) -> Vec<RampWindow> {
-        windows(&self.0.lines())
+        windows(&self.log.lines())
     }
 
     /// Wait until `done` holds for the windows so far, and return how many
-    /// there were. Fails once `within` more windows pass without it.
+    /// there were. Fails once `within` more windows pass without it, or the
+    /// watched download ends.
     pub async fn until(
         &self,
         what: &str,
@@ -117,8 +144,10 @@ impl RampTrace {
         mut done: impl FnMut(&[RampWindow]) -> bool,
     ) -> usize {
         let start = self.windows().len();
-        let (mut seen, mut since) = (start, Instant::now());
         loop {
+            // Read before the windows, so the last ones a finished download
+            // traced are judged too.
+            let ended = self.ended();
             let windows = self.windows();
             if done(&windows) {
                 return windows.len();
@@ -127,13 +156,7 @@ impl RampTrace {
                 windows.len() < start + within,
                 "never {what} within {within} ramp windows"
             );
-            if windows.len() > seen {
-                (seen, since) = (windows.len(), Instant::now());
-            }
-            assert!(
-                since.elapsed() < SILENT,
-                "no ramp window for {SILENT:?}, and never {what}"
-            );
+            assert!(!ended, "the download ended, and never {what}");
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     }
