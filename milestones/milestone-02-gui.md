@@ -35,7 +35,7 @@ to test regardless.
 
 ## Tasks
 - [x] Toolkit decision recorded (with the agentic-testing trade-off noted) —
-      Tauri + React/shadcn/Tailwind; design approved in `.ai-cache/mockups/slick.html`.
+      Tauri + React/shadcn/Tailwind; the "slick" design was approved from a mock-up.
 - [x] Engine API reviewed/extended for GUI needs (observe + control downloads) —
       engine-side `Manager` + swappable `Store`/`JsonStore` (`src/engine/manager.rs`,
       `src/engine/store.rs`), observed via a `watch` channel of `DownloadSnapshot`s.

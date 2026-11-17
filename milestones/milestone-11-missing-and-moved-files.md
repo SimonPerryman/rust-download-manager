@@ -15,8 +15,7 @@ finding where the file went.
 Today a finished download whose file is gone still looks fine until Open
 fails. A download manager's list is a record of what you fetched, so the
 record stays; only the link to the file needs repair. Roadmap index:
-[[roadmap]]. A visual mock-up of the states is kept locally (not in the
-repo) in `.ai-cache/mockup-missing-files.html`.
+[[roadmap]].
 
 ## Decisions (workers follow these; escalate only if one can't hold)
 - **Missing is derived, not a new engine state.** The download stays

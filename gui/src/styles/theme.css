@@ -70,7 +70,7 @@
   --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
 }
 
-/* The Console palette, verbatim from .ai-cache/mockups/m5/d-combined.html.
+/* The Console palette.
    Dark overrides key off the `.dark` class that prefs.ts and the inline script
    in index.html put on <html>; "system" is already resolved to that class
    before first paint, so there's no prefers-color-scheme block to fight an
