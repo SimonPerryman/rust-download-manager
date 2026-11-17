@@ -167,6 +167,13 @@ network shares) leaves the file unmarked, and the download still succeeds.
   second, apply at launch, and are saved with the settings. Rdm only
   schedules while it is running. See the [roadmap](../roadmap.md) for what
   comes next.
+- **Speed schedule (GUI):** a speed entry is a window and a limit. Inside the
+  first enabled entry whose window is open, its limit replaces the global
+  limit; outside every entry the global limit applies. The result is set on
+  the one limiter all downloads share, on the same one-second check as the
+  queue window and at launch, so a change lands mid-download without a
+  restart. The global limit you set is kept as it is; a limit on a single
+  download or batch still applies on top.
 - **Speed limits:** `--limit-rate` on the CLI; in the GUI, a global limit and
   an optional per-download limit, both changeable while a download runs. A
   download's limit is shared across all of its connections.

@@ -154,6 +154,16 @@ Each rule has a switch (a switched-off rule keeps its settings) and a ···
 menu with Edit, Duplicate and Delete. With several rules on, the queue is open
 whenever any of them is.
 
+A **speed limit** is a rule of the same shape with a cap: pick **Speed limit**
+as the Type, type the limit in MB/s, and set times and days. Inside its times
+the cap replaces the global speed limit; outside them the global limit
+applies. It takes effect on downloads already running, with no restart, and it
+doesn't touch a limit set on one download or batch. Where entries overlap, the
+first one switched on in the list wins. Rows read like "5 MB/s, 08:00–18:00,
+weekdays", and the line at the top adds the cap in force or the next one
+("A 5 MB/s cap applies until 18:00."). The type of an existing rule can't be
+changed; make a new one.
+
 ## Lanes and details
 
 - **Lanes:** a multi-connection download draws one line per piece of the file
