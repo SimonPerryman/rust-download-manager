@@ -396,6 +396,29 @@ async fn cli_prints_engine_warnings_by_default() {
     assert_eq!(std::fs::read(&out).unwrap(), common::payload());
 }
 
+/// `--help` tells a reader (or an agent) about resuming, the exit codes and
+/// has runnable examples, not just the flag list.
+#[tokio::test]
+async fn cli_help_explains_resume_exit_codes_and_examples() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .arg("--help")
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert!(output.status.success(), "rdm exited with {}", output.status);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for expected in [
+        "resume",
+        "Exit codes:",
+        "130",
+        "Examples:",
+        "rdm -i urls.txt",
+    ] {
+        assert!(stdout.contains(expected), "missing {expected:?}: {stdout}");
+    }
+}
+
 /// A clean run logs nothing by default; `-v` and `RUST_LOG` raise the level.
 #[tokio::test]
 async fn cli_is_quiet_by_default_and_verbose_on_request() {
