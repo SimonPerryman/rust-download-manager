@@ -27,19 +27,12 @@ assessment of the current GUI found more problems:
 The owner compared three mockup directions and chose Console as the base. A
 combined proof of concept takes the best parts of the other two.
 
-The references below live in `.ai-cache/`, which is gitignored and exists
-only in the main checkout (`C:\dev\projects\rdm\.ai-cache`). Worktrees read it
-there by absolute path; never copy or delete it.
+The mock-ups and research behind this were kept outside the repo, so the
+design rules that matter are written here and in code:
 
-- **Visual and behaviour reference:** `.ai-cache/mockups/m5/d-combined.html`.
-  Turn on its "Key" to see every feature with a plain-English description and
-  where it came from. The other directions (`a-shelf`, `b-console`, `c-lanes`)
-  and the comparison page (`index.html`) are in the same folder.
-- **Design rules:** `.ai-cache/mockups/m5/design-plan.md`. It covers
-  Refactoring UI principles, the Console palette and type (IBM Plex Sans, with
-  Plex Mono only for URLs and hashes), and copy rules. The owner requires
-  Refactoring UI.
-- **Research brief:** `.ai-cache/m5-ux-research-brief.md`.
+- **Design rules:** Refactoring UI principles (the owner requires them), the
+  Console palette (in `gui/src/styles/theme.css`) and type (IBM Plex Sans,
+  with Plex Mono only for URLs and hashes).
 - Roadmap: [[roadmap]].
 
 The engine/frontend split holds. Every new behaviour that touches downloads

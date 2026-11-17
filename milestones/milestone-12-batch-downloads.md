@@ -25,9 +25,7 @@ remain:
   it.
 
 Numbered file sets (`part[01-20].zip`) are the common case that pasting
-doesn't serve well. Roadmap index: [[roadmap]]. A visual mock-up of the
-dialog and list is kept locally (not in the repo) in
-`.ai-cache/mockup-batch.html`.
+doesn't serve well. Roadmap index: [[roadmap]].
 
 ## Decisions (workers follow these; escalate only if one can't hold)
 - **List rules live in the engine** (`engine::batch`), as pure functions the
