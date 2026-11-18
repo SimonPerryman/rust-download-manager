@@ -53,6 +53,48 @@ describe("schedule components", () => {
     expect(onSubmit).toHaveBeenCalledOnce();
   });
 
+  it("points a rule at a tag, with the summary and the saved scope following", () => {
+    const onSubmit = form();
+    const add = q<HTMLButtonElement>("[data-testid=schedule-submit]");
+    pick(q<HTMLSelectElement>("#sched-scope"), "tag");
+    expect(add.disabled).toBe(true);
+    expect(q("[data-testid=schedule-summary]").textContent).toBe("Enter a tag");
+    const input = q<HTMLInputElement>("input[aria-label=Tag]");
+    act(() => {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      set.call(input, "course-2");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(q("[data-testid=schedule-summary]").textContent).toBe(
+      "Downloads tagged course-2 run from 22:00 to 08:00 every day, and pause at 08:00.",
+    );
+    click(add);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ scopeKind: "tag", scopeText: "course-2" });
+  });
+
+  it("offers the batches that exist and lists the tags", () => {
+    act(() =>
+      root.render(
+        <ScheduleForm
+          initial={NEW_WINDOW}
+          editing={false}
+          choices={{ tags: ["a", "b"], batches: [{ id: 3, label: "Course" }] }}
+          onSubmit={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    pick(q<HTMLSelectElement>("#sched-scope"), "batch");
+    const options = [...q("select[aria-label=Batch]").querySelectorAll("option")];
+    expect(options.map((o) => o.textContent)).toEqual(["Pick a batch", "Course"]);
+    pick(q<HTMLSelectElement>("select[aria-label=Batch]"), "3");
+    expect(q("[data-testid=schedule-summary]").textContent).toContain("Downloads in batch Course");
+    pick(q<HTMLSelectElement>("#sched-scope"), "tag");
+    expect(
+      [...host.querySelectorAll("#sched-tags option")].map((o) => o.getAttribute("value")),
+    ).toEqual(["a", "b"]);
+  });
+
   it("changes the sentence when running downloads are left to finish", () => {
     form();
     click(q("[data-testid=finish-running]"));

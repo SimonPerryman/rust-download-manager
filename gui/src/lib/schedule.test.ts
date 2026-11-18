@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   autoName,
+  draftOf,
+  draftSummary,
   draftProblem,
   limitBytes,
   NEW_SPEED,
@@ -35,6 +37,62 @@ const state = (
 
 // 2026-11-17 is a Tuesday.
 const NOW = new Date(2026, 10, 17, 12, 0);
+
+describe("scoped rules", () => {
+  const tagged = { ...NEW_WINDOW, scopeKind: "tag" as const, scopeText: "course-2" };
+
+  it("words who a rule applies to in its sentence", () => {
+    expect(draftSummary(tagged)).toBe(
+      "Downloads tagged course-2 run from 22:00 to 08:00 every day, and pause at 08:00.",
+    );
+    expect(draftSummary({ ...tagged, finishRunning: true })).toBe(
+      "New downloads tagged course-2 start from 22:00 to 08:00 every day. Running ones finish.",
+    );
+    expect(draftSummary({ ...NEW_SPEED, scopeKind: "host", scopeText: "Example.com" })).toBe(
+      "Downloads from example.com are limited to 5 MB/s from 08:00 to 18:00 on weekdays.",
+    );
+    expect(
+      draftSummary({ ...tagged, scopeKind: "batch", scopeBatch: { id: 4, label: "Course" } }),
+    ).toBe("Downloads in batch Course run from 22:00 to 08:00 every day, and pause at 08:00.");
+    expect(draftSummary(NEW_WINDOW)).toBe(
+      "Downloads run from 22:00 to 08:00 every day, and pause at 08:00.",
+    );
+  });
+
+  it("saves a scope only when it isn't all downloads, and reads it back", () => {
+    expect(ruleOf(NEW_WINDOW)).not.toHaveProperty("scope");
+    const rule = ruleOf(tagged);
+    expect(rule.scope).toEqual({ kind: "tag", tag: "course-2" });
+    expect(draftOf(rule)).toMatchObject({ scopeKind: "tag", scopeText: "course-2" });
+    const speed = speedOf({ ...NEW_SPEED, scopeKind: "host", scopeText: " CDN.example.com " });
+    expect(speed.scope).toEqual({ kind: "host", host: "cdn.example.com" });
+    expect(draftOf(speed)).toMatchObject({ scopeKind: "host", scopeText: "cdn.example.com" });
+    expect(draftOf({ ...rule, scope: undefined })).toMatchObject({ scopeKind: "all" });
+  });
+
+  it("needs a value for a tag, a host or a batch", () => {
+    expect(draftProblem({ ...tagged, scopeText: " " })).toBe("Enter a tag");
+    expect(draftProblem({ ...tagged, scopeKind: "host", scopeText: "" })).toBe("Enter a host");
+    expect(draftProblem({ ...tagged, scopeKind: "batch", scopeBatch: null })).toBe("Pick a batch");
+    expect(draftProblem(tagged)).toBeNull();
+  });
+
+  it("shows the scope on a speed row and keeps the status line truthful", () => {
+    const speed = speedOf({ ...NEW_SPEED, scopeKind: "tag", scopeText: "x" });
+    expect(ruleSummary(speed)).toBe("5 MB/s, 08:00–18:00, weekdays, tagged x");
+    const only: Schedule = { queue_windows: [ruleOf(tagged)], speed_entries: [] };
+    expect(statusLine(only, state(true, null))).toBe(
+      "Downloads run any time, except those a rule names.",
+    );
+    const mixed: Schedule = {
+      queue_windows: [ruleOf(NEW_WINDOW), ruleOf(tagged)],
+      speed_entries: [],
+    };
+    expect(statusLine(mixed, state(true, "2026-11-17T22:00"), NOW)).toContain(
+      "Other rules name some downloads.",
+    );
+  });
+});
 
 describe("summary", () => {
   it("says when downloads run and pause", () => {

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::task::spawn_task;
+use super::window::{attach_scope_limiters, subject, sync_scope_limiters};
 use super::{Inner, Manager, ManagerState};
 use crate::engine::lock::lock;
 use crate::engine::store::Status;
@@ -14,11 +15,15 @@ impl Inner {
     /// Start queued downloads, in display order, while fewer than
     /// `max_concurrent` are running. Called with the state lock held.
     pub(super) fn schedule(self: &Arc<Self>, st: &mut ManagerState) {
-        if self.closed.load(Ordering::SeqCst) || !self.queue_open(st) {
+        if self.closed.load(Ordering::SeqCst) {
             return;
         }
         let cap = st.settings.max_concurrent;
         let settings = st.settings.clone();
+        let now = self.clock.now();
+        for e in st.entries.values_mut() {
+            e.gate_open = settings.schedule.queue_open_for(now, &subject(e));
+        }
         let running = st.entries.values().filter(|e| e.task.is_some()).count();
         // A lowered cap can leave `running > cap`; nothing is preempted.
         let free = cap.saturating_sub(running);
@@ -28,11 +33,17 @@ impl Inner {
             .copied()
             .filter(|id| {
                 st.entries.get(id).is_some_and(|e| {
-                    e.record.status == Status::Queued && e.task.is_none() && !e.is_held()
+                    e.record.status == Status::Queued
+                        && e.task.is_none()
+                        && !e.is_held()
+                        && e.gate_open
                 })
             })
             .take(free)
             .collect();
+        if !waiting.is_empty() {
+            sync_scope_limiters(st, now);
+        }
         for (running, id) in (running..).zip(waiting) {
             debug_assert!(running < cap, "promoted past the concurrency cap");
             let e = st.entries.get_mut(&id).expect("collected above");
@@ -45,6 +56,7 @@ impl Inner {
                     .chain(e.batch_limiter.clone()),
             );
             e.control = control.clone();
+            attach_scope_limiters(&st.scope_limiters, e);
             e.record.status = Status::Downloading;
             if e.record.downloaded == 0 {
                 e.record.active_ms = Some(0);
