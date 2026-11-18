@@ -11,6 +11,7 @@ import {
   type RuleKind,
 } from "../../lib/schedule";
 import type { Weekday } from "../../lib/types";
+import { ChevronDown } from "../icons/ChevronDown";
 import { X } from "../icons/X";
 import { trapTab } from "../dialogs/trapTab";
 import { Switch } from "./Switch";
@@ -35,6 +36,24 @@ const SETS: Record<Exclude<Choice, "choose">, Weekday[]> = {
 
 const FIELD =
   "flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 text-sm transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden";
+
+// The Limit and Times rows share these columns so their second boxes line up.
+const ROW = "grid grid-cols-[6rem_2rem_6rem] items-center gap-2";
+
+// A select with its own chevron, 12px in from the edge, instead of the native arrow.
+function SelectField({ className = "", children, ...props }: React.ComponentProps<"select">) {
+  return (
+    <div className={`relative ${className}`}>
+      <select {...props} className={`${FIELD} appearance-none pr-8`}>
+        {children}
+      </select>
+      <ChevronDown
+        size={14}
+        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-g600"
+      />
+    </div>
+  );
+}
 
 // The New schedule form: one modal. Type picks a Download window or a Speed limit and the
 // fields below follow it. An existing rule keeps its type: the two live in separate lists.
@@ -127,17 +146,16 @@ export function ScheduleForm({ initial, editing, onSubmit, onClose }: Props) {
 
           <div className="min-h-0 space-y-5 overflow-y-auto px-6 py-5">
             <Field label="Type" htmlFor="sched-type">
-              <select
+              <SelectField
                 id="sched-type"
                 aria-label="Type"
-                className={FIELD}
                 value={draft.kind}
                 disabled={editing}
                 onChange={(e) => pickKind(e.target.value as RuleKind)}
               >
                 <option value="window">Download window</option>
                 <option value="speed">Speed limit</option>
-              </select>
+              </SelectField>
             </Field>
 
             <Field label="Name" htmlFor="sched-name">
@@ -156,7 +174,7 @@ export function ScheduleForm({ initial, editing, onSubmit, onClose }: Props) {
 
             {draft.kind === "speed" && (
               <Field label="Limit" htmlFor="sched-limit">
-                <div className="flex items-center gap-2">
+                <div className={ROW}>
                   <input
                     id="sched-limit"
                     type="text"
@@ -166,17 +184,17 @@ export function ScheduleForm({ initial, editing, onSubmit, onClose }: Props) {
                     onChange={(e) => set({ limit: sanitizeAmount(e.target.value) })}
                     onKeyDown={(e) => e.key === "Enter" && void submit()}
                     placeholder="5"
-                    className={`${FIELD} w-24 tabular-nums`}
+                    className={`${FIELD} tabular-nums`}
                   />
-                  <select aria-label="Unit" className={`${FIELD} w-28`} defaultValue="M">
+                  <SelectField aria-label="Unit" defaultValue="M" className="col-start-3">
                     <option value="M">MB/s</option>
-                  </select>
+                  </SelectField>
                 </div>
               </Field>
             )}
 
             <Field label="Times">
-              <div className="flex items-center gap-2">
+              <div className={ROW}>
                 <input
                   type="text"
                   aria-label="Start time"
@@ -186,9 +204,9 @@ export function ScheduleForm({ initial, editing, onSubmit, onClose }: Props) {
                   onChange={(e) => set({ start: e.target.value })}
                   onKeyDown={(e) => e.key === "Enter" && void submit()}
                   placeholder="22:00"
-                  className={`${FIELD} w-24 tabular-nums`}
+                  className={`${FIELD} tabular-nums`}
                 />
-                <span className="text-g600">to</span>
+                <span className="text-center text-g600">to</span>
                 <input
                   type="text"
                   aria-label="End time"
@@ -198,26 +216,25 @@ export function ScheduleForm({ initial, editing, onSubmit, onClose }: Props) {
                   onChange={(e) => set({ end: e.target.value })}
                   onKeyDown={(e) => e.key === "Enter" && void submit()}
                   placeholder="08:00"
-                  className={`${FIELD} w-24 tabular-nums`}
+                  className={`${FIELD} tabular-nums`}
                 />
               </div>
             </Field>
 
             <Field label="Days" htmlFor="sched-days">
-              <select
+              <SelectField
                 id="sched-days"
                 aria-label="Days"
                 value={choice}
                 onChange={(e) => pickChoice(e.target.value as Choice)}
-                className={FIELD}
               >
                 <option value="daily">Daily</option>
                 <option value="weekdays">Weekdays</option>
                 <option value="weekends">Weekends</option>
                 <option value="choose">{chooseLabel}</option>
-              </select>
+              </SelectField>
               {choosing && (
-                <div data-testid="day-chips" className="mt-2 flex gap-1">
+                <div data-testid="day-chips" className="mt-4 flex gap-1">
                   {WEEKDAYS.map((day) => (
                     <span key={day} className={day === "sat" ? "ml-3 flex-1" : "flex-1"}>
                       <button
@@ -227,8 +244,8 @@ export function ScheduleForm({ initial, editing, onSubmit, onClose }: Props) {
                         onClick={() => set({ days: toggled(draft.days, day) })}
                         className={`h-7 w-full rounded-md text-sm ${
                           draft.days.includes(day)
-                            ? "bg-btn text-on-btn"
-                            : "bg-hover text-g600 hover:text-ink"
+                            ? "border border-accent bg-primary-soft text-primary-ink"
+                            : "border border-transparent bg-hover text-g600 hover:text-ink"
                         }`}
                       >
                         {dayShort(day)}
@@ -240,15 +257,15 @@ export function ScheduleForm({ initial, editing, onSubmit, onClose }: Props) {
             </Field>
 
             {draft.kind === "window" && (
-              <div className="flex items-center justify-between rounded-md border border-line-strong px-3 py-2.5 text-sm">
-                <span>Finish downloads in progress</span>
+              <label className="flex w-fit cursor-pointer items-center gap-3 text-sm">
                 <Switch
                   checked={draft.finishRunning}
                   label="Finish downloads in progress"
                   testId="finish-running"
                   onChange={(on) => set({ finishRunning: on })}
                 />
-              </div>
+                <span>Finish downloads in progress</span>
+              </label>
             )}
             {error && <p className="text-xs text-danger-ink">{error}</p>}
           </div>
