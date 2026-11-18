@@ -19,6 +19,8 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
   const [args, setArgs] = useState(argsText(initial.args));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // An untouched empty field isn't an error yet.
+  const [touched, setTouched] = useState(false);
   const dialog = useRef<HTMLDivElement>(null);
   const first = useRef<HTMLInputElement>(null);
   const problem = commandProblem(program);
@@ -34,6 +36,7 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
   }, [busy, onClose]);
 
   const submit = async () => {
+    setTouched(true);
     if (busy || problem) return;
     setBusy(true);
     setError(null);
@@ -76,7 +79,11 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
                 type="text"
                 aria-label="Program"
                 value={program}
-                onChange={(e) => setProgram(e.target.value)}
+                onChange={(e) => {
+                  setProgram(e.target.value);
+                  setTouched(true);
+                }}
+                onBlur={() => setTouched(true)}
                 onKeyDown={(e) => e.key === "Enter" && void submit()}
                 placeholder="scan.exe"
                 className={FIELD}
@@ -104,9 +111,9 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
           <div className="flex shrink-0 items-center gap-2 rounded-b-lg bg-surface px-6 py-4">
             <p
               data-testid="command-problem"
-              className={`min-w-0 flex-1 text-sm ${problem ? "text-danger-ink" : "text-g600"}`}
+              className={`min-w-0 flex-1 text-sm ${problem && touched ? "text-danger-ink" : "text-g600"}`}
             >
-              {problem}
+              {touched ? problem : null}
             </p>
             <button type="button" onClick={onClose} disabled={busy} className="btn btn-ghost">
               Cancel

@@ -19,8 +19,8 @@ rdm [OPTIONS] -i <FILE>
 | `--checksum <algo:hex>` | (One link only.) Verify the finished file against a checksum, e.g. `sha256:…`. |
 | `-c, --connections <n>` | Max parallel connections, 1–16 (default 4; `-c 1` for a single connection). Starts on one and adds more, up to `n`, while measured speed keeps rising. Used only for files of 2 MiB or more on servers that support range requests. |
 | `--limit-rate <rate>` | Cap the download speed in bytes/s, with an optional `K`/`M`/`G` suffix (×1024), e.g. `500K` or `2M`. Shared across all of the download's connections; in a batch it applies to each file. |
-| `--at <time>` | Wait until this local time, then download: `HH:MM` is the next such time (tomorrow's if it has passed), or give `YYYY-MM-DDTHH:MM`. rdm must stay running while it waits; Ctrl-C cancels. A time that isn't one is a usage error (exit 2). With a batch, the whole batch waits. |
-| `--on-finish <sleep\|shutdown>` | After every download has finished, wait 60 seconds (Ctrl-C cancels), then put the machine to sleep or shut it down. Not after a download failed or a Ctrl-C paused the run. An action that isn't one of the two is a usage error (exit 2); one the machine refuses prints an error and exits 1. |
+| `--at <time>` | Wait until this local time, then download: `HH:MM` is the next such time (tomorrow's if it has passed today), or give a full `YYYY-MM-DDTHH:MM`. rdm must stay running; Ctrl-C while waiting cancels. Without it the download starts at once. With a batch, the whole batch waits. See [Scheduling](#scheduling). |
+| `--on-finish <sleep\|shutdown>` | After every download has finished, wait 60 seconds (Ctrl-C cancels), then put the machine to `sleep` or `shutdown`. Not after a failure or a Ctrl-C. See [Scheduling](#scheduling). |
 | `--proxy <url>` | Download through this proxy instead of the system's: `http://`, `https://`, `socks5://` or `socks5h://` (host names resolved by the proxy), with an optional `user:pass@`, e.g. `socks5h://127.0.0.1:1080`. See [Proxies](#proxies). |
 | `--no-proxy` | Connect directly, ignoring the system's proxy. Can't be combined with `--proxy`. |
 | `-v, --verbose` | Also log informational engine events (how the download started, lanes added, resumes, the checksum result, where it was saved and a summary) to stderr. |
@@ -82,6 +82,28 @@ links is a usage error. Ctrl-C pauses every running file; run the same
 command again to resume each from where it stopped (files that had already
 finished are downloaded again, under a new name).
 
+## Scheduling
+
+```sh
+rdm --at 01:30 https://example.com/big.iso
+rdm --at 2026-12-01T22:00 -i urls.txt --on-finish shutdown
+```
+
+`--at` waits in the foreground, so rdm has to stay running until the time
+comes; Ctrl-C while waiting just ends rdm, with nothing downloaded. A
+time that isn't `HH:MM` or `YYYY-MM-DDTHH:MM`, or an action other than
+`sleep` or `shutdown`, is a usage error (exit `2`).
+
+`--on-finish` counts down 60 seconds after the last download finishes and
+then asks the operating system to sleep or shut down; Ctrl-C during the
+countdown cancels it (exit `130`). It does nothing if any download failed or
+a Ctrl-C paused the run. If the machine refuses, rdm prints an error and
+exits `1`.
+
+A download window, a speed schedule, running a command after each download
+and rules for a tag, host or batch are [GUI features](gui.md#schedules): the
+CLI runs once and exits, so there is no rule set for them to attach to.
+
 ## Proxies
 
 By default rdm uses the system's proxy:
@@ -128,10 +150,10 @@ To discard a partial download instead, delete its `<file>.part` and
 | Code | Meaning |
 |---|---|
 | `0` | The download finished (and its checksum matched, if given); for a batch, every file finished. |
-| `1` | The download failed; for a batch, at least one file failed. |
+| `1` | The download failed; for a batch, at least one file failed. Also when `--on-finish` is refused by the machine. |
 | `2` | Invalid arguments (printed with the usage). |
 | `101` | rdm hit a bug (a panic); see [Troubleshooting](#troubleshooting-and-bug-reports). |
-| `130` | Paused by Ctrl-C; run the same command again to resume. |
+| `130` | Paused by Ctrl-C; run the same command again to resume. Also Ctrl-C during the `--on-finish` countdown. |
 
 ## Output and logging
 
