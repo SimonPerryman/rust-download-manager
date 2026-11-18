@@ -29,7 +29,9 @@ impl Inner {
             .filter(|id| {
                 st.entries
                     .get(id)
-                    .is_some_and(|e| e.record.status == Status::Queued && e.task.is_none())
+                    .is_some_and(|e| {
+                        e.record.status == Status::Queued && e.task.is_none() && !e.is_held()
+                    })
             })
             .take(free)
             .collect();
@@ -72,7 +74,9 @@ impl Manager {
         let waiting = |id: u64| {
             entries
                 .get(&id)
-                .is_some_and(|e| e.record.status == Status::Queued && e.task.is_none())
+                .is_some_and(|e| {
+                    e.record.status == Status::Queued && e.task.is_none() && !e.is_held()
+                })
         };
         if !waiting(id) {
             return;

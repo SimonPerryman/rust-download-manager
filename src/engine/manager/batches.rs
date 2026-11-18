@@ -94,6 +94,7 @@ impl Manager {
             .filter(|&l| l > 0)
             .map(|l| Arc::new(RateLimiter::new(Some(l))));
         out.batch = spec.as_ref().map(|_| st.next_id);
+        let group = st.new_group();
         let mut probes = Vec::new();
         for url in urls {
             let tag = spec.as_ref().zip(out.batch).map(|(s, id)| BatchTag {
@@ -101,7 +102,7 @@ impl Manager {
                 label: &s.label,
                 limiter: limiter.clone(),
             });
-            let (id, probe_url) = self.push_entry(st, url, dir.clone(), options.clone(), tag);
+            let (id, probe_url) = self.push_entry(st, url, dir.clone(), options.clone(), tag, group);
             out.added.push(id);
             probes.push((id, probe_url));
         }

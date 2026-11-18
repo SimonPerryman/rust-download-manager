@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::engine::schedule::Schedule;
+use crate::engine::schedule::{Schedule, StartAt};
 use crate::engine::{segment, Error, ProxyMode, Result, DEFAULT_CONNECTIONS};
 
 /// Current store schema version. Bump when the on-disk shape changes in a
@@ -169,6 +169,15 @@ pub struct DownloadRecord {
     /// restart rebuilds one limiter per batch; set with `batch`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub batch_limit: Option<u64>,
+    /// Held out of the queue until this local time (see
+    /// [`Manager::schedule_start`](crate::engine::Manager::schedule_start)).
+    /// Meaningful only while queued; cleared when it fires or is dismissed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_at: Option<StartAt>,
+    /// The start schedule this download belongs to: everything given one
+    /// start time together shares it. Set with `start_at`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_group: Option<u64>,
 }
 
 /// Manager-wide download settings, persisted with the download list.
@@ -396,6 +405,8 @@ mod tests {
             batch: None,
             batch_label: None,
             batch_limit: None,
+            start_at: None,
+            start_group: None,
         }
     }
 

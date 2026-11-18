@@ -54,7 +54,16 @@ impl Manager {
         for mut rec in data.downloads {
             // A download that was running at shutdown has no task now; restore
             // it paused so the user can resume it deliberately.
-            if rec.status.is_running() {
+            // A queued download held for its start time stays so: it is
+            // not running, only waiting for the clock.
+            if rec.status == Status::Queued && rec.start_at.is_some() {
+                rec.start_group.get_or_insert(rec.id);
+            } else {
+                rec.start_at = None;
+                rec.start_group = None;
+            }
+            let held = rec.start_at.is_some();
+            if rec.status.is_running() && !held {
                 // Still marked running: the process died mid-run (a quit
                 // would have saved it paused), so that run's time is unknown.
                 if rec.status == Status::Downloading {
@@ -101,6 +110,9 @@ impl Manager {
                     .clone()
             });
             let mut entry = Entry::new(rec, limiter);
+            // A start time that passed while rdm was closed never fires
+            // silently; the user decides.
+            entry.missed = entry.record.start_at.is_some_and(|s| s.is_due(clock.now()));
             entry.batch_limiter = batch_limiter;
             entry.segments = segments;
             entries.insert(entry.record.id, entry);
@@ -127,7 +139,13 @@ impl Manager {
         let settings = data.settings.clamped();
         let queue = QueueState::at(&settings.schedule, clock.now());
         let global = Arc::new(RateLimiter::new(queue.limit.or(settings.global_limit)));
+        let next_group = entries
+            .values()
+            .filter_map(|e| e.record.start_group)
+            .max()
+            .map_or(1, |g| g + 1);
         let st = ManagerState {
+            next_group,
             next_id,
             order,
             entries,
