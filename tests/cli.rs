@@ -444,6 +444,111 @@ async fn an_invalid_at_is_a_usage_error() {
     assert!(!out.exists());
 }
 
+/// `rdm` with the power backend swapped for a log file and no wait, so a test
+/// can see what `--on-finish` would have done without doing it.
+fn on_finish_cmd(log: &std::path::Path) -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_rdm"));
+    cmd.env("RDM_TEST_POWER_LOG", log)
+        .env("RDM_TEST_POWER_COUNTDOWN", "0");
+    cmd
+}
+
+/// `--on-finish` runs its action once the download is done, and says so first.
+#[tokio::test]
+async fn on_finish_runs_its_action_after_the_download() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let (out, log) = (dir.path().join("a.bin"), dir.path().join("power.log"));
+
+    let output = on_finish_cmd(&log)
+        .args(["--on-finish", "sleep", "-o"])
+        .arg(&out)
+        .arg(server.url("/file"))
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert!(output.status.success(), "rdm exited with {}", output.status);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("sleep in 0 s"), "{stdout}");
+    assert_eq!(std::fs::read_to_string(&log).unwrap(), "sleep
+");
+    assert_eq!(std::fs::read(&out).unwrap(), common::payload());
+}
+
+/// After a batch too, but only once every link downloaded.
+#[tokio::test]
+async fn on_finish_waits_for_the_whole_batch_and_skips_a_failure() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("power.log");
+
+    let ok = on_finish_cmd(&log)
+        .current_dir(dir.path())
+        .args(["--on-finish", "shutdown"])
+        .arg(server.url("/any/one.bin"))
+        .arg(server.url("/any/two.bin"))
+        .output()
+        .await
+        .expect("spawn rdm");
+    assert!(ok.status.success());
+    assert_eq!(std::fs::read_to_string(&log).unwrap(), "shutdown
+");
+
+    std::fs::remove_file(&log).unwrap();
+    let failed = on_finish_cmd(&log)
+        .current_dir(dir.path())
+        .args(["--on-finish", "shutdown"])
+        .arg(server.url("/any/three.bin"))
+        .arg(server.url("/missing/four.bin"))
+        .output()
+        .await
+        .expect("spawn rdm");
+    assert_eq!(failed.status.code(), Some(1));
+    assert!(!log.exists(), "a failed link is not everything done");
+}
+
+/// A power action the machine refuses is an error, not a silent success.
+#[tokio::test]
+async fn on_finish_reports_a_refused_action() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    // A folder can't be opened as the log file.
+    let output = on_finish_cmd(dir.path())
+        .args(["--on-finish", "sleep", "-o"])
+        .arg(dir.path().join("a.bin"))
+        .arg(server.url("/file"))
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("couldn't sleep"), "{stderr}");
+}
+
+/// An action that is not one is a usage error (exit 2) that names the flag,
+/// and nothing is downloaded or powered down.
+#[tokio::test]
+async fn an_unknown_on_finish_action_is_a_usage_error() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let (out, log) = (dir.path().join("never.bin"), dir.path().join("power.log"));
+
+    let output = on_finish_cmd(&log)
+        .args(["--on-finish", "reboot", "-o"])
+        .arg(&out)
+        .arg(server.url("/file"))
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--on-finish"), "{stderr}");
+    assert!(!out.exists() && !log.exists());
+}
+
 /// `--help` tells a reader (or an agent) about resuming, the exit codes and
 /// has runnable examples, not just the flag list.
 #[tokio::test]
@@ -463,6 +568,8 @@ async fn cli_help_explains_resume_exit_codes_and_examples() {
         "Examples:",
         "rdm -i urls.txt",
         "--at <TIME>",
+        "--on-finish <ACTION>",
+        "rdm --on-finish sleep",
     ] {
         assert!(stdout.contains(expected), "missing {expected:?}: {stdout}");
     }
