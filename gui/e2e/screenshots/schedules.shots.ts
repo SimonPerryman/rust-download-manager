@@ -6,7 +6,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { $, browser } from "@wdio/globals";
-import { baseUrl, invoke } from "../helpers";
+import { baseUrl, invoke, settingsButton, waitForGone } from "../helpers";
 
 const outDir = process.env.RDM_SHOTS_OUT!;
 const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri"];
@@ -44,7 +44,7 @@ describe("schedules screenshot", () => {
             name: "Daytime cap",
             enabled: true,
             window: { start: "08:00", end: "18:00", days: WEEKDAYS },
-            limit: 5 * 1000 * 1000,
+            limit: 5 * 1024 * 1024,
           },
         ],
       },
@@ -68,6 +68,18 @@ describe("schedules screenshot", () => {
         startAt,
       });
     }
+    // invoke() doesn't wait for the command, and the view reads the rules when it opens: give
+    // them a moment, then open the view.
+    await browser.pause(1000);
+    await settingsButton().click();
+    const theme = $('[role="group"][aria-label="Theme"]');
+    await theme.waitForDisplayed();
+    await theme.$("button=Light").click();
+    await settingsButton().click();
+    await waitForGone('[role="group"][aria-label="Theme"]');
+    // The page read its rules and actions at startup; reload so it shows the ones seeded above.
+    await browser.refresh();
+    await $('[data-testid="add-button"]').waitForDisplayed();
     await $('[data-testid="schedules-link"]').click();
     await $('[data-testid="schedules-view"]').waitForDisplayed();
     await browser.execute(() => {
