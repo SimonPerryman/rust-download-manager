@@ -471,8 +471,11 @@ async fn on_finish_runs_its_action_after_the_download() {
     assert!(output.status.success(), "rdm exited with {}", output.status);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("sleep in 0 s"), "{stdout}");
-    assert_eq!(std::fs::read_to_string(&log).unwrap(), "sleep
-");
+    assert_eq!(
+        std::fs::read_to_string(&log).unwrap(),
+        "sleep
+"
+    );
     assert_eq!(std::fs::read(&out).unwrap(), common::payload());
 }
 
@@ -492,8 +495,11 @@ async fn on_finish_waits_for_the_whole_batch_and_skips_a_failure() {
         .await
         .expect("spawn rdm");
     assert!(ok.status.success());
-    assert_eq!(std::fs::read_to_string(&log).unwrap(), "shutdown
-");
+    assert_eq!(
+        std::fs::read_to_string(&log).unwrap(),
+        "shutdown
+"
+    );
 
     std::fs::remove_file(&log).unwrap();
     let failed = on_finish_cmd(&log)

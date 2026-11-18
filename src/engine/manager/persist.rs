@@ -8,9 +8,9 @@ use std::time::{Instant, SystemTime};
 use tokio::sync::watch;
 
 use super::files::owns_partial;
-use crate::engine::actions::{ActionsStatus, NoPower, PowerStatus};
 use super::window::QueueState;
 use super::{Entry, Inner, Manager, ManagerState};
+use crate::engine::actions::{ActionsStatus, NoPower, PowerStatus};
 use crate::engine::download_log::{prune, DownloadLogs, LOG_MAX_AGE, LOG_TOTAL_CAP};
 use crate::engine::lock::lock;
 use crate::engine::schedule::{Clock, SystemClock};

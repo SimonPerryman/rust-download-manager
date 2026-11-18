@@ -55,7 +55,9 @@ impl ManagerState {
                 continue;
             }
             match e.record.start_at {
-                Some(at) => scheduled = Some(scheduled.map_or(at, |s| if at.0 < s.0 { at } else { s })),
+                Some(at) => {
+                    scheduled = Some(scheduled.map_or(at, |s| if at.0 < s.0 { at } else { s }))
+                }
                 None => queued = true,
             }
         }
@@ -90,11 +92,13 @@ impl ManagerState {
                 message: message.clone(),
             };
         }
-        let reason = self.downloads_in_play().or(if self.actions.commands_running > 0 {
-            Some(WaitReason::Command)
-        } else {
-            None
-        });
+        let reason = self
+            .downloads_in_play()
+            .or(if self.actions.commands_running > 0 {
+                Some(WaitReason::Command)
+            } else {
+                None
+            });
         reason.map_or(PowerStatus::Ready, |reason| PowerStatus::Waiting { reason })
     }
 }

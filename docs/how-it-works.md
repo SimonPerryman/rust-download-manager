@@ -183,6 +183,22 @@ network shares) leaves the file unmarked, and the download still succeeds.
   missed and waits for the user, who can start it (the downloads join the
   queue oldest due first), give it a new time, or dismiss it, which leaves the
   downloads paused. The CLI's `--at` just waits in the foreground first.
+- **Events and post-download actions:** the Manager announces two events on a
+  broadcast channel, the way it does for missing files: a download finished,
+  and the queue emptied (the last running or waiting download just completed
+  or failed). The two post-download actions are subscribers; the download code
+  doesn't know what they do. *Run a command* starts the program directly, with
+  one argument per entry and `{path}` and `{name}` filled in, never through a
+  shell; a failure to start or a non-zero exit is kept as a warning on that
+  download (memory only) and doesn't touch its status. *Power action* arms
+  when the queue empties and counts 60 seconds, checked every second, but
+  only while nothing is running, waiting, held by the queue window or
+  scheduled for later and no command is running; anything that shows up
+  during the countdown drops it, and Cancel ends it. A power action goes
+  through a backend trait: the GUI and CLI install the real one, a Manager
+  nobody gave one refuses, and tests use a fake. Both actions are saved with
+  the settings. In the CLI, `--on-finish` waits the same 60 seconds after the
+  run, but only when every download succeeded.
 - **Speed limits:** `--limit-rate` on the CLI; in the GUI, a global limit and
   an optional per-download limit, both changeable while a download runs. A
   download's limit is shared across all of its connections.

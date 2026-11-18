@@ -255,7 +255,10 @@ async fn it_is_dropped_while_a_download_is_queued_or_running() {
     assert_eq!(r.mgr.actions_status().power, waiting(WaitReason::Running));
 
     // The first finishing hands its slot to the second: not everything is done.
-    wait_for("the first to reach the gate", || r.server.gate().holding() >= 1).await;
+    wait_for("the first to reach the gate", || {
+        r.server.gate().holding() >= 1
+    })
+    .await;
     r.server.gate().release_next();
     wait_status(&r.mgr, first, Status::Completed).await;
     wait_status(&r.mgr, second, Status::Downloading).await;

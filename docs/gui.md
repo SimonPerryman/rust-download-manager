@@ -187,6 +187,31 @@ offers real times (Tue 22:00 Tonight, Wed 22:00 Tomorrow, then a week on) and
 **Pick a time…**. **Dismiss** drops the schedules and leaves their downloads
 in the list, paused.
 
+### When downloads finish
+
+The last section of Schedules, **When downloads finish**, has two actions.
+Both are global, off by default, and not schedules, so they sit apart from the
+rules, on the same switch column.
+
+**Run a command after each download** starts a program of your choosing with
+the finished file. **Edit command** (in the row's ··· menu; switching the row
+on with no command yet opens it too) takes the **Program** and its
+**Arguments**, one per line; `{path}` (the finished file) and `{name}` (its
+name) are filled in. The program is started directly, never through a shell,
+so a name with a space or a `;` arrives as one argument; it runs with your
+rights. If it can't start or exits with an error, the download stays
+completed and its row shows **Command failed** (the reason is its tooltip).
+
+**Shut down when everything is done** puts the computer to sleep, hibernates it
+or shuts it down: pick which in the row's ··· menu. When nothing is left, a
+notice on every page counts down 60 seconds ("Shutting down in 42 s") with
+**Cancel**; cancelling stops that one countdown and leaves the action on.
+Nothing counts as done while a download is running, waiting for a slot, held
+by the download window, or scheduled to start later (a pending **Start at**
+blocks it), nor while a command is still running, so a scan is never cut off.
+The row says which of these it is waiting for. A download that fails counts as
+finished; one you pause doesn't hold it back.
+
 ## Lanes and details
 
 - **Lanes:** a multi-connection download draws one line per piece of the file
