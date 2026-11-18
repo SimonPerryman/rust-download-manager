@@ -78,6 +78,11 @@ export interface DownloadSnapshot {
   start_group: number | null;
   /** Its start time passed while rdm was closed, so it waits for the user. */
   start_missed: boolean;
+  /**
+   * The command run after this download failed to start or exited non-zero; the download itself
+   * still completed. Never saved.
+   */
+  command_warning: string | null;
 }
 
 /** Mirrors the engine's `LogLevel`. */
@@ -295,4 +300,43 @@ export interface QueueState {
   limit_until: string | null;
   /** The scheduled limit from `limit_until` on; null is the global limit. */
   limit_then: number | null;
+}
+
+/** What a power action does to the machine. */
+export type PowerAction = "shutdown" | "sleep" | "hibernate";
+
+/** Run a command after each download (`get_post_actions`); `{path}` and `{name}` fill in per argument. */
+export interface CommandAction {
+  enabled: boolean;
+  /** The executable, started directly, never through a shell. */
+  program: string;
+  /** One argument per entry. */
+  args: string[];
+}
+
+/** Both actions that run when downloads finish; global and off by default. */
+export interface PostActions {
+  command: CommandAction;
+  power: { enabled: boolean; action: PowerAction };
+}
+
+/** What a switched-on power action is held back by (see the engine's `WaitReason`). */
+export type WaitReason =
+  | { kind: "running" }
+  | { kind: "queued" }
+  | { kind: "window" }
+  | { kind: "scheduled"; at: string }
+  | { kind: "command" };
+
+/** Where the power action stands (see the engine's `PowerStatus`). */
+export type PowerStatus =
+  | { state: "off" }
+  | { state: "ready" }
+  | { state: "waiting"; reason: WaitReason }
+  | { state: "countdown"; seconds_left: number; action: PowerAction }
+  | { state: "failed"; message: string };
+
+/** The engine's word on the post-download actions (`get_actions_status`). */
+export interface ActionsStatus {
+  power: PowerStatus;
 }

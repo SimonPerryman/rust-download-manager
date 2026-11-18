@@ -8,6 +8,7 @@ import { sizeText } from "../../lib/rowView";
 import type { DownloadSnapshot } from "../../lib/types";
 import { useLimitEditor } from "../../lib/useLimitEditor";
 import { Grip } from "../icons/Grip";
+import { CommandWarning } from "./CommandWarning";
 import { MissingFlag } from "./MissingFlag";
 import { ProgressCell } from "./ProgressCell";
 import { RowActions } from "./RowActions";
@@ -168,6 +169,7 @@ export function TableRow({
               <span className="host">{host(d.url)}</span>
             </span>
           </button>
+          {d.command_warning && <CommandWarning message={d.command_warning} />}
           {d.tags.length > 0 && (
             <span className="row-tags" aria-label={`Tags: ${d.tags.join(", ")}`}>
               {d.tags.map((t) => (

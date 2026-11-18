@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
 import { ruleName, ruleSummary, type Rule } from "../../lib/schedule";
+import { MoreMenu } from "./MoreMenu";
 import { Switch } from "./Switch";
 
 type Props = {
@@ -13,28 +13,7 @@ type Props = {
 // One rule: its name and sentence, a switch, and a ··· menu. A switched-off rule fades its
 // text, not its switch, and keeps its settings.
 export function RuleRow({ rule, onToggle, onEdit, onDuplicate, onDelete }: Props) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menu = useRef<HTMLDivElement>(null);
   const name = ruleName(rule);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onPointer = (e: PointerEvent) => {
-      if (!menu.current?.contains(e.target as Node)) setMenuOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
-    document.addEventListener("pointerdown", onPointer, true);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointer, true);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen]);
-
-  const run = (action: () => void) => () => {
-    setMenuOpen(false);
-    action();
-  };
 
   return (
     <li
@@ -56,42 +35,16 @@ export function RuleRow({ rule, onToggle, onEdit, onDuplicate, onDelete }: Props
         testId="rule-switch"
         onChange={onToggle}
       />
-      <div ref={menu} className="relative">
-        <button
-          type="button"
-          aria-label={`${name} options`}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          data-testid="rule-menu-button"
-          onClick={() => setMenuOpen((o) => !o)}
-          className="icon-btn icon-btn-sm tracking-widest"
-        >
-          ···
-        </button>
-        {menuOpen && (
-          <div
-            role="menu"
-            data-testid="rule-menu"
-            className="absolute right-0 top-full z-40 mt-1 w-36 rounded-lg bg-raised p-1 text-sm shadow-dialog"
-          >
-            {[
-              ["Edit", onEdit],
-              ["Duplicate", onDuplicate],
-              ["Delete", onDelete],
-            ].map(([label, action]) => (
-              <button
-                key={label as string}
-                type="button"
-                role="menuitem"
-                onClick={run(action as () => void)}
-                className="flex h-8 w-full items-center rounded-md px-2.5 text-left hover:bg-hover"
-              >
-                {label as string}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      <MoreMenu
+        label={`${name} options`}
+        buttonTestId="rule-menu-button"
+        menuTestId="rule-menu"
+        items={[
+          { label: "Edit", onSelect: onEdit },
+          { label: "Duplicate", onSelect: onDuplicate },
+          { label: "Delete", onSelect: onDelete },
+        ]}
+      />
     </li>
   );
 }

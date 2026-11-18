@@ -37,6 +37,7 @@ export function snap(overrides: Partial<DownloadSnapshot> = {}): DownloadSnapsho
     start_at: null,
     start_group: null,
     start_missed: false,
+    command_warning: null,
     ...overrides,
   };
 }

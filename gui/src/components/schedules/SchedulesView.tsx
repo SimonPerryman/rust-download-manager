@@ -11,8 +11,9 @@ import {
   type RuleDraft,
   type RuleRef,
 } from "../../lib/schedule";
-import type { QueueState, Schedule } from "../../lib/types";
+import type { ActionsStatus, PostActions, QueueState, Schedule } from "../../lib/types";
 import type { StartGroup } from "../../lib/startAt";
+import { FinishSection } from "./FinishSection";
 import { MissedNotice } from "./MissedNotice";
 import { RuleRow } from "./RuleRow";
 import { StartGroupRow } from "./StartGroupRow";
@@ -28,6 +29,12 @@ type Props = {
   /** Start-at schedules waiting for their time, and the ones whose time was missed. */
   upcoming: StartGroup[];
   missed: StartGroup[];
+  /** The command and power action run when downloads finish, where the power one stands, and saving them. */
+  finish: {
+    actions: PostActions | null;
+    status: ActionsStatus | null;
+    save: (next: PostActions) => Promise<void>;
+  };
   starts: {
     startNow: (groups: StartGroup[]) => void;
     askReschedule: (groups: StartGroup[], title?: string) => void;
@@ -38,7 +45,16 @@ type Props = {
 
 // The Schedules view: one line on where the queue stands, then the rules. Each change saves
 // at once; the engine applies it and says what the queue does now.
-export function SchedulesView({ schedule, queue, save, onError, upcoming, missed, starts }: Props) {
+export function SchedulesView({
+  schedule,
+  queue,
+  save,
+  onError,
+  upcoming,
+  missed,
+  finish,
+  starts,
+}: Props) {
   // A form open for a new rule (null) or for the rule at that place.
   const [form, setForm] = useState<{ at: RuleRef | null } | null>(null);
   if (!schedule) return <section className="min-h-0 flex-1 px-6 py-5" />;
@@ -112,6 +128,15 @@ export function SchedulesView({ schedule, queue, save, onError, upcoming, missed
             />
           ))}
         </ul>
+      )}
+
+      {finish.actions && (
+        <FinishSection
+          actions={finish.actions}
+          status={finish.status}
+          save={finish.save}
+          onError={onError}
+        />
       )}
 
       {form && (
