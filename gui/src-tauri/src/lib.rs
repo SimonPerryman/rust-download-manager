@@ -97,6 +97,7 @@ fn add_download(
         limit: parse_limit(limit)?,
         tags: tags.unwrap_or_default(),
         start_at: parse_start_at(&state, start_at)?,
+        ..AddOptions::default()
     };
     state
         .manager
