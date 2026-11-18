@@ -402,6 +402,10 @@ export default function App() {
               queue={queueState}
               save={saveSchedule}
               onError={fail}
+              choices={{
+                tags: tags.map((t) => t.tag),
+                batches: batches.map((b) => ({ id: b.id, label: b.label })),
+              }}
               upcoming={starts.upcoming}
               missed={starts.missed}
               finish={{

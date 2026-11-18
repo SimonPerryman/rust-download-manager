@@ -174,6 +174,19 @@ network shares) leaves the file unmarked, and the download still succeeds.
   queue window and at launch, so a change lands mid-download without a
   restart. The global limit you set is kept as it is; a limit on a single
   download or batch still applies on top.
+- **Scoped rules:** a queue window or speed entry can name a scope: all
+  downloads (default; files saved before scopes load as this), a tag
+  (ignoring case), a host (the URL's host, exact, ignoring case, no port or
+  wildcards) or a batch id. A scoped window is checked per download: a
+  download is held, or paused at close, only by the enabled windows that match
+  it, and starts if any of those is open or none match. The queue state the
+  status bar shows covers only all-downloads windows. A scoped speed entry
+  keeps one limiter per scope, shared by every matching download, set to the
+  first open entry for that scope and unlimited outside; running downloads
+  are handed it on the next one-second check, so tags added mid-download and
+  rule changes apply live. A download in two scopes, or with its own, batch or
+  global limit too, runs at the slowest. All-downloads entries still replace
+  the global limit. A rule whose tag or batch matches nothing is kept.
 - **Start at:** a download can carry a local start time. Until it, it stays
   queued but is held out of the queue, so it uses no slot; the Manager checks
   the clock every second and then releases the download into the normal queue,

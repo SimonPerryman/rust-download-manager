@@ -264,6 +264,13 @@ export interface RuleWindow {
   days: Weekday[];
 }
 
+/** The downloads a rule applies to; a rule saved without one applies to all. */
+export type Scope =
+  | { kind: "all" }
+  | { kind: "tag"; tag: string }
+  | { kind: "host"; host: string }
+  | { kind: "batch"; id: number; label?: string };
+
 /** Downloads start only inside the window (`get_schedule`). */
 export interface QueueWindow {
   name?: string;
@@ -271,6 +278,8 @@ export interface QueueWindow {
   window: RuleWindow;
   /** Let running downloads finish when the window closes, rather than pausing them. */
   finish_running: boolean;
+  /** Which downloads it gates; absent for all of them. */
+  scope?: Scope;
 }
 
 /** Inside its window, `limit` replaces the global speed limit. */
@@ -280,6 +289,8 @@ export interface SpeedEntry {
   window: RuleWindow;
   /** Bytes per second, above zero. */
   limit: number;
+  /** Which downloads it limits; absent for all of them (then it replaces the global limit). */
+  scope?: Scope;
 }
 
 /** The saved rule set. */

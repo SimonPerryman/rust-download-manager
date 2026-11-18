@@ -17,7 +17,7 @@ import { FinishSection } from "./FinishSection";
 import { MissedNotice } from "./MissedNotice";
 import { RuleRow } from "./RuleRow";
 import { StartGroupRow } from "./StartGroupRow";
-import { ScheduleForm } from "./ScheduleForm";
+import { ScheduleForm, type ScopeChoices } from "./ScheduleForm";
 
 type Props = {
   schedule: Schedule | null;
@@ -26,6 +26,8 @@ type Props = {
   save: (next: Schedule) => Promise<void>;
   /** Shows a save failure that has no form to say it in. */
   onError: (e: unknown) => void;
+  /** The tags and batches a rule can be pointed at. */
+  choices: ScopeChoices;
   /** Start-at schedules waiting for their time, and the ones whose time was missed. */
   upcoming: StartGroup[];
   missed: StartGroup[];
@@ -50,6 +52,7 @@ export function SchedulesView({
   queue,
   save,
   onError,
+  choices,
   upcoming,
   missed,
   finish,
@@ -145,6 +148,7 @@ export function SchedulesView({
           key={at ? `${at.kind}${at.index}` : "new"}
           initial={editing ? draftOf(editing.rule) : NEW_WINDOW}
           editing={!!editing}
+          choices={choices}
           onSubmit={submit}
           onClose={() => setForm(null)}
         />

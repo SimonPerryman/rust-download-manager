@@ -166,6 +166,17 @@ weekdays", and the line at the top adds the cap in force or the next one
 ("A 5 MB/s cap applies until 18:00."). The type of an existing rule can't be
 changed; make a new one.
 
+**Applies to** points a rule at all downloads (the default), a tag, a host or a
+batch. For a tag, type it or pick one from the list; a host is the name in the
+download's address, such as `cdn.example.com`, matched exactly and ignoring
+case; a batch is picked from the batches you have. A download window for a tag
+holds and pauses only downloads carrying it, so "this tag only overnight"
+works. A speed limit for a tag, host or batch caps those downloads together,
+on top of the global limit, and the slower cap wins. A rule whose tag or batch
+nothing carries any more is kept and applies to nothing. The status bar's
+paused note and the top line speak for rules that apply to all downloads;
+with only scoped rules the line says so.
+
 ### Start at
 
 A **start time** holds downloads out of the queue until a time you pick,
