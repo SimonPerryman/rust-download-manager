@@ -41,6 +41,7 @@ import { useToast } from "./lib/useToast";
 import { pausedBarCount, updatedHeading, willPauseCount } from "./lib/updater";
 import { useUpdater } from "./lib/useUpdater";
 import { useUrlIntake } from "./lib/useUrlIntake";
+import { useActions } from "./lib/useActions";
 import { useSchedule } from "./lib/useSchedule";
 import { useStartActions } from "./lib/useStartActions";
 import { useView } from "./lib/useView";
@@ -49,6 +50,7 @@ import type { PaneTab } from "./components/details/tabs";
 import { AddDialog } from "./components/dialogs/AddDialog";
 import { StartAtDialog } from "./components/dialogs/StartAtDialog";
 import { MissedNotice } from "./components/schedules/MissedNotice";
+import { PowerNotice } from "./components/schedules/PowerNotice";
 import { RemoveDialog } from "./components/dialogs/RemoveDialog";
 import { TagsDialog } from "./components/dialogs/TagsDialog";
 import { StopDialog } from "./components/dialogs/StopDialog";
@@ -106,6 +108,7 @@ export default function App() {
 
   const [page, setPage] = useState<"downloads" | "schedules">("downloads");
   const { schedule, queue: queueState, save: saveSchedule } = useSchedule();
+  const finishActions = useActions();
   const [addOpen, setAddOpen] = useState(false);
   const [prefillText, setPrefillText] = useState("");
   const [paneTab, setPaneTab] = useState<PaneTab>("overview");
@@ -392,15 +395,23 @@ export default function App() {
       />
       <main className={page === "schedules" ? "flex min-h-0 min-w-0 flex-col" : "main"}>
         {page === "schedules" ? (
-          <SchedulesView
-            schedule={schedule}
-            queue={queueState}
-            save={saveSchedule}
-            onError={fail}
-            upcoming={starts.upcoming}
-            missed={starts.missed}
-            starts={starts}
-          />
+          <>
+            <PowerNotice status={finishActions.status} onCancel={finishActions.cancelPower} />
+            <SchedulesView
+              schedule={schedule}
+              queue={queueState}
+              save={saveSchedule}
+              onError={fail}
+              upcoming={starts.upcoming}
+              missed={starts.missed}
+              finish={{
+                actions: finishActions.actions,
+                status: finishActions.status,
+                save: finishActions.save,
+              }}
+              starts={starts}
+            />
+          </>
         ) : (
           <>
             <Toolbar
@@ -499,6 +510,7 @@ export default function App() {
                 onSearch={searchSameFolder}
                 onDismiss={dismissSameFolderOffer}
               />
+              <PowerNotice status={finishActions.status} onCancel={finishActions.cancelPower} />
               <MissedNotice
                 groups={starts.missed}
                 onStartAll={() => starts.startNow(starts.missed)}

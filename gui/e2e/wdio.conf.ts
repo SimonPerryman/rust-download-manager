@@ -40,6 +40,9 @@ export const config: WebdriverIO.Config = {
     }
     // open_download / reveal_download log here instead of launching an OS handler.
     process.env.RDM_OPEN_LOG = path.join(e2eRoot, "opened.log");
+    // Power actions (sleep, shut down, hibernate) are appended here instead of being carried out:
+    // the e2e build cannot reach the real machine whatever else is set.
+    process.env.RDM_POWER_LOG = path.join(e2eRoot, "power.log");
     // The Log tab's Save… writes here instead of asking with a save dialog.
     process.env.RDM_SAVE_PATH = path.join(e2eRoot, "saved.log");
     // The missing-file spec's Locate… relinks to this file instead of asking with a file picker.

@@ -330,6 +330,38 @@ fn set_schedule(
     Ok(())
 }
 
+/// The command and power action run when downloads finish.
+#[tauri::command]
+fn get_post_actions(state: State<'_, AppState>) -> rdm::engine::actions::PostActions {
+    state.manager.post_actions()
+}
+
+/// Replace the post-download actions. A command that is on needs an
+/// executable.
+#[tauri::command]
+fn set_post_actions(
+    state: State<'_, AppState>,
+    actions: rdm::engine::actions::PostActions,
+) -> Result<(), String> {
+    if actions.command.enabled && actions.command.program.trim().is_empty() {
+        return Err("Enter the program to run".into());
+    }
+    state.manager.set_post_actions(actions);
+    Ok(())
+}
+
+/// Where the power action stands: what it waits for, or its countdown.
+#[tauri::command]
+fn get_actions_status(state: State<'_, AppState>) -> rdm::engine::actions::ActionsStatus {
+    state.manager.actions_status()
+}
+
+/// Cancel a power action that is counting down.
+#[tauri::command]
+fn cancel_power(state: State<'_, AppState>) {
+    state.manager.cancel_power();
+}
+
 /// Whether the queue window is open and when that next changes.
 #[tauri::command]
 fn get_queue_state(state: State<'_, AppState>) -> rdm::engine::QueueState {
@@ -873,6 +905,27 @@ const LOCATE_PATH_ENV: &str = "RDM_LOCATE_PATH";
 /// folder picker. Test builds only (see [`test_seam`]).
 const LOCATE_DIR_ENV: &str = "RDM_LOCATE_DIR";
 
+/// When set in the e2e build, power actions are appended to this file instead
+/// of being carried out (see [`power_backend`]).
+#[cfg(feature = "fault-injection")]
+const POWER_LOG_ENV: &str = "RDM_POWER_LOG";
+
+/// What carries out power actions. The e2e (`fault-injection`) build can never
+/// reach the real machine: it logs to `RDM_POWER_LOG`, or refuses when that
+/// is unset. A shipped build ignores the variable and uses the real one.
+#[cfg(feature = "fault-injection")]
+fn power_backend() -> Arc<dyn rdm::engine::actions::PowerBackend> {
+    match test_seam(POWER_LOG_ENV) {
+        Some(log) => Arc::new(rdm::engine::actions::LogPower(log)),
+        None => Arc::new(rdm::engine::actions::NoPower),
+    }
+}
+
+#[cfg(not(feature = "fault-injection"))]
+fn power_backend() -> Arc<dyn rdm::engine::actions::PowerBackend> {
+    Arc::new(rdm::engine::actions::SystemPower)
+}
+
 /// A path from test-only environment variable `key`. Honoured only in the
 /// `fault-injection` (e2e) build, so a shipped app ignores these variables.
 fn test_seam(key: &str) -> Option<PathBuf> {
@@ -969,6 +1022,7 @@ fn init_manager(
     Box::leak(Box::new(runtime));
 
     let manager = Arc::new(Manager::load(Box::new(store), handle)?);
+    manager.set_power_backend(power_backend());
     // In the background: flags finished downloads whose file went missing
     // while rdm was closed.
     manager.check_missing();
@@ -1001,6 +1055,16 @@ fn init_manager(
         while queue.changed().await.is_ok() {
             let state = queue.borrow().clone();
             let _ = queue_app.emit("queue-state-changed", state);
+        }
+    });
+
+    // Forward each change of the power action's status (its countdown ticks).
+    let actions_app = find_app.clone();
+    let mut actions = manager.subscribe_actions();
+    tauri::async_runtime::spawn(async move {
+        while actions.changed().await.is_ok() {
+            let status = actions.borrow().clone();
+            let _ = actions_app.emit("actions-status-changed", status);
         }
     });
 
@@ -1252,6 +1316,10 @@ pub fn run() {
             get_schedule,
             set_schedule,
             get_queue_state,
+            get_post_actions,
+            set_post_actions,
+            get_actions_status,
+            cancel_power,
             set_limit,
             pause,
             resume,

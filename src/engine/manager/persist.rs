@@ -10,6 +10,7 @@ use tokio::sync::watch;
 use super::files::owns_partial;
 use super::window::QueueState;
 use super::{Entry, Inner, Manager, ManagerState};
+use crate::engine::actions::{ActionsStatus, NoPower, PowerStatus};
 use crate::engine::download_log::{prune, DownloadLogs, LOG_MAX_AGE, LOG_TOTAL_CAP};
 use crate::engine::lock::lock;
 use crate::engine::schedule::{Clock, SystemClock};
@@ -150,10 +151,14 @@ impl Manager {
             order,
             entries,
             queue_open: queue.open,
+            actions: Default::default(),
             settings,
         };
         let (tx, _rx) = watch::channel(Vec::new());
         let (queue_tx, _rx) = watch::channel(queue);
+        let (actions_tx, _rx) = watch::channel(ActionsStatus {
+            power: PowerStatus::Off,
+        });
         let inner = Arc::new(Inner {
             tx,
             store,
@@ -173,9 +178,14 @@ impl Manager {
             )),
             clock,
             queue_tx,
+            events_tx: tokio::sync::broadcast::channel(256).0,
+            actions_tx,
+            power: Mutex::new(Arc::new(NoPower)),
+            actions_clock_held: AtomicBool::new(false),
             state: Mutex::new(st),
         });
         inner.spawn_window_clock();
+        inner.spawn_actions();
         // Prime the channel with the restored list.
         {
             let st = lock(&inner.state);

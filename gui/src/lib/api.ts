@@ -16,6 +16,8 @@ import type {
   LocateOutcome,
   LogLine,
   ParsedList,
+  ActionsStatus,
+  PostActions,
   QueueState,
   Schedule,
   Settings,
@@ -258,3 +260,20 @@ export const getQueueState = () => invoke<QueueState>("get_queue_state");
 /** Subscribe to the queue opening or closing, or its rules changing. */
 export const onQueueStateChanged = (cb: (state: QueueState) => void): Promise<UnlistenFn> =>
   listen<QueueState>("queue-state-changed", (e) => cb(e.payload));
+
+/** The command and power action run when downloads finish. */
+export const getPostActions = () => invoke<PostActions>("get_post_actions");
+
+/** Replace both actions and save them. Rejects with why one was refused. */
+export const setPostActions = (actions: PostActions) =>
+  invoke<void>("set_post_actions", { actions });
+
+/** Where the power action stands: what it waits for, or its countdown. */
+export const getActionsStatus = () => invoke<ActionsStatus>("get_actions_status");
+
+/** Cancel a power action that is counting down. */
+export const cancelPower = () => invoke<void>("cancel_power");
+
+/** Subscribe to the power action's status changing (its countdown ticks each second). */
+export const onActionsStatusChanged = (cb: (status: ActionsStatus) => void): Promise<UnlistenFn> =>
+  listen<ActionsStatus>("actions-status-changed", (e) => cb(e.payload));

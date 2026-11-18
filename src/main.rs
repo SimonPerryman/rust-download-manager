@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
+use clap::builder::TypedValueParser;
 use clap::{CommandFactory, Parser};
 use indicatif::{ProgressBar, ProgressStyle};
 use tracing::Level;
@@ -16,6 +17,7 @@ use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
+use rdm::engine::actions::{backend_from_env, PowerAction, POWER_COUNTDOWN_SECS};
 use rdm::engine::schedule::{Clock, FakeClock, LocalDateTime, StartAt, SystemClock};
 use rdm::{
     download, engine::state, parse_list, parse_rate, redact_url, redact_urls_in, run_limited,
@@ -72,7 +74,10 @@ Examples:
   rdm 'https://example.com/lesson[01-12].mp4'
 
   # wait until 01:30 (tonight, or tomorrow if it has passed), then download
-  rdm --at 01:30 https://example.com/big.iso"
+  rdm --at 01:30 https://example.com/big.iso
+
+  # put the machine to sleep a minute after everything has downloaded
+  rdm --on-finish sleep -i urls.txt"
 )]
 struct Cli {
     /// URL(s) to download. Several links download as a batch.
@@ -144,6 +149,17 @@ struct Cli {
     #[arg(long = "at", value_name = "TIME", value_parser = parse_at)]
     at: Option<String>,
 
+    /// After every download has finished, wait 60 seconds (Ctrl-C cancels),
+    /// then put the machine to `sleep` or `shutdown`. Not after a failure or
+    /// a Ctrl-C.
+    #[arg(
+        long = "on-finish",
+        value_name = "ACTION",
+        value_parser = clap::builder::PossibleValuesParser::new(["sleep", "shutdown"])
+            .try_map(|s| s.parse::<PowerAction>())
+    )]
+    on_finish: Option<PowerAction>,
+
     /// Also log informational engine events (download start, fallbacks) to
     /// stderr; `RUST_LOG` overrides the level.
     #[arg(short = 'v', long = "verbose")]
@@ -193,6 +209,39 @@ async fn wait_for_start(text: &str) {
     }
 }
 
+/// Carry out `--on-finish`: count down (Ctrl-C cancels), then ask the power
+/// backend. `RDM_TEST_POWER_LOG` (a file) swaps the real machine for a log of
+/// what would have been done, and `RDM_TEST_POWER_COUNTDOWN` the seconds, so
+/// tests neither wait nor power anything down. Returns the exit code to end
+/// with.
+async fn power_after(action: Option<PowerAction>) -> ExitCode {
+    let Some(action) = action else {
+        return ExitCode::SUCCESS;
+    };
+    let secs = std::env::var("RDM_TEST_POWER_COUNTDOWN")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(POWER_COUNTDOWN_SECS);
+    println!(
+        "Everything is done. {} in {secs} s (Ctrl-C to cancel)",
+        action.name()
+    );
+    tokio::select! {
+        () = tokio::time::sleep(std::time::Duration::from_secs(secs)) => {}
+        _ = tokio::signal::ctrl_c() => {
+            println!("Cancelled");
+            return ExitCode::from(INTERRUPTED);
+        }
+    }
+    match backend_from_env().perform(action) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("Error: couldn't {}: {e}", action.name());
+            ExitCode::FAILURE
+        }
+    }
+}
+
 /// `--proxy` → [`Proxy`], or exit with a usage error that names the flag but
 /// not the value.
 fn parse_proxy(s: &str) -> Proxy {
@@ -221,6 +270,7 @@ async fn main() -> anyhow::Result<ExitCode> {
     if is_batch {
         return run_batch(cli).await;
     }
+    let on_finish = cli.on_finish;
     let url = cli.urls.into_iter().next().expect("clap requires a URL");
 
     let mut req = match cli.output {
@@ -279,7 +329,7 @@ async fn main() -> anyhow::Result<ExitCode> {
     match result {
         Ok(summary) => {
             println!("{}", done_message(&summary, req.checksum.as_ref()));
-            Ok(ExitCode::SUCCESS)
+            Ok(power_after(on_finish).await)
         }
         Err(Error::Paused) => {
             eprintln!("{PAUSED_MESSAGE}");
@@ -455,11 +505,10 @@ async fn run_batch(cli: Cli) -> anyhow::Result<ExitCode> {
         eprintln!("{PAUSED_MESSAGE}");
         return Ok(ExitCode::from(INTERRUPTED));
     }
-    Ok(if failed > 0 {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    })
+    if failed > 0 {
+        return Ok(ExitCode::FAILURE);
+    }
+    Ok(power_after(cli.on_finish).await)
 }
 
 /// Log a panic (a bug in rdm) as an ERROR event, let the default hook print

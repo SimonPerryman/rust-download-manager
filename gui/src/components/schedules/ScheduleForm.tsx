@@ -14,6 +14,7 @@ import type { Weekday } from "../../lib/types";
 import { ChevronDown } from "../icons/ChevronDown";
 import { X } from "../icons/X";
 import { trapTab } from "../dialogs/trapTab";
+import { Field, FIELD } from "./FormField";
 import { Switch } from "./Switch";
 
 type Props = {
@@ -33,9 +34,6 @@ const SETS: Record<Exclude<Choice, "choose">, Weekday[]> = {
   weekdays: WEEKDAYS.slice(0, 5),
   weekends: WEEKDAYS.slice(5),
 };
-
-const FIELD =
-  "flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 text-sm transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden";
 
 // The Limit and Times rows share these columns so their second boxes line up.
 const ROW = "grid grid-cols-[6rem_2rem_6rem] items-center gap-2";
@@ -292,25 +290,6 @@ export function ScheduleForm({ initial, editing, onSubmit, onClose }: Props) {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  htmlFor,
-  children,
-}: {
-  label: string;
-  htmlFor?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1">
-      <label htmlFor={htmlFor} className="block text-sm font-medium">
-        {label}
-      </label>
-      {children}
     </div>
   );
 }

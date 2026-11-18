@@ -39,7 +39,7 @@ export function startFromText(text: string, now: Date = new Date()): string | nu
 }
 
 /** When it is, as it reads aloud: "today 22:00", "Thu 03:00", or "24 Nov 22:00" past a week. */
-function wording(iso: string, now: Date): string {
+export function wording(iso: string, now: Date): string {
   const at = dateOf(iso);
   const days = Math.round((dayStart(at) - dayStart(now)) / DAY_MS);
   const time = iso.slice(11);

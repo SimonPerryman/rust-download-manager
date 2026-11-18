@@ -55,12 +55,13 @@ impl Manager {
         self.inner.publish(st);
     }
 
-    fn update_settings(&self, change: impl FnOnce(&mut Settings)) {
+    pub(super) fn update_settings(&self, change: impl FnOnce(&mut Settings)) {
         let st = &mut *lock(&self.inner.state);
         change(&mut st.settings);
         st.settings = std::mem::take(&mut st.settings).clamped();
         self.inner.apply_window(st);
         self.inner.schedule(st);
+        let _ = self.inner.actions_eval(st, 0);
         self.inner.persist(st);
         self.inner.publish(st);
     }
