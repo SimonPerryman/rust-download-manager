@@ -705,7 +705,11 @@ mod tests {
         let parse = |s| StartAt::parse(s, now).map(|s| s.0);
         assert_eq!(parse("22:00"), Ok(at(2026, 3, 9, 22, 0)));
         assert_eq!(parse("21:00"), Ok(at(2026, 3, 9, 21, 0)), "this minute");
-        assert_eq!(parse("01:30"), Ok(at(2026, 3, 10, 1, 30)), "passed: tomorrow");
+        assert_eq!(
+            parse("01:30"),
+            Ok(at(2026, 3, 10, 1, 30)),
+            "passed: tomorrow"
+        );
         assert_eq!(parse(" 2026-04-01T08:05 "), Ok(at(2026, 4, 1, 8, 5)));
         for bad in ["", "25:00", "9:00", "noon", "2026-13-01T00:00"] {
             assert!(parse(bad).is_err(), "{bad}");

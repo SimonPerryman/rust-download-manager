@@ -19,6 +19,7 @@ rdm [OPTIONS] -i <FILE>
 | `--checksum <algo:hex>` | (One link only.) Verify the finished file against a checksum, e.g. `sha256:…`. |
 | `-c, --connections <n>` | Max parallel connections, 1–16 (default 4; `-c 1` for a single connection). Starts on one and adds more, up to `n`, while measured speed keeps rising. Used only for files of 2 MiB or more on servers that support range requests. |
 | `--limit-rate <rate>` | Cap the download speed in bytes/s, with an optional `K`/`M`/`G` suffix (×1024), e.g. `500K` or `2M`. Shared across all of the download's connections; in a batch it applies to each file. |
+| `--at <time>` | Wait until this local time, then download: `HH:MM` is the next such time (tomorrow's if it has passed), or give `YYYY-MM-DDTHH:MM`. rdm must stay running while it waits; Ctrl-C cancels. A time that isn't one is a usage error (exit 2). With a batch, the whole batch waits. |
 | `--proxy <url>` | Download through this proxy instead of the system's: `http://`, `https://`, `socks5://` or `socks5h://` (host names resolved by the proxy), with an optional `user:pass@`, e.g. `socks5h://127.0.0.1:1080`. See [Proxies](#proxies). |
 | `--no-proxy` | Connect directly, ignoring the system's proxy. Can't be combined with `--proxy`. |
 | `-v, --verbose` | Also log informational engine events (how the download started, lanes added, resumes, the checksum result, where it was saved and a summary) to stderr. |

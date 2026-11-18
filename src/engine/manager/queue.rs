@@ -27,11 +27,9 @@ impl Inner {
             .iter()
             .copied()
             .filter(|id| {
-                st.entries
-                    .get(id)
-                    .is_some_and(|e| {
-                        e.record.status == Status::Queued && e.task.is_none() && !e.is_held()
-                    })
+                st.entries.get(id).is_some_and(|e| {
+                    e.record.status == Status::Queued && e.task.is_none() && !e.is_held()
+                })
             })
             .take(free)
             .collect();
@@ -72,11 +70,9 @@ impl Manager {
         let st = &mut *lock(&self.inner.state);
         let entries = &st.entries;
         let waiting = |id: u64| {
-            entries
-                .get(&id)
-                .is_some_and(|e| {
-                    e.record.status == Status::Queued && e.task.is_none() && !e.is_held()
-                })
+            entries.get(&id).is_some_and(|e| {
+                e.record.status == Status::Queued && e.task.is_none() && !e.is_held()
+            })
         };
         if !waiting(id) {
             return;

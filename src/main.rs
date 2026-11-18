@@ -178,7 +178,10 @@ async fn wait_for_start(text: &str) {
         None => &system,
     };
     let at = StartAt::parse(text, clock.now()).expect("checked when the arguments were read");
-    println!("Waiting until {} to start", at.0.to_string().replace('T', " "));
+    println!(
+        "Waiting until {} to start",
+        at.0.to_string().replace('T', " ")
+    );
     while !at.is_due(clock.now()) {
         match &fake {
             Some(fake) => {

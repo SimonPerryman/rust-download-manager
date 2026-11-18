@@ -102,7 +102,8 @@ impl Manager {
                 label: &s.label,
                 limiter: limiter.clone(),
             });
-            let (id, probe_url) = self.push_entry(st, url, dir.clone(), options.clone(), tag, group);
+            let (id, probe_url) =
+                self.push_entry(st, url, dir.clone(), options.clone(), tag, group);
             out.added.push(id);
             probes.push((id, probe_url));
         }

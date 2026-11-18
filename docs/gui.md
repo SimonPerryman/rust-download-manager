@@ -31,7 +31,9 @@ starts ("Add 3 downloads"); a link you've archived is still
 added, so you can download it again. Ctrl+Enter adds. The folder starts at the
 one you used last. **Tags** (comma-separated) go on every download you add.
 Under **More options** you can give a SHA-256 checksum (for a single link) and
-a speed limit (per file, when there are several links).
+a speed limit (per file, when there are several links), and **Start at**: type
+a time such as `22:00` and the links wait until then (the field says which
+day it means). Everything added together with one start time is one schedule.
 
 A `[a-b]` range in a link, such as `lesson[01-12].mp4` or `img[a-f].png`,
 adds every file in it. The preview shows one row ("lesson01.mp4 to
@@ -163,6 +165,27 @@ first one switched on in the list wins. Rows read like "5 MB/s, 08:00–18:00,
 weekdays", and the line at the top adds the cap in force or the next one
 ("A 5 MB/s cap applies until 18:00."). The type of an existing rule can't be
 changed; make a new one.
+
+### Start at
+
+A **start time** holds downloads out of the queue until a time you pick,
+without using a slot. Set it under **More options** in the Add dialog, or with
+**Start at…** in a row's menu (for waiting, paused or failed downloads). Such a
+row reads "Scheduled for 01:00" (with the weekday when it isn't today). When
+the time comes the downloads join the queue like any other, under the usual
+limit on how many run at once. **Coming up** in Schedules lists each schedule
+as "Starts today 22:00" or "Starts Thu 03:00", with an **Edit** pencil to
+change the time and **Start now** to send it into the queue at once.
+
+rdm only schedules while it is running. A start time that passed while rdm
+was closed does not fire by itself: its rows read "Was due Mon 22:00" and a
+notice such as "3 scheduled starts were missed (50 downloads)" shows on the
+main list and in Schedules, until you deal with it, and the sidebar entry
+counts the missed schedules. **Start all** (or **Start now** on one) sends the
+downloads into the queue, oldest due first, under the usual limit. **Reschedule**
+offers real times (Tue 22:00 Tonight, Wed 22:00 Tomorrow, then a week on) and
+**Pick a time…**. **Dismiss** drops the schedules and leaves their downloads
+in the list, paused.
 
 ## Lanes and details
 

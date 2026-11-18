@@ -72,6 +72,7 @@ fn list(state: State<'_, AppState>) -> Vec<DownloadSnapshot> {
 /// `limit` is a rate like `"500K"` (blank = unlimited); `tags` follow the
 /// engine's tag rules. Returns the new download's id.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 fn add_download(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -124,14 +125,20 @@ fn parse_start_at(
 /// Start at…). Returns how many could be scheduled.
 #[tauri::command]
 fn schedule_start(state: State<'_, AppState>, ids: Vec<u64>, at: String) -> Result<usize, String> {
-    let at = state.manager.parse_start_at(&at).map_err(|e| e.to_string())?;
+    let at = state
+        .manager
+        .parse_start_at(&at)
+        .map_err(|e| e.to_string())?;
     Ok(state.manager.schedule_start(&ids, at))
 }
 
 /// Move schedules to a new time (Edit, and the Reschedule menu).
 #[tauri::command]
 fn reschedule(state: State<'_, AppState>, groups: Vec<u64>, at: String) -> Result<(), String> {
-    let at = state.manager.parse_start_at(&at).map_err(|e| e.to_string())?;
+    let at = state
+        .manager
+        .parse_start_at(&at)
+        .map_err(|e| e.to_string())?;
     state.manager.reschedule(&groups, at);
     Ok(())
 }
