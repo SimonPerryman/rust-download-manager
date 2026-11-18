@@ -48,9 +48,9 @@ describe("scoped rules", () => {
     expect(draftSummary({ ...tagged, finishRunning: true })).toBe(
       "New downloads tagged course-2 start from 22:00 to 08:00 every day. Running ones finish.",
     );
-    expect(
-      draftSummary({ ...NEW_SPEED, scopeKind: "host", scopeText: "Example.com" }),
-    ).toBe("Downloads from example.com are limited to 5 MB/s from 08:00 to 18:00 on weekdays.");
+    expect(draftSummary({ ...NEW_SPEED, scopeKind: "host", scopeText: "Example.com" })).toBe(
+      "Downloads from example.com are limited to 5 MB/s from 08:00 to 18:00 on weekdays.",
+    );
     expect(
       draftSummary({ ...tagged, scopeKind: "batch", scopeBatch: { id: 4, label: "Course" } }),
     ).toBe("Downloads in batch Course run from 22:00 to 08:00 every day, and pause at 08:00.");
@@ -73,9 +73,7 @@ describe("scoped rules", () => {
   it("needs a value for a tag, a host or a batch", () => {
     expect(draftProblem({ ...tagged, scopeText: " " })).toBe("Enter a tag");
     expect(draftProblem({ ...tagged, scopeKind: "host", scopeText: "" })).toBe("Enter a host");
-    expect(draftProblem({ ...tagged, scopeKind: "batch", scopeBatch: null })).toBe(
-      "Pick a batch",
-    );
+    expect(draftProblem({ ...tagged, scopeKind: "batch", scopeBatch: null })).toBe("Pick a batch");
     expect(draftProblem(tagged)).toBeNull();
   });
 
