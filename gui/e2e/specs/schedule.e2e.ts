@@ -159,6 +159,8 @@ describe("rdm GUI queue window", () => {
     await $('select[aria-label="Type"]').selectByAttribute("value", "speed");
     await expect($('[data-testid="finish-running"]')).not.toBeDisplayed();
     await $('input[aria-label="Limit"]').setValue("2");
+    // A new Speed limit starts on weekdays; every day keeps the cap's start independent of today.
+    await $('select[aria-label="Days"]').selectByAttribute("value", "daily");
     await retype($('input[aria-label="Start time"]'), win.start, { enter: false });
     await retype($('input[aria-label="End time"]'), win.end, { enter: false });
     await waitForText(
