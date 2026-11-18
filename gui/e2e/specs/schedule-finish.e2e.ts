@@ -8,7 +8,7 @@
 // The actions live in the shared app state, so the spec resets them before and after.
 
 import { existsSync } from "node:fs";
-import { $, expect } from "@wdio/globals";
+import { $, browser, expect } from "@wdio/globals";
 import {
   addThroughDialog,
   baseUrl,
