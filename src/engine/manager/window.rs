@@ -117,6 +117,7 @@ impl Inner {
                     break;
                 }
                 inner.apply_window(&mut lock(&inner.state));
+                inner.real_tick();
             }
         });
     }

@@ -14,6 +14,7 @@
 //! `.part` size (v1 sidecar); a multi-segment one from the per-segment progress
 //! checkpointed in its v2 sidecar, re-fetching only the missing ranges.
 
+pub mod actions;
 mod attempt;
 pub mod batch;
 pub mod control;

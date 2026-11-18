@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::engine::actions::PostActions;
 use crate::engine::schedule::{Schedule, StartAt};
 use crate::engine::{segment, Error, ProxyMode, Result, DEFAULT_CONNECTIONS};
 
@@ -203,6 +204,10 @@ pub struct Settings {
     /// scheduling) is no rules.
     #[serde(skip_serializing_if = "Schedule::is_empty")]
     pub schedule: Schedule,
+    /// The command and power action run when downloads finish; absent (as in
+    /// files from before them) is both off.
+    #[serde(skip_serializing_if = "PostActions::is_default")]
+    pub actions: PostActions,
 }
 
 fn is_system(mode: &ProxyMode) -> bool {
@@ -233,6 +238,7 @@ impl Default for Settings {
             max_connections: DEFAULT_CONNECTIONS,
             proxy: ProxyMode::System,
             schedule: Schedule::default(),
+            actions: PostActions::default(),
         }
     }
 }
@@ -247,6 +253,7 @@ impl Settings {
             max_connections: self.max_connections.clamp(1, segment::MAX_CONNECTIONS),
             proxy: self.proxy,
             schedule: self.schedule,
+            actions: self.actions,
         }
     }
 }

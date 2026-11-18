@@ -25,6 +25,7 @@ impl Inner {
     /// Publish the current snapshot immediately (used on lifecycle changes).
     pub(super) fn publish(&self, st: &ManagerState) {
         let _ = self.tx.send(self.snapshots(st));
+        self.publish_actions_status(st);
         *lock(&self.last_publish) = Instant::now();
     }
 

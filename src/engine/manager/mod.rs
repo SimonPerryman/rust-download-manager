@@ -17,6 +17,7 @@
 //! cheaply and only publishes a fresh snapshot at ~10 Hz, so UI update rate is
 //! decoupled from chunk rate. Lifecycle transitions publish immediately.
 
+mod actions;
 mod archive;
 mod batches;
 mod commands;
@@ -44,6 +45,7 @@ use serde::Serialize;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
+use crate::engine::actions::{ActionsStatus, LifecycleEvent, PowerBackend};
 use crate::engine::download_log::DownloadLogs;
 use crate::engine::lock::lock;
 use crate::engine::schedule::{Clock, StartAt};
@@ -142,6 +144,9 @@ pub struct DownloadSnapshot {
     pub start_group: Option<u64>,
     /// Its `start_at` passed while rdm was closed; it waits for the user.
     pub start_missed: bool,
+    /// The command run after this download failed to start or exited
+    /// non-zero; the download itself still completed. Never saved.
+    pub command_warning: Option<String>,
 }
 
 /// Optional extras for [`Manager::add_with`].
@@ -204,6 +209,9 @@ struct Entry {
     /// Its start time passed while rdm was closed, so it was not started by
     /// itself; it waits for the user (see [`Manager::start_schedules`]).
     missed: bool,
+    /// What went wrong with the command run after this download, if
+    /// anything; memory only.
+    command_warning: Option<String>,
 }
 
 impl Entry {
@@ -225,6 +233,7 @@ impl Entry {
             file_missing: false,
             window_pause: false,
             missed: false,
+            command_warning: None,
         }
     }
 
@@ -288,6 +297,10 @@ impl Entry {
             start_at: self.record.start_at.filter(|_| self.is_held()),
             start_group: self.record.start_group.filter(|_| self.is_held()),
             start_missed: self.missed && self.is_held(),
+            command_warning: self
+                .command_warning
+                .clone()
+                .filter(|_| self.record.status == Status::Completed),
         }
     }
 
@@ -327,6 +340,8 @@ struct ManagerState {
     queue_open: bool,
     /// The id the next start schedule gets.
     next_group: u64,
+    /// What the post-download actions are doing.
+    actions: actions::ActionsState,
 }
 
 impl ManagerState {
@@ -371,6 +386,15 @@ struct Inner {
     clock: Arc<dyn Clock>,
     /// Announces each change of the queue window's state.
     queue_tx: watch::Sender<QueueState>,
+    /// Announces each download finishing and the queue emptying.
+    events_tx: tokio::sync::broadcast::Sender<LifecycleEvent>,
+    /// Announces where the power action stands.
+    actions_tx: watch::Sender<ActionsStatus>,
+    /// What carries out power actions; refuses until a frontend sets one.
+    power: Mutex<Arc<dyn PowerBackend>>,
+    /// A test is moving the countdown by hand (see
+    /// [`Manager::hold_actions_clock`]).
+    actions_clock_held: AtomicBool,
 }
 
 /// Coordinates many concurrent downloads over the engine's [`download`](crate::engine::download).

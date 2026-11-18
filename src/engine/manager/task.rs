@@ -13,6 +13,7 @@ use tracing::Instrument;
 
 use super::files::{owned_elsewhere, unique_target};
 use super::{now_secs, Inner, Live};
+use crate::engine::actions::LifecycleEvent;
 use crate::engine::download_log::TASK_SPAN;
 use crate::engine::lock::lock;
 use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status};
@@ -63,6 +64,7 @@ impl Inner {
         e.started = None;
         let stop_keeping = std::mem::take(&mut e.stop_keeping);
         let window_pause = std::mem::take(&mut e.window_pause);
+        e.command_warning = None;
         match result {
             Ok(summary) => {
                 e.record.status = Status::Completed;
@@ -114,9 +116,27 @@ impl Inner {
                 e.record.finished_at = now_secs();
             }
         }
+        let ended = st.entries.get(&id).map(|e| e.record.status);
+        let finished = st
+            .entries
+            .get(&id)
+            .filter(|e| e.record.status == Status::Completed)
+            .and_then(|e| e.record.final_path.clone());
         self.schedule(st);
         self.persist(st);
         self.publish(st);
+        if let Some(path) = finished {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let _ = self
+                .events_tx
+                .send(LifecycleEvent::Finished { id, path, name });
+        }
+        if matches!(ended, Some(Status::Completed | Status::Failed)) && st.is_idle() {
+            let _ = self.events_tx.send(LifecycleEvent::QueueEmptied);
+        }
     }
 }
 
