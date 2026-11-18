@@ -2,17 +2,36 @@ import { describe, expect, it } from "vitest";
 import {
   autoName,
   draftProblem,
+  limitBytes,
+  NEW_SPEED,
   NEW_WINDOW,
   pausedNote,
   ruleName,
   ruleOf,
+  ruleSummary,
+  speedOf,
   statusLine,
   summary,
   validTime,
   whenLabel,
   withCopy,
 } from "./schedule";
-import type { Schedule } from "./types";
+import type { QueueState, Schedule } from "./types";
+
+const MB = 1024 * 1024;
+
+const state = (
+  open: boolean,
+  until: string | null,
+  speed: Partial<QueueState> = {},
+): QueueState => ({
+  open,
+  until,
+  limit: null,
+  limit_until: null,
+  limit_then: null,
+  ...speed,
+});
 
 // 2026-11-17 is a Tuesday.
 const NOW = new Date(2026, 10, 17, 12, 0);
@@ -63,27 +82,23 @@ describe("queue state wording", () => {
   });
 
   it("notes a closed queue only", () => {
-    expect(pausedNote({ open: false, until: "2026-11-17T22:00" }, NOW)).toBe(
-      "Queue paused until 22:00",
-    );
-    expect(pausedNote({ open: true, until: "2026-11-17T22:00" }, NOW)).toBeNull();
+    expect(pausedNote(state(false, "2026-11-17T22:00"), NOW)).toBe("Queue paused until 22:00");
+    expect(pausedNote(state(true, "2026-11-17T22:00"), NOW)).toBeNull();
     expect(pausedNote(null, NOW)).toBeNull();
   });
 
   it("states the queue in one line", () => {
     const none: Schedule = { queue_windows: [], speed_entries: [] };
-    expect(statusLine(none, { open: true, until: null }, NOW)).toBe(
-      "No schedules. Downloads run any time.",
-    );
+    expect(statusLine(none, state(true, null), NOW)).toBe("No schedules. Downloads run any time.");
     const on = { ...none, queue_windows: [ruleOf(NEW_WINDOW)] };
-    expect(statusLine(on, { open: false, until: "2026-11-17T22:00" }, NOW)).toBe(
+    expect(statusLine(on, state(false, "2026-11-17T22:00"), NOW)).toBe(
       "Queue paused. The window opens at 22:00.",
     );
-    expect(statusLine(on, { open: true, until: "2026-11-18T08:00" }, NOW)).toBe(
+    expect(statusLine(on, state(true, "2026-11-18T08:00"), NOW)).toBe(
       "Queue open. The window closes at Wed 08:00.",
     );
     on.queue_windows[0].enabled = false;
-    expect(statusLine(on, { open: true, until: null }, NOW)).toMatch(/^All schedules are off/);
+    expect(statusLine(on, state(true, null), NOW)).toMatch(/^All schedules are off/);
   });
 });
 
@@ -93,9 +108,81 @@ describe("copy", () => {
       queue_windows: [ruleOf(NEW_WINDOW), ruleOf({ ...NEW_WINDOW, start: "01:00" })],
       speed_entries: [],
     };
-    const next = withCopy(s, 0);
+    const next = withCopy(s, { kind: "window", index: 0 });
     expect(next.queue_windows).toHaveLength(3);
     expect(next.queue_windows[1]).toEqual(next.queue_windows[0]);
     expect(next.queue_windows[1]).not.toBe(next.queue_windows[0]);
+  });
+});
+
+describe("speed limit rules", () => {
+  const cap = { ...NEW_SPEED, limit: "5" };
+
+  it("says what the limit does, in the footer sentence", () => {
+    expect(summary(cap)).toBe("Downloads are limited to 5 MB/s from 08:00 to 18:00 on weekdays.");
+    expect(summary({ ...cap, days: ["mon", "tue", "thu"] })).toBe(
+      "Downloads are limited to 5 MB/s from 08:00 to 18:00 on Mon, Tue and Thu.",
+    );
+    expect(summary({ ...cap, limit: "0.5" })).toContain("limited to 512 KB/s from");
+  });
+
+  it("needs a speed above zero", () => {
+    expect(draftProblem(cap)).toBeNull();
+    for (const bad of ["", "0", "0.0", "abc", "."]) {
+      expect(draftProblem({ ...cap, limit: bad }), bad).toBe("Enter a speed above 0");
+    }
+    expect(limitBytes("1.5")).toBe(1.5 * MB);
+    expect(limitBytes(".5")).toBe(0.5 * MB);
+  });
+
+  it("makes the entry the engine reads, and lists it as the mock-up words it", () => {
+    const entry = speedOf(cap);
+    expect(entry).toEqual({
+      enabled: true,
+      window: { start: "08:00", end: "18:00", days: ["mon", "tue", "wed", "thu", "fri"] },
+      limit: 5 * MB,
+    });
+    expect(ruleName(entry)).toBe("5 MB/s limit");
+    expect(ruleName(speedOf({ ...cap, name: " Daytime cap " }))).toBe("Daytime cap");
+    expect(ruleSummary(entry)).toBe("5 MB/s, 08:00\u201318:00, weekdays");
+    expect(ruleSummary(speedOf({ ...cap, days: ["mon", "tue", "thu"] }))).toBe(
+      "5 MB/s, 08:00\u201318:00, Mon, Tue and Thu",
+    );
+  });
+
+  it("puts a copy after its own kind only", () => {
+    const s: Schedule = {
+      queue_windows: [ruleOf(NEW_WINDOW)],
+      speed_entries: [speedOf(cap), speedOf({ ...cap, limit: "1" })],
+    };
+    const next = withCopy(s, { kind: "speed", index: 0 });
+    expect(next.queue_windows).toHaveLength(1);
+    expect(next.speed_entries.map((e) => e.limit)).toEqual([5 * MB, 5 * MB, MB]);
+  });
+
+  it("extends the status line with the cap in force or the next one", () => {
+    const s: Schedule = { queue_windows: [], speed_entries: [speedOf(cap)] };
+    expect(
+      statusLine(s, state(true, null, { limit: 5 * MB, limit_until: "2026-11-17T18:00" }), NOW),
+    ).toBe("Downloads run any time. A 5 MB/s cap applies until 18:00.");
+    expect(
+      statusLine(
+        s,
+        state(true, null, { limit_until: "2026-11-18T08:00", limit_then: 5 * MB }),
+        NOW,
+      ),
+    ).toBe("Downloads run any time. A 5 MB/s cap starts at Wed 08:00.");
+    const both = { ...s, queue_windows: [ruleOf(NEW_WINDOW)] };
+    expect(
+      statusLine(
+        both,
+        state(true, "2026-11-18T08:00", { limit_until: "2026-11-18T08:00", limit_then: 5 * MB }),
+        NOW,
+      ),
+    ).toBe("Queue open. The window closes at Wed 08:00, then a 5 MB/s cap applies.");
+    both.speed_entries[0].enabled = false;
+    expect(statusLine(both, state(true, "2026-11-18T08:00"), NOW)).toBe(
+      "Queue open. The window closes at Wed 08:00.",
+    );
   });
 });

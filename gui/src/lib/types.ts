@@ -259,14 +259,31 @@ export interface QueueWindow {
   finish_running: boolean;
 }
 
-/** The saved rule set. Speed entries are passed through untouched. */
-export interface Schedule {
-  queue_windows: QueueWindow[];
-  speed_entries: unknown[];
+/** Inside its window, `limit` replaces the global speed limit. */
+export interface SpeedEntry {
+  name?: string;
+  enabled: boolean;
+  window: RuleWindow;
+  /** Bytes per second, above zero. */
+  limit: number;
 }
 
-/** Whether the queue is open, and when that next flips (local "YYYY-MM-DDTHH:MM"). */
+/** The saved rule set. */
+export interface Schedule {
+  queue_windows: QueueWindow[];
+  speed_entries: SpeedEntry[];
+}
+
+/**
+ * Whether the queue is open and which scheduled speed limit applies, and when each next
+ * changes (local "YYYY-MM-DDTHH:MM").
+ */
 export interface QueueState {
   open: boolean;
   until: string | null;
+  /** Bytes/s a speed entry imposes now; null when the global limit applies. */
+  limit: number | null;
+  limit_until: string | null;
+  /** The scheduled limit from `limit_until` on; null is the global limit. */
+  limit_then: number | null;
 }

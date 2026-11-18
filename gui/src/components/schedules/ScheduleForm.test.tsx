@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NEW_WINDOW, ruleOf } from "../../lib/schedule";
+import { NEW_WINDOW, ruleOf, speedOf, NEW_SPEED } from "../../lib/schedule";
 import { RuleRow } from "./RuleRow";
 import { ScheduleForm } from "./ScheduleForm";
 
@@ -59,6 +59,66 @@ describe("schedule components", () => {
     expect(q("[data-testid=schedule-summary]").textContent).toBe(
       "New downloads start from 22:00 to 08:00 every day. Running ones finish.",
     );
+  });
+
+  it("switches to a Speed limit: its fields, its sentence, and the entry it saves", () => {
+    const onSubmit = form();
+    pick(q("select[aria-label=Type]"), "speed");
+    expect(host.querySelector("[data-testid=finish-running]")).toBeNull();
+    expect(q<HTMLInputElement>("input[aria-label=Limit]").value).toBe("5");
+    expect(q<HTMLInputElement>("input[aria-label=Name]").placeholder).toBe("5 MB/s limit");
+    expect(q<HTMLInputElement>("input[aria-label='Start time']").value).toBe("08:00");
+    expect(q("[data-testid=schedule-summary]").textContent).toBe(
+      "Downloads are limited to 5 MB/s from 08:00 to 18:00 on weekdays.",
+    );
+    const limit = q<HTMLInputElement>("input[aria-label=Limit]");
+    act(() => {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      set.call(limit, "0");
+      limit.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(q("[data-testid=schedule-summary]").textContent).toBe("Enter a speed above 0");
+    expect(q<HTMLButtonElement>("[data-testid=schedule-submit]").disabled).toBe(true);
+    act(() => {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      set.call(limit, "2.5");
+      limit.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    click(q("[data-testid=schedule-submit]"));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ kind: "speed", limit: "2.5" }));
+  });
+
+  it("keeps an edited rule's type fixed", () => {
+    act(() =>
+      root.render(
+        <ScheduleForm
+          initial={{ ...NEW_SPEED, limit: "3" }}
+          editing={true}
+          onSubmit={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    expect(q<HTMLSelectElement>("select[aria-label=Type]").disabled).toBe(true);
+    expect(q("[data-testid=schedule-submit]").textContent).toBe("Save");
+  });
+
+  it("shows a speed rule as its row", () => {
+    act(() =>
+      root.render(
+        <ul>
+          <RuleRow
+            rule={speedOf({ ...NEW_SPEED, name: "Daytime cap" })}
+            onToggle={vi.fn()}
+            onEdit={vi.fn()}
+            onDuplicate={vi.fn()}
+            onDelete={vi.fn()}
+          />
+        </ul>,
+      ),
+    );
+    expect(q("[data-testid=rule-name]").textContent).toBe("Daytime cap");
+    expect(q("[data-testid=rule-summary]").textContent).toBe("5 MB/s, 08:00\u201318:00, weekdays");
   });
 
   it("shows the day chips only under Choose days, and disables Add with none picked", () => {

@@ -2,7 +2,9 @@
 // window set to a stretch that is closed now) pauses the queue: the status bar says so once,
 // and the Schedules view lists the rule and says when the window opens. Switching the rule off
 // clears the note and switching it on brings it back. A second rule is made with Choose days
-// (an empty set of days is refused in the form), then Delete removes it.
+// (an empty set of days is refused in the form), then Delete removes it. A Speed limit rule is
+// made through the same form (Type switched, Limit typed): it is listed after the windows and
+// the status line says when its cap starts.
 // The rules live in the shared app state, so the spec empties them before and after.
 
 import { $, $$, browser, expect } from "@wdio/globals";
@@ -18,7 +20,7 @@ const RULE = '[data-testid="rule-row"]';
 
 interface SavedSchedule {
   queue_windows: { name?: string; enabled: boolean; window: { days: string[] } }[];
-  speed_entries: unknown[];
+  speed_entries: { name?: string; enabled: boolean; limit: number; window: { days: string[] } }[];
 }
 
 const getSchedule = () => invoke<SavedSchedule>("get_schedule");
@@ -149,5 +151,47 @@ describe("rdm GUI queue window", () => {
     await waitForRules(1);
     expect((await getSchedule()).queue_windows).toHaveLength(1);
     await waitForText(PAUSED, "Queue paused until");
+  });
+
+  it("makes a Speed limit rule through the form, lists it and says when its cap starts", async () => {
+    await $('[data-testid="new-schedule"]').click();
+    await $(FORM).waitForDisplayed();
+    await $('select[aria-label="Type"]').selectByAttribute("value", "speed");
+    await expect($('[data-testid="finish-running"]')).not.toBeDisplayed();
+    await $('input[aria-label="Limit"]').setValue("2");
+    // A new Speed limit starts on weekdays; every day keeps the cap's start independent of today.
+    await $('select[aria-label="Days"]').selectByAttribute("value", "daily");
+    await retype($('input[aria-label="Start time"]'), win.start, { enter: false });
+    await retype($('input[aria-label="End time"]'), win.end, { enter: false });
+    await waitForText(
+      SUMMARY,
+      `Downloads are limited to 2 MB/s from ${win.start} to ${win.end} every day.`,
+    );
+    await $('input[aria-label="Name"]').setValue("E2E cap");
+    await $('[data-testid="schedule-submit"]').click();
+    await waitForGone(FORM);
+    await waitForRules(2);
+
+    await waitForText(`${RULE}:nth-child(2) [data-testid="rule-name"]`, "E2E cap");
+    await waitForText(
+      `${RULE}:nth-child(2) [data-testid="rule-summary"]`,
+      `2 MB/s, ${win.start}–${win.end}, daily`,
+    );
+    await waitForText(STATUS, `A 2 MB/s cap starts at ${win.start}.`);
+
+    const saved = await getSchedule();
+    expect(saved.speed_entries).toHaveLength(1);
+    expect(saved.speed_entries[0].limit).toBe(2 * 1024 * 1024);
+    expect(saved.queue_windows).toHaveLength(1);
+  });
+
+  it("switches the speed rule off and the cap leaves the status line", async () => {
+    const toggle = $(`${RULE}:nth-child(2) [data-testid="rule-switch"]`);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await browser.waitUntil(async () => !(await $(STATUS).getText()).includes("cap"), {
+      timeoutMsg: "the status line still mentioned the switched-off cap",
+    });
+    expect((await getSchedule()).speed_entries[0].enabled).toBe(false);
   });
 });

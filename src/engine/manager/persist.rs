@@ -125,9 +125,8 @@ impl Manager {
             });
         }
         let settings = data.settings.clamped();
-        let global = Arc::new(RateLimiter::new(settings.global_limit));
-
         let queue = QueueState::at(&settings.schedule, clock.now());
+        let global = Arc::new(RateLimiter::new(queue.limit.or(settings.global_limit)));
         let st = ManagerState {
             next_id,
             order,
