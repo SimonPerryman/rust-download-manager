@@ -13,6 +13,7 @@ import {
   addThroughDialog,
   baseUrl,
   invoke,
+  Key,
   removeAll,
   retype,
   rowById,
@@ -88,7 +89,11 @@ describe("rdm GUI when downloads finish", () => {
 
     // A program that does not exist, so the run fails to start (a warning, never a failed download).
     await retype($('input[aria-label="Program"]'), "rdm-e2e-no-such-program", { enter: false });
-    await $('textarea[aria-label="Arguments"]').addValue("--scan\n{path}");
+    // One argument per line. The Enter is a key press: WebKitGTK's driver drops a "\n" sent as text.
+    const args = $('textarea[aria-label="Arguments"]');
+    await args.addValue("--scan");
+    await browser.keys(Key.Enter);
+    await args.addValue("{path}");
     await $('[data-testid="command-submit"]').click();
     await waitForGone(FORM);
 

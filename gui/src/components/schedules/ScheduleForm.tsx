@@ -107,8 +107,7 @@ export function ScheduleForm({ initial, editing, choices = NO_CHOICES, onSubmit,
     setChoosing(false);
   };
 
-  const pickScope = (kind: ScopeKind) =>
-    set({ scopeKind: kind, scopeText: "", scopeBatch: null });
+  const pickScope = (kind: ScopeKind) => set({ scopeKind: kind, scopeText: "", scopeBatch: null });
 
   // A batch the rule names stays pickable after its downloads are gone.
   const batches =
@@ -229,7 +228,9 @@ export function ScheduleForm({ initial, editing, choices = NO_CHOICES, onSubmit,
                     aria-label="Batch"
                     value={draft.scopeBatch?.id ?? ""}
                     onChange={(e) =>
-                      set({ scopeBatch: batches.find((b) => b.id === Number(e.target.value)) ?? null })
+                      set({
+                        scopeBatch: batches.find((b) => b.id === Number(e.target.value)) ?? null,
+                      })
                     }
                   >
                     <option value="">{batches.length === 0 ? "No batches" : "Pick a batch"}</option>

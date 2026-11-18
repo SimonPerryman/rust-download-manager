@@ -90,7 +90,9 @@ describe("schedule components", () => {
     pick(q<HTMLSelectElement>("select[aria-label=Batch]"), "3");
     expect(q("[data-testid=schedule-summary]").textContent).toContain("Downloads in batch Course");
     pick(q<HTMLSelectElement>("#sched-scope"), "tag");
-    expect([...host.querySelectorAll("#sched-tags option")].map((o) => o.getAttribute("value"))).toEqual(["a", "b"]);
+    expect(
+      [...host.querySelectorAll("#sched-tags option")].map((o) => o.getAttribute("value")),
+    ).toEqual(["a", "b"]);
   });
 
   it("changes the sentence when running downloads are left to finish", () => {

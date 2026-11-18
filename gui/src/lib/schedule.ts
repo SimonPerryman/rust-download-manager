@@ -134,8 +134,7 @@ export function scopeTail(s: Scope | null | undefined): string {
 }
 
 /** A rule's scope when it isn't all downloads; otherwise the key is left out. */
-const scoped = (s: Scope | null): { scope?: Scope } =>
-  s && s.kind !== "all" ? { scope: s } : {};
+const scoped = (s: Scope | null): { scope?: Scope } => (s && s.kind !== "all" ? { scope: s } : {});
 
 /** The draft of an existing rule, for Edit. */
 export function draftOf(rule: Rule): RuleDraft {
@@ -333,9 +332,7 @@ export function statusLine(s: Schedule, q: QueueState | null, now?: Date): strin
     if (q.open) queue = at ? `Queue open. The window closes at ${at}.` : "Queue open.";
     else queue = at ? `Queue paused. The window opens at ${at}.` : "Queue paused.";
   }
-  const scopedOn = [...s.queue_windows, ...s.speed_entries].some(
-    (r) => r.enabled && !general(r),
-  );
+  const scopedOn = [...s.queue_windows, ...s.speed_entries].some((r) => r.enabled && !general(r));
   const note = scopedOn ? " Other rules name some downloads." : "";
   if (!speeds) return queue + note;
   // A cap that starts as the open window closes reads as one sentence.
