@@ -52,6 +52,9 @@ type Props = {
   speed: number;
   speedSamples: readonly number[];
   globalLimit: number | null;
+  /** The Schedules view is showing, so no filter is the current one. */
+  schedulesOpen: boolean;
+  onSchedules: () => void;
 };
 
 // The status and folder filters with their live counts, and the total-speed sparkline.
@@ -67,6 +70,8 @@ export function Sidebar({
   speed,
   speedSamples,
   globalLimit,
+  schedulesOpen,
+  onSchedules,
 }: Props) {
   const doneCount = useRef<HTMLSpanElement>(null);
 
@@ -102,7 +107,7 @@ export function Sidebar({
                   icon={ICONS[f.key]}
                   label={f.label}
                   count={counts[f.key]}
-                  selected={sameFilter(filter, view)}
+                  selected={!schedulesOpen && sameFilter(filter, view)}
                   alert={f.key === "failed" && counts.failed > 0}
                   warn={f.key === "missing" && counts.missing > 0}
                   countRef={f.key === "done" ? doneCount : undefined}
@@ -120,9 +125,30 @@ export function Sidebar({
               icon={<Archive />}
               label="Archived"
               count={archivedCount}
-              selected={inArchive}
+              selected={!schedulesOpen && inArchive}
               onClick={() => onFilter(archivedView)}
             />
+          </li>
+        </ul>
+        <h2
+          id="automation-head"
+          className="side-head px-2 pb-2 pt-6 text-xs font-semibold text-g400"
+        >
+          Automation
+        </h2>
+        <ul className="grid gap-0.5" aria-labelledby="automation-head">
+          <li>
+            <button
+              data-testid="schedules-link"
+              aria-current={schedulesOpen ? "true" : undefined}
+              onClick={onSchedules}
+              className="f-item flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm font-medium text-g600 hover:bg-hover hover:text-ink"
+            >
+              <span className="f-icon shrink-0">
+                <Clock />
+              </span>
+              <span className="f-label min-w-0 flex-1 truncate">Schedules</span>
+            </button>
           </li>
         </ul>
         {folders.length > 0 && (
@@ -145,7 +171,7 @@ export function Sidebar({
                       label={f.label}
                       title={f.dir}
                       count={f.count}
-                      selected={sameFilter(filter, view)}
+                      selected={!schedulesOpen && sameFilter(filter, view)}
                       onClick={() => onFilter(view)}
                     />
                   </li>
@@ -173,7 +199,7 @@ export function Sidebar({
                       icon={<Group />}
                       label={b.label}
                       count={b.items.length}
-                      selected={sameFilter(filter, view)}
+                      selected={!schedulesOpen && sameFilter(filter, view)}
                       onClick={() => onFilter(view)}
                     />
                   </li>
@@ -198,7 +224,7 @@ export function Sidebar({
                       icon={<Tag />}
                       label={t.tag}
                       count={t.count}
-                      selected={sameFilter(filter, view)}
+                      selected={!schedulesOpen && sameFilter(filter, view)}
                       onClick={() => onFilter(view)}
                     />
                   </li>

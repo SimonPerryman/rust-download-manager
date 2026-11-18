@@ -62,6 +62,7 @@ impl Inner {
         e.record.active_ms = e.active_ms();
         e.started = None;
         let stop_keeping = std::mem::take(&mut e.stop_keeping);
+        let window_pause = std::mem::take(&mut e.window_pause);
         match result {
             Ok(summary) => {
                 e.record.status = Status::Completed;
@@ -83,6 +84,9 @@ impl Inner {
                 e.record.finished_at = now_secs();
             }
             Err(Error::Paused) if stop_keeping => e.cancel_keeping(),
+            // Paused by the queue window, not the user: it waits for the
+            // window to open again, its partial kept.
+            Err(Error::Paused) if window_pause => e.record.status = Status::Queued,
             Err(Error::Paused) => {
                 e.record.status = Status::Paused;
             }

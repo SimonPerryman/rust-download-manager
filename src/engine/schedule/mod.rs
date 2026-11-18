@@ -10,7 +10,7 @@ mod clock;
 mod days;
 mod time;
 
-pub use clock::{Clock, FakeClock};
+pub use clock::{Clock, FakeClock, SystemClock};
 pub use days::{Days, DaysName, EmptyDays};
 pub use time::{Date, LocalDateTime, ParseTimeError, TimeOfDay, Weekday};
 
@@ -79,6 +79,7 @@ impl Window {
 
     /// Whether `at` falls inside the window.
     pub fn contains(&self, at: LocalDateTime) -> bool {
+        let at = at.effective();
         let (time, day) = (at.time(), at.weekday());
         if self.crosses_midnight() {
             (self.days.contains(day) && time >= self.start)
@@ -90,6 +91,7 @@ impl Window {
 
     /// The first moment after `at` the window opens or closes.
     fn next_edge(&self, at: LocalDateTime) -> Option<LocalDateTime> {
+        let at = at.effective();
         // Yesterday's start can close today; a week ahead covers every day.
         (-1..=7)
             .map(|offset| at.date().add_days(offset))
@@ -151,7 +153,7 @@ pub struct StartAt(pub LocalDateTime);
 impl StartAt {
     /// Whether the time has come (or passed) at `now`.
     pub fn is_due(&self, now: LocalDateTime) -> bool {
-        now >= self.0
+        now.effective() >= self.0
     }
 }
 
@@ -200,6 +202,28 @@ impl Schedule {
     /// clock is at or past it.
     pub fn next_boundary(&self, at: LocalDateTime) -> Option<LocalDateTime> {
         self.enabled_windows().filter_map(|w| w.next_edge(at)).min()
+    }
+
+    /// The next moment after `at` the queue flips between open and closed
+    /// (what a status line says it is open or paused "until"); `None` if it
+    /// never will, as with no queue window or one that is always open.
+    pub fn next_queue_change(&self, at: LocalDateTime) -> Option<LocalDateTime> {
+        let open = self.queue_open(at);
+        let mut from = at.effective();
+        // Overlapping windows can open or close without the queue flipping;
+        // a week of boundaries per window is far more than any set needs.
+        for _ in 0..(self.queue_windows.len() * 16 + 16) {
+            from = self
+                .queue_windows
+                .iter()
+                .filter(|r| r.enabled)
+                .filter_map(|r| r.window.next_edge(from))
+                .min()?;
+            if self.queue_open(from) != open {
+                return Some(from);
+            }
+        }
+        None
     }
 }
 
@@ -611,5 +635,86 @@ mod tests {
         assert_eq!(clock.now(), at(2026, 3, 10, 0, 0));
         clock.set(at(2026, 1, 1, 0, 0));
         assert_eq!(clock.now(), at(2026, 1, 1, 0, 0));
+    }
+
+    #[test]
+    fn a_boundary_in_the_repeated_hour_is_crossed_once() {
+        // Closes at 01:30; the clock falls back from 02:00 to 01:00.
+        let s = Schedule {
+            queue_windows: vec![queue(window("22:00", "01:30", Days::DAILY))],
+            ..Schedule::default()
+        };
+        let clock = FakeClock::new(night_of(FALL, 1).add_minutes(29));
+        assert!(s.queue_open(clock.now()));
+        clock.advance(1);
+        assert!(!s.queue_open(clock.now()), "closed at 01:30");
+        clock.advance(30);
+        clock.fall_back(60);
+        let again = clock.now();
+        assert_eq!(again.time(), t("01:00"));
+        assert!(again.repeat_end().is_some());
+        // By the bare wall clock this is inside the window again.
+        assert!(s.queue_open(LocalDateTime::new(again.date(), again.time())));
+        assert!(!s.queue_open(again), "the repeat doesn't reopen it");
+        clock.advance(45);
+        assert!(!s.queue_open(clock.now()), "01:45, second pass");
+        assert_eq!(
+            s.next_boundary(clock.now()),
+            Some(night_of(FALL, 22)),
+            "nothing left in the repeat to wait for"
+        );
+        clock.advance(15);
+        assert_eq!(clock.now(), night_of(FALL, 2), "the repeat has ended");
+        assert!(!s.queue_open(clock.now()));
+    }
+
+    #[test]
+    fn a_boundary_the_repeat_opens_on_is_not_met_twice_either() {
+        // Opens at 01:30, inside the repeated hour: open from the first
+        // pass, and still open (not re-triggered) in the second.
+        let s = Schedule {
+            queue_windows: vec![queue(window("01:30", "05:00", Days::DAILY))],
+            ..Schedule::default()
+        };
+        let clock = FakeClock::new(night_of(FALL, 1).add_minutes(30));
+        assert!(s.queue_open(clock.now()));
+        clock.advance(30);
+        clock.fall_back(60);
+        assert!(s.queue_open(clock.now()), "01:00 again, still open");
+    }
+
+    #[test]
+    fn a_start_at_inside_the_repeat_is_due_in_the_second_pass() {
+        let start = StartAt(night_of(FALL, 1).add_minutes(30));
+        let clock = FakeClock::new(night_of(FALL, 2));
+        clock.fall_back(60);
+        assert!(start.is_due(clock.now()));
+    }
+
+    #[test]
+    fn the_next_queue_change_is_when_the_queue_flips() {
+        let mut s = overnight(Days::DAILY);
+        s.queue_windows
+            .push(queue(window("23:00", "07:00", Days::DAILY)));
+        // Overlapping windows: the queue stays open through 22:00-07:00.
+        assert_eq!(
+            s.next_queue_change(at(2026, 3, 9, 12, 0)),
+            Some(at(2026, 3, 9, 22, 0))
+        );
+        assert_eq!(
+            s.next_queue_change(at(2026, 3, 9, 23, 30)),
+            Some(at(2026, 3, 10, 7, 0))
+        );
+        assert_eq!(
+            Schedule::default().next_queue_change(at(2026, 3, 9, 12, 0)),
+            None
+        );
+    }
+
+    #[test]
+    fn the_system_clock_reads_a_plausible_unrepeated_minute() {
+        let now = SystemClock::new().now();
+        assert!(now.date() > Date::new(2025, 1, 1).unwrap());
+        assert!(now.repeat_end().is_none());
     }
 }

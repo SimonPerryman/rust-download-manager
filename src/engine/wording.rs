@@ -14,18 +14,20 @@ pub(super) fn size_text(total: Option<u64>) -> String {
 /// resumable · 4 pieces, up to 4 lanes`. Resumable means the server takes
 /// byte ranges.
 pub(super) fn announce_start(req: &DownloadRequest, resp: &reqwest::Response, lanes: &str) {
+    let ranges = header_str(resp.headers(), header::ACCEPT_RANGES)
+        .is_some_and(|v| v.trim().eq_ignore_ascii_case("bytes"));
+    req.tally.set_resumable(ranges);
     if !req.tally.announce() {
         return;
     }
     let size = size_text(resp.content_length());
-    let ranges = header_str(resp.headers(), header::ACCEPT_RANGES)
-        .is_some_and(|v| v.trim().eq_ignore_ascii_case("bytes"));
     let resumable = if ranges { "resumable" } else { "not resumable" };
     tracing::info!("Started · {size} · {resumable} · {lanes}");
 }
 
 /// Say a run picked up the `on_disk` bytes an earlier one left (once per run).
 pub(super) fn announce_resume(req: &DownloadRequest, on_disk: u64) {
+    req.tally.set_resumable(true);
     if req.tally.announce() {
         req.tally.resumed_with(on_disk);
         if on_disk == 0 {
@@ -39,6 +41,7 @@ pub(super) fn announce_resume(req: &DownloadRequest, on_disk: u64) {
 /// Say a resume throws its `offset` bytes away, and `why`.
 pub(super) fn restarting(req: &DownloadRequest, offset: u64, why: &str) {
     req.tally.announce();
+    req.tally.set_resumable(false);
     req.tally.wasted(offset);
     tracing::warn!("Couldn't resume ({why}) — starting over");
 }

@@ -2,6 +2,7 @@
 
 use super::Manager;
 use crate::engine::lock::lock;
+use crate::engine::schedule::Schedule;
 use crate::engine::store::Settings;
 use crate::engine::ProxyMode;
 
@@ -35,6 +36,12 @@ impl Manager {
         self.update_settings(|s| s.proxy = proxy);
     }
 
+    /// Replace the schedule rules and apply them now: a queue window that is
+    /// closed pauses running downloads. Saved with the settings.
+    pub fn set_schedule(&self, schedule: Schedule) {
+        self.update_settings(|s| s.schedule = schedule);
+    }
+
     /// Cap one download's speed in bytes/s (`None` or `Some(0)` is
     /// unlimited). Applies live if it's running, and persists across restarts.
     pub fn set_limit(&self, id: u64, limit: Option<u64>) {
@@ -53,6 +60,7 @@ impl Manager {
         change(&mut st.settings);
         st.settings = std::mem::take(&mut st.settings).clamped();
         self.inner.global.set_rate(st.settings.global_limit);
+        self.inner.apply_window(st);
         self.inner.schedule(st);
         self.inner.persist(st);
         self.inner.publish(st);

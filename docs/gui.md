@@ -11,6 +11,7 @@ see [Installing rdm](install.md#desktop-app); to build it, see
 - [Batches](#batches)
 - [Finding and selecting](#finding-and-selecting)
 - [The queue](#the-queue)
+- [Schedules](#schedules)
 - [Lanes and details](#lanes-and-details)
 - [Completed and failed downloads](#completed-and-failed-downloads)
 - [Missing files](#missing-files)
@@ -126,6 +127,32 @@ turns orange and the Speed column reads the speed against the limit:
 - **Paused or queued:** `≤ 50 KB/s`.
 - In a window narrower than about 760 px the limit shortens to the form you
   type in the editor: `49.8 / 50K`.
+
+## Schedules
+
+**Schedules** in the sidebar (under Automation) holds the rules for when
+downloads run. One line at the top says where the queue stands ("Queue paused.
+The window opens at 22:00."), and the list below has one row per rule.
+
+A **download window** is the span of the day when downloads run, on every day,
+weekdays, weekends or days you choose. It may cross midnight (22:00 to 08:00).
+Outside it the queue is paused: nothing new starts, and the status bar says
+**Queue paused until 22:00** once (a weekday comes first when it isn't today),
+not on every row. When the window closes, running downloads pause rather than
+fail, keeping what they have, and they continue when it opens. A download
+whose server can't resume is left to finish, since pausing would throw its
+bytes away. With **Finish downloads in progress** on, the window only stops
+new downloads starting. The window follows the wall clock, so it is an hour
+shorter or longer on the night the clocks change. Rules apply only while rdm
+is running; it never wakes the computer.
+
+**New schedule** opens a form: an optional name, the times typed as `22:00`
+to `08:00`, the days, and the switch above. The footer says in a sentence what
+the rule does. **Days** offers Daily, Weekdays, Weekends and Choose days; the
+day buttons appear under Choose days, and with none picked **Add** stays off.
+Each rule has a switch (a switched-off rule keeps its settings) and a ···
+menu with Edit, Duplicate and Delete. With several rules on, the queue is open
+whenever any of them is.
 
 ## Lanes and details
 

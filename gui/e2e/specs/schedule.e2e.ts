@@ -1,0 +1,153 @@
+// End-to-end: the queue window. A rule made in the Schedules view's New schedule form (its
+// window set to a stretch that is closed now) pauses the queue: the status bar says so once,
+// and the Schedules view lists the rule and says when the window opens. Switching the rule off
+// clears the note and switching it on brings it back. A second rule is made with Choose days
+// (an empty set of days is refused in the form), then Delete removes it.
+// The rules live in the shared app state, so the spec empties them before and after.
+
+import { $, $$, browser, expect } from "@wdio/globals";
+import { invoke, retype, selectFilter, waitForGone, waitForText } from "../helpers";
+
+const SCHEDULES_LINK = '[data-testid="schedules-link"]';
+const VIEW = '[data-testid="schedules-view"]';
+const FORM = '[role="dialog"][aria-label="New schedule"]';
+const PAUSED = '[data-testid="queue-paused"]';
+const STATUS = '[data-testid="schedule-status"]';
+const SUMMARY = '[data-testid="schedule-summary"]';
+const RULE = '[data-testid="rule-row"]';
+
+interface SavedSchedule {
+  queue_windows: { name?: string; enabled: boolean; window: { days: string[] } }[];
+  speed_entries: unknown[];
+}
+
+const getSchedule = () => invoke<SavedSchedule>("get_schedule");
+const clearRules = () =>
+  invoke("set_schedule", { schedule: { queue_windows: [], speed_entries: [] } });
+
+/** A window that is closed now, by the page's own local clock: two to three hours ahead. */
+async function closedWindow(): Promise<{ start: string; end: string }> {
+  const hours = await browser.execute(() => new Date().getHours());
+  const at = (h: number) => `${String(h % 24).padStart(2, "0")}:00`;
+  return { start: at(hours + 2), end: at(hours + 3) };
+}
+
+const ruleCount = async () => (await $$(RULE)).length;
+
+async function waitForRules(n: number): Promise<void> {
+  await browser.waitUntil(async () => (await ruleCount()) === n, {
+    timeoutMsg: `the Schedules view never listed ${n} rule(s)`,
+  });
+}
+
+/** Opens the New schedule form and types the times (not Enter: the form stays open). */
+async function openForm(win: { start: string; end: string }): Promise<void> {
+  await $('[data-testid="new-schedule"]').click();
+  await $(FORM).waitForDisplayed();
+  await retype($('input[aria-label="Start time"]'), win.start, { enter: false });
+  await retype($('input[aria-label="End time"]'), win.end, { enter: false });
+}
+
+describe("rdm GUI queue window", () => {
+  let win: { start: string; end: string };
+
+  before(async () => {
+    await clearRules();
+    win = await closedWindow();
+    await $(SCHEDULES_LINK).click();
+    await $(VIEW).waitForDisplayed();
+  });
+
+  after(async () => {
+    await clearRules();
+    await selectFilter("all");
+  });
+
+  it("starts with no rules and an open queue", async () => {
+    await waitForText(STATUS, "No schedules");
+    await expect($(PAUSED)).not.toBeDisplayed();
+  });
+
+  it("says what a new window does before it is added", async () => {
+    await openForm(win);
+    await $('input[aria-label="Name"]').setValue("E2E window");
+    await waitForText(
+      SUMMARY,
+      `Downloads run from ${win.start} to ${win.end} every day, and pause at ${win.end}.`,
+    );
+    await $('[data-testid="finish-running"]').click();
+    await waitForText(
+      SUMMARY,
+      `New downloads start from ${win.start} to ${win.end} every day. Running ones finish.`,
+    );
+    await $('[data-testid="finish-running"]').click();
+  });
+
+  it("adds the rule, lists it and pauses the queue once in the status bar", async () => {
+    await $('[data-testid="schedule-submit"]').click();
+    await waitForGone(FORM);
+    await waitForRules(1);
+    await waitForText('[data-testid="rule-name"]', "E2E window");
+    await waitForText('[data-testid="rule-summary"]', `from ${win.start} to ${win.end}`);
+
+    await waitForText(PAUSED, "Queue paused until");
+    await waitForText(PAUSED, win.start);
+    expect(await $$(PAUSED).length).toBe(1);
+    await waitForText(STATUS, "Queue paused. The window opens at");
+
+    const saved = await getSchedule();
+    expect(saved.queue_windows).toHaveLength(1);
+    expect(saved.queue_windows[0].window.days).toHaveLength(7);
+  });
+
+  it("switches the rule off and on", async () => {
+    const toggle = $('[data-testid="rule-switch"]');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await waitForGone(PAUSED);
+    await waitForText(STATUS, "All schedules are off");
+    await expect($(RULE)).toHaveAttribute("data-enabled", "false");
+    expect((await getSchedule()).queue_windows[0].enabled).toBe(false);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await waitForText(PAUSED, "Queue paused until");
+    await expect($(RULE)).toHaveAttribute("data-enabled", "true");
+  });
+
+  it("makes a second rule with chosen days and refuses an empty set", async () => {
+    await openForm(win);
+    await $('select[aria-label="Days"]').selectByAttribute("value", "choose");
+    const chip = (day: string) => $(`[data-testid="day-chips"] button[data-day="${day}"]`);
+    // All seven start picked; leave Mon and Tue.
+    for (const day of ["wed", "thu", "fri", "sat", "sun"]) await chip(day).click();
+    await waitForText(SUMMARY, "on Mon and Tue");
+
+    await chip("mon").click();
+    await chip("tue").click();
+    await waitForText(SUMMARY, "Pick at least one day");
+    await expect($('[data-testid="schedule-submit"]')).toBeDisabled();
+
+    await chip("mon").click();
+    await chip("tue").click();
+    await waitForText(SUMMARY, "on Mon and Tue");
+    await $('[data-testid="schedule-submit"]').click();
+    await waitForGone(FORM);
+    await waitForRules(2);
+
+    const saved = await getSchedule();
+    expect(saved.queue_windows[1].window.days).toEqual(["mon", "tue"]);
+    await waitForText(
+      `${RULE}:nth-child(2) [data-testid="rule-name"]`,
+      `${win.start} to ${win.end}, Mon and Tue`,
+    );
+  });
+
+  it("deletes a rule from its menu", async () => {
+    await $(`${RULE}:nth-child(2) [data-testid="rule-menu-button"]`).click();
+    await $('[data-testid="rule-menu"]').$("button=Delete").click();
+    await waitForRules(1);
+    expect((await getSchedule()).queue_windows).toHaveLength(1);
+    await waitForText(PAUSED, "Queue paused until");
+  });
+});

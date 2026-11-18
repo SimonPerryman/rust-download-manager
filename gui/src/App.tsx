@@ -41,6 +41,7 @@ import { useToast } from "./lib/useToast";
 import { pausedBarCount, updatedHeading, willPauseCount } from "./lib/updater";
 import { useUpdater } from "./lib/useUpdater";
 import { useUrlIntake } from "./lib/useUrlIntake";
+import { useSchedule } from "./lib/useSchedule";
 import { useView } from "./lib/useView";
 import { DetailsPane } from "./components/details/DetailsPane";
 import type { PaneTab } from "./components/details/tabs";
@@ -51,6 +52,7 @@ import { StopDialog } from "./components/dialogs/StopDialog";
 import { DropOverlay } from "./components/DropOverlay";
 import { FinishNotifications } from "./components/feedback/FinishNotifications";
 import { Toasts } from "./components/feedback/Toasts";
+import { SchedulesView } from "./components/schedules/SchedulesView";
 import { Sidebar } from "./components/sidebar/Sidebar";
 import { StatusBar } from "./components/statusbar/StatusBar";
 import type { RowHandlers } from "./components/table/rowHandlers";
@@ -99,6 +101,8 @@ export default function App() {
     title,
   } = useView(downloads, prefs.groupBatches);
 
+  const [page, setPage] = useState<"downloads" | "schedules">("downloads");
+  const { schedule, queue: queueState, save: saveSchedule } = useSchedule();
   const [addOpen, setAddOpen] = useState(false);
   const [prefillText, setPrefillText] = useState("");
   const [paneTab, setPaneTab] = useState<PaneTab>("overview");
@@ -364,7 +368,10 @@ export default function App() {
     <div className="app">
       <Sidebar
         filter={view}
-        onFilter={setFilter}
+        onFilter={(f) => {
+          setPage("downloads");
+          setFilter(f);
+        }}
         counts={counts}
         folders={folders}
         archivedCount={archived}
@@ -374,181 +381,201 @@ export default function App() {
         speed={totalSpeed(downloads)}
         speedSamples={history.total}
         globalLimit={settings?.global_limit ?? null}
+        schedulesOpen={page === "schedules"}
+        onSchedules={() => setPage("schedules")}
       />
-      <main className="main">
-        <Toolbar
-          title={title}
-          count={visible.length}
-          batch={(() => {
-            const group = view.kind === "batch" ? batches.find((b) => b.id === view.batch) : null;
-            return group
-              ? {
-                  rollup: rollupText(group),
-                  onRetry: group.failed > 0 ? () => retryBatch(group.id) : null,
+      <main className={page === "schedules" ? "flex min-h-0 min-w-0 flex-col" : "main"}>
+        {page === "schedules" ? (
+          <SchedulesView
+            schedule={schedule}
+            queue={queueState}
+            save={saveSchedule}
+            onError={fail}
+          />
+        ) : (
+          <>
+            <Toolbar
+              title={title}
+              count={visible.length}
+              batch={(() => {
+                const group =
+                  view.kind === "batch" ? batches.find((b) => b.id === view.batch) : null;
+                return group
+                  ? {
+                      rollup: rollupText(group),
+                      onRetry: group.failed > 0 ? () => retryBatch(group.id) : null,
+                    }
+                  : null;
+              })()}
+              hasBatches={batches.length > 0}
+              onRetryAll={
+                view.kind === "status" && view.status === "failed" && failed.length > 0
+                  ? retryAll
+                  : null
+              }
+              onFindFiles={
+                view.kind === "status" &&
+                view.status === "missing" &&
+                visible.length > 0 &&
+                !find.state.active
+                  ? () => find.startMany(missingIds(downloads))
+                  : null
+              }
+              query={query}
+              onQuery={setQuery}
+              pauseMode={pauseAllMode(downloads)}
+              onPauseAll={() => api.pauseAll().catch(fail)}
+              onResumeAll={() => api.resumeAll().catch(fail)}
+              onArchiveFinished={inArchive ? null : () => archiver.archiveFinished(live)}
+              canArchiveFinished={finishedToArchive(live).length > 0}
+              archived={
+                inArchive
+                  ? {
+                      canAct: selectedIds.length > 0,
+                      onUnarchive: () => run("unarchive", selectedIds),
+                      onRemove: () => run("remove", selectedIds),
+                      removeTitle: removeSelectedTitle(toRemove(selectedRows)),
+                    }
+                  : null
+              }
+              confirmRemove={confirmRemove}
+              onConfirmRemove={updateConfirmRemove}
+              updates={{
+                prefs: updates.prefs,
+                check: updates.check,
+                onCheck: () => void updater.checkNow(),
+                onAutoCheck: (on) => updater.setAutoCheck(on).catch(fail),
+                onLeave: () => updater.clearCheckResult(),
+              }}
+              onAdd={() => openAdd()}
+              prefs={prefs}
+              resolved={resolved}
+              onPrefs={updatePrefs}
+              onSettingsApplied={applySettings}
+              onSettingsUnsaved={notify}
+              selection={
+                selectedRows.length >= 2
+                  ? {
+                      count: selectedRows.length,
+                      actions: selectionActions(selectedRows, inArchive),
+                    }
+                  : null
+              }
+              onSelectionCommand={(cmd) => {
+                run(cmd, selectedIds);
+                // The clicked button may go (Pause turns into Resume, Remove ends the selection).
+                setTimeout(() => focusIsFree() && tableRef.current?.focus({ preventScroll: true }));
+              }}
+              onClearSelection={() => {
+                clearSelection();
+                setDetailsId(null);
+                tableRef.current?.focus({ preventScroll: true });
+              }}
+            />
+            <div data-testid="update-bars" data-checks-done={updates.checksDone}>
+              <UpdateNotice
+                notice={updates.notice}
+                willPause={willPauseCount(downloads)}
+                staged={updates.staged}
+                onRestart={() => void updater.install("now")}
+                onInstallOnQuit={() => void updater.install("on-quit")}
+                onLater={() => updater.later()}
+                onNotes={() => api.openUpdateNotes().catch(fail)}
+                onRetry={() => void updater.retry()}
+                onDismiss={() => updater.dismiss()}
+              />
+              <FindFilesBar search={searchingMany(find.state)} onCancel={find.cancel} />
+              <SameFolderOfferBar
+                offer={sameFolderOffer}
+                onSearch={searchSameFolder}
+                onDismiss={dismissSameFolderOffer}
+              />
+              <PausedForUpdateBar
+                count={pausedBarCount(downloads, updates)}
+                heading={updatedHeading(updates.prefs)}
+                onResumeAll={() => updater.resumePaused().catch(fail)}
+                onDismiss={() => updater.forgetPaused().catch(fail)}
+              />
+            </div>
+            <DownloadTable
+              items={items}
+              sort={sort}
+              onSort={onSort}
+              unopened={finish.unopened}
+              fresh={finish.fresh}
+              failedCount={failed.length}
+              handlers={handlers}
+              refocusId={refocusId}
+              onRefocused={onRefocused}
+              empty={emptyCopy(view, title, query)}
+              onAdd={() => openAdd()}
+              tableRef={tableRef}
+              selection={sel}
+              queue={queue}
+              queueView={view.kind === "status" && view.status === "waiting"}
+              onSelect={onSelect}
+              onMenu={openMenu}
+              onKeyDown={onTableKey}
+              onQueueDrop={onQueueDrop}
+              detailsId={detailsRow?.id ?? null}
+              onDetails={onDetails}
+              onToggleBatch={toggleBatch}
+              onRetryBatch={retryBatch}
+              onRevealBatch={(batch) => api.revealBatch(batch).catch(fail)}
+            />
+            {review && (
+              <FindReviewPane
+                // A new search is a new review; its ticks start over.
+                key={review.map((r) => r.d.id).join(",")}
+                rows={review}
+                height={pane.height}
+                onRelink={(choices) => void find.relink(choices)}
+                onLocate={locateDownload}
+                onClose={find.closeReview}
+              />
+            )}
+            {detailsRow && !review && (
+              <DetailsPane
+                d={detailsRow}
+                work={laneWork.get(detailsRow.id) ?? EMPTY_WORK}
+                tab={paneTab}
+                onTab={setPaneTab}
+                height={pane.height}
+                maxHeight={pane.maxHeight}
+                onResize={pane.resize}
+                onClose={closeDetails}
+                samples={history.byId.get(detailsRow.id) ?? []}
+                globalLimit={settings?.global_limit ?? null}
+                onReveal={revealDownload}
+                onLocate={locateDownload}
+                onForget={forgetMissing}
+                find={{
+                  searching: searchingOne(find.state, detailsRow.id),
+                  result: find.state.results[detailsRow.id],
+                  locateError: locateError?.id === detailsRow.id ? locateError.message : null,
+                  onFind: findDownload,
+                  onCancel: find.cancel,
+                  onRelink: (d, file) => void find.relink([{ id: d.id, path: file.path }]),
+                  onSkip: (d) => find.skip(d.id),
+                }}
+                spot={
+                  detailsRow.status === "queued" && queue.includes(detailsRow.id)
+                    ? { index: queue.indexOf(detailsRow.id), count: queue.length }
+                    : null
                 }
-              : null;
-          })()}
-          hasBatches={batches.length > 0}
-          onRetryAll={
-            view.kind === "status" && view.status === "failed" && failed.length > 0
-              ? retryAll
-              : null
-          }
-          onFindFiles={
-            view.kind === "status" &&
-            view.status === "missing" &&
-            visible.length > 0 &&
-            !find.state.active
-              ? () => find.startMany(missingIds(downloads))
-              : null
-          }
-          query={query}
-          onQuery={setQuery}
-          pauseMode={pauseAllMode(downloads)}
-          onPauseAll={() => api.pauseAll().catch(fail)}
-          onResumeAll={() => api.resumeAll().catch(fail)}
-          onArchiveFinished={inArchive ? null : () => archiver.archiveFinished(live)}
-          canArchiveFinished={finishedToArchive(live).length > 0}
-          archived={
-            inArchive
-              ? {
-                  canAct: selectedIds.length > 0,
-                  onUnarchive: () => run("unarchive", selectedIds),
-                  onRemove: () => run("remove", selectedIds),
-                  removeTitle: removeSelectedTitle(toRemove(selectedRows)),
+                onMove={(delta) =>
+                  moveInQueue(detailsRow.id, stepIndex(queue, detailsRow.id, delta))
                 }
-              : null
-          }
-          confirmRemove={confirmRemove}
-          onConfirmRemove={updateConfirmRemove}
-          updates={{
-            prefs: updates.prefs,
-            check: updates.check,
-            onCheck: () => void updater.checkNow(),
-            onAutoCheck: (on) => updater.setAutoCheck(on).catch(fail),
-            onLeave: () => updater.clearCheckResult(),
-          }}
-          onAdd={() => openAdd()}
-          prefs={prefs}
-          resolved={resolved}
-          onPrefs={updatePrefs}
-          onSettingsApplied={applySettings}
-          onSettingsUnsaved={notify}
-          selection={
-            selectedRows.length >= 2
-              ? { count: selectedRows.length, actions: selectionActions(selectedRows, inArchive) }
-              : null
-          }
-          onSelectionCommand={(cmd) => {
-            run(cmd, selectedIds);
-            // The clicked button may go (Pause turns into Resume, Remove ends the selection).
-            setTimeout(() => focusIsFree() && tableRef.current?.focus({ preventScroll: true }));
-          }}
-          onClearSelection={() => {
-            clearSelection();
-            setDetailsId(null);
-            tableRef.current?.focus({ preventScroll: true });
-          }}
-        />
-        <div data-testid="update-bars" data-checks-done={updates.checksDone}>
-          <UpdateNotice
-            notice={updates.notice}
-            willPause={willPauseCount(downloads)}
-            staged={updates.staged}
-            onRestart={() => void updater.install("now")}
-            onInstallOnQuit={() => void updater.install("on-quit")}
-            onLater={() => updater.later()}
-            onNotes={() => api.openUpdateNotes().catch(fail)}
-            onRetry={() => void updater.retry()}
-            onDismiss={() => updater.dismiss()}
-          />
-          <FindFilesBar search={searchingMany(find.state)} onCancel={find.cancel} />
-          <SameFolderOfferBar
-            offer={sameFolderOffer}
-            onSearch={searchSameFolder}
-            onDismiss={dismissSameFolderOffer}
-          />
-          <PausedForUpdateBar
-            count={pausedBarCount(downloads, updates)}
-            heading={updatedHeading(updates.prefs)}
-            onResumeAll={() => updater.resumePaused().catch(fail)}
-            onDismiss={() => updater.forgetPaused().catch(fail)}
-          />
-        </div>
-        <DownloadTable
-          items={items}
-          sort={sort}
-          onSort={onSort}
-          unopened={finish.unopened}
-          fresh={finish.fresh}
-          failedCount={failed.length}
-          handlers={handlers}
-          refocusId={refocusId}
-          onRefocused={onRefocused}
-          empty={emptyCopy(view, title, query)}
-          onAdd={() => openAdd()}
-          tableRef={tableRef}
-          selection={sel}
-          queue={queue}
-          queueView={view.kind === "status" && view.status === "waiting"}
-          onSelect={onSelect}
-          onMenu={openMenu}
-          onKeyDown={onTableKey}
-          onQueueDrop={onQueueDrop}
-          detailsId={detailsRow?.id ?? null}
-          onDetails={onDetails}
-          onToggleBatch={toggleBatch}
-          onRetryBatch={retryBatch}
-          onRevealBatch={(batch) => api.revealBatch(batch).catch(fail)}
-        />
-        {review && (
-          <FindReviewPane
-            // A new search is a new review; its ticks start over.
-            key={review.map((r) => r.d.id).join(",")}
-            rows={review}
-            height={pane.height}
-            onRelink={(choices) => void find.relink(choices)}
-            onLocate={locateDownload}
-            onClose={find.closeReview}
-          />
-        )}
-        {detailsRow && !review && (
-          <DetailsPane
-            d={detailsRow}
-            work={laneWork.get(detailsRow.id) ?? EMPTY_WORK}
-            tab={paneTab}
-            onTab={setPaneTab}
-            height={pane.height}
-            maxHeight={pane.maxHeight}
-            onResize={pane.resize}
-            onClose={closeDetails}
-            samples={history.byId.get(detailsRow.id) ?? []}
-            globalLimit={settings?.global_limit ?? null}
-            onReveal={revealDownload}
-            onLocate={locateDownload}
-            onForget={forgetMissing}
-            find={{
-              searching: searchingOne(find.state, detailsRow.id),
-              result: find.state.results[detailsRow.id],
-              locateError: locateError?.id === detailsRow.id ? locateError.message : null,
-              onFind: findDownload,
-              onCancel: find.cancel,
-              onRelink: (d, file) => void find.relink([{ id: d.id, path: file.path }]),
-              onSkip: (d) => find.skip(d.id),
-            }}
-            spot={
-              detailsRow.status === "queued" && queue.includes(detailsRow.id)
-                ? { index: queue.indexOf(detailsRow.id), count: queue.length }
-                : null
-            }
-            onMove={(delta) => moveInQueue(detailsRow.id, stepIndex(queue, detailsRow.id, delta))}
-          />
+              />
+            )}
+          </>
         )}
       </main>
       <StatusBar
         speed={totalSpeed(downloads)}
         downloading={counts.downloading}
         waiting={counts.waiting}
+        queue={queueState}
         settings={settings}
         applySettings={applySettings}
       />

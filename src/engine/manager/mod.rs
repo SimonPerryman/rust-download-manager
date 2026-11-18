@@ -31,6 +31,7 @@ mod settings;
 mod tagging;
 mod task;
 mod verify;
+mod window;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -44,6 +45,7 @@ use tokio::task::JoinHandle;
 
 use crate::engine::download_log::DownloadLogs;
 use crate::engine::lock::lock;
+use crate::engine::schedule::Clock;
 use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Store};
 use crate::engine::tally::Tally;
 use crate::engine::{Checksum, Control, RateLimiter, Segment};
@@ -51,6 +53,7 @@ pub use batches::{BatchAdded, BatchSpec, MAX_BATCH_LABEL_LEN};
 use files::{has_partial, remove_partial};
 pub use find::{FindEvent, FindResult, FoundFile, MatchReason};
 pub use missing::{FolderMatch, FolderRelink, MissingChange, SameFolderOffer};
+pub use window::QueueState;
 
 /// Minimum wall-clock gap between progress-driven snapshot publishes.
 const PUBLISH_INTERVAL: Duration = Duration::from_millis(100);
@@ -183,6 +186,9 @@ struct Entry {
     tally: Arc<Tally>,
     /// See [`DownloadSnapshot::file_missing`].
     file_missing: bool,
+    /// The queue window asked the running task to pause; it goes back to
+    /// waiting rather than to paused when it reports in.
+    window_pause: bool,
 }
 
 impl Entry {
@@ -202,6 +208,7 @@ impl Entry {
             started: None,
             tally: Arc::default(),
             file_missing: false,
+            window_pause: false,
         }
     }
 
@@ -284,6 +291,8 @@ struct ManagerState {
     order: Vec<u64>,
     entries: HashMap<u64, Entry>,
     settings: Settings,
+    /// Whether the queue window was open at the last look at the clock.
+    queue_open: bool,
 }
 
 /// Shared manager internals, held behind an `Arc` so download tasks can report
@@ -317,6 +326,10 @@ struct Inner {
     /// Turns for the size probes of queued downloads, so only
     /// [`PROBE_CONCURRENCY`](crate::engine::PROBE_CONCURRENCY) run at once.
     probes: Arc<tokio::sync::Semaphore>,
+    /// The time rules are judged against.
+    clock: Arc<dyn Clock>,
+    /// Announces each change of the queue window's state.
+    queue_tx: watch::Sender<QueueState>,
 }
 
 /// Coordinates many concurrent downloads over the engine's [`download`](crate::engine::download).

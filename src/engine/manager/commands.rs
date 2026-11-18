@@ -125,6 +125,7 @@ impl Manager {
             return;
         };
         if e.task.is_some() {
+            e.window_pause = false;
             e.control.pause();
         } else if e.record.status == Status::Queued {
             e.record.status = Status::Paused;
@@ -227,6 +228,7 @@ impl Manager {
             // it into a kept cancel); a cancel makes it remove `.part` + sidecar
             // itself. Either way it reports back through `finish`.
             e.stop_keeping = keep_partial;
+            e.window_pause = false;
             if keep_partial {
                 e.control.pause();
             } else {

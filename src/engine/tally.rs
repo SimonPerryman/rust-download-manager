@@ -32,6 +32,9 @@ struct Totals {
     ran_before: bool,
     /// Whether the current run has said how it started (`Started`/`Resumed`).
     announced: bool,
+    /// Whether the server takes byte ranges, as of the latest response; `None`
+    /// until the first.
+    resumable: Option<bool>,
     /// Bytes already on disk that no run here fetched, left out of the average.
     baseline: u64,
     /// Where the current peak window started: when, and the bytes on disk.
@@ -72,6 +75,18 @@ impl Tally {
             t.earlier += now.saturating_duration_since(started);
             t.ran_before = true;
         }
+    }
+
+    /// Record whether the server takes byte ranges, as the latest response
+    /// showed.
+    pub(crate) fn set_resumable(&self, resumable: bool) {
+        lock(&self.0).resumable = Some(resumable);
+    }
+
+    /// Whether the server takes byte ranges, once known; stopping a download
+    /// that can't resume would throw its bytes away.
+    pub(crate) fn resumable(&self) -> Option<bool> {
+        lock(&self.0).resumable
     }
 
     /// True the first time it's asked in a run, so a run announces how it
