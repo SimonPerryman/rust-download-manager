@@ -7,6 +7,7 @@ import { folderOf } from "./folders";
 import type { MenuCommand } from "./menu";
 import { stepIndex } from "./queue";
 import { isPausable, isStoppable, toResume } from "./rowView";
+import { canSchedule } from "./startAt";
 import type { DownloadSnapshot } from "./types";
 
 type Deps = {
@@ -30,6 +31,7 @@ type Deps = {
   askRemove: (rows: DownloadSnapshot[]) => void;
   /** Opens the Tags editor for these ids. */
   askTags: (ids: number[]) => void;
+  askStartAt: (ids: number[]) => void;
   /** Archives the finished rows among these, with an undo toast. */
   archive: (rows: DownloadSnapshot[]) => void;
 };
@@ -46,7 +48,7 @@ export function useBulkCommands(deps: Deps): (cmd: MenuCommand, ids: readonly nu
   return useCallback((cmd: MenuCommand, ids: readonly number[]) => {
     const { downloads, queue, notify, fail, open, reveal, retryAll, askStop } = ref.current;
     const { locate, find, locateFolder, forget } = ref.current;
-    const { askRemove, askTags, archive } = ref.current;
+    const { askRemove, askTags, askStartAt, archive } = ref.current;
     const list = ids.flatMap((id) => downloads.find((d) => d.id === id) ?? []);
     const each = (
       f: (d: DownloadSnapshot) => boolean,
@@ -145,6 +147,11 @@ export function useBulkCommands(deps: Deps): (cmd: MenuCommand, ids: readonly nu
       case "tags":
         if (list.length) askTags(list.map((d) => d.id));
         return;
+      case "startAt": {
+        const rows = list.filter(canSchedule);
+        if (rows.length) askStartAt(rows.map((d) => d.id));
+        return;
+      }
     }
   }, []);
 }

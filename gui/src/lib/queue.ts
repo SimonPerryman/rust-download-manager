@@ -4,9 +4,9 @@
 
 import type { DownloadSnapshot } from "./types";
 
-/** Ids of the waiting downloads, first to start first. */
+/** Ids of the waiting downloads, first to start first (one held for a start time is not waiting its turn). */
 export function queueOrder(ds: readonly DownloadSnapshot[]): number[] {
-  return ds.filter((d) => d.status === "queued").map((d) => d.id);
+  return ds.filter((d) => d.status === "queued" && d.start_at === null).map((d) => d.id);
 }
 
 /** The index Alt+↑ (`delta` -1) or Alt+↓ (+1) moves `id` to, or null when it can't move. */

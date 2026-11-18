@@ -42,10 +42,13 @@ import { pausedBarCount, updatedHeading, willPauseCount } from "./lib/updater";
 import { useUpdater } from "./lib/useUpdater";
 import { useUrlIntake } from "./lib/useUrlIntake";
 import { useSchedule } from "./lib/useSchedule";
+import { useStartActions } from "./lib/useStartActions";
 import { useView } from "./lib/useView";
 import { DetailsPane } from "./components/details/DetailsPane";
 import type { PaneTab } from "./components/details/tabs";
 import { AddDialog } from "./components/dialogs/AddDialog";
+import { StartAtDialog } from "./components/dialogs/StartAtDialog";
+import { MissedNotice } from "./components/schedules/MissedNotice";
 import { RemoveDialog } from "./components/dialogs/RemoveDialog";
 import { TagsDialog } from "./components/dialogs/TagsDialog";
 import { StopDialog } from "./components/dialogs/StopDialog";
@@ -145,6 +148,7 @@ export default function App() {
     confirmRemoveRows,
   } = useRemoveDialog({ byId, seeded, notify, fail, tableRef });
   const { tagIds, setTagIds, tagRows, closeTags } = useTagsDialog({ downloads, seeded, tableRef });
+  const starts = useStartActions(downloads, fail);
 
   const openDownload = useCallback(
     (d: DownloadSnapshot) => {
@@ -323,6 +327,7 @@ export default function App() {
     askStop: setStopIds,
     askRemove,
     askTags: setTagIds,
+    askStartAt: starts.askStartAt,
     archive: archiver.archive,
   });
 
@@ -383,6 +388,7 @@ export default function App() {
         globalLimit={settings?.global_limit ?? null}
         schedulesOpen={page === "schedules"}
         onSchedules={() => setPage("schedules")}
+        missedSchedules={starts.missed.length}
       />
       <main className={page === "schedules" ? "flex min-h-0 min-w-0 flex-col" : "main"}>
         {page === "schedules" ? (
@@ -391,6 +397,9 @@ export default function App() {
             queue={queueState}
             save={saveSchedule}
             onError={fail}
+            upcoming={starts.upcoming}
+            missed={starts.missed}
+            starts={starts}
           />
         ) : (
           <>
@@ -489,6 +498,13 @@ export default function App() {
                 offer={sameFolderOffer}
                 onSearch={searchSameFolder}
                 onDismiss={dismissSameFolderOffer}
+              />
+              <MissedNotice
+                groups={starts.missed}
+                onStartAll={() => starts.startNow(starts.missed)}
+                onReschedule={(at) => starts.rescheduleTo(starts.missed, at)}
+                onPickTime={() => starts.askReschedule(starts.missed)}
+                onDismiss={() => starts.dismiss(starts.missed)}
               />
               <PausedForUpdateBar
                 count={pausedBarCount(downloads, updates)}
@@ -591,6 +607,16 @@ export default function App() {
         onClose={() => setAddOpen(false)}
         onAdded={(n) => n > 1 && notify(addedMessage(n))}
       />
+      {starts.timeDialog && (
+        <StartAtDialog
+          // A new dialog each time, so one use's typed time never leaks into the next.
+          key={starts.timeDialog.title + starts.timeDialog.button}
+          title={starts.timeDialog.title}
+          button={starts.timeDialog.button}
+          onSubmit={starts.timeDialog.apply}
+          onClose={starts.closeTimeDialog}
+        />
+      )}
       {removeOpen && (
         <RemoveDialog ds={removeRows} onCancel={closeRemove} onConfirm={confirmRemoveRows} />
       )}

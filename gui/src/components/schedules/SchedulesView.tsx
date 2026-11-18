@@ -12,7 +12,10 @@ import {
   type RuleRef,
 } from "../../lib/schedule";
 import type { QueueState, Schedule } from "../../lib/types";
+import type { StartGroup } from "../../lib/startAt";
+import { MissedNotice } from "./MissedNotice";
 import { RuleRow } from "./RuleRow";
+import { StartGroupRow } from "./StartGroupRow";
 import { ScheduleForm } from "./ScheduleForm";
 
 type Props = {
@@ -22,11 +25,20 @@ type Props = {
   save: (next: Schedule) => Promise<void>;
   /** Shows a save failure that has no form to say it in. */
   onError: (e: unknown) => void;
+  /** Start-at schedules waiting for their time, and the ones whose time was missed. */
+  upcoming: StartGroup[];
+  missed: StartGroup[];
+  starts: {
+    startNow: (groups: StartGroup[]) => void;
+    askReschedule: (groups: StartGroup[], title?: string) => void;
+    rescheduleTo: (groups: StartGroup[], at: string) => void;
+    dismiss: (groups: StartGroup[]) => void;
+  };
 };
 
 // The Schedules view: one line on where the queue stands, then the rules. Each change saves
 // at once; the engine applies it and says what the queue does now.
-export function SchedulesView({ schedule, queue, save, onError }: Props) {
+export function SchedulesView({ schedule, queue, save, onError, upcoming, missed, starts }: Props) {
   // A form open for a new rule (null) or for the rule at that place.
   const [form, setForm] = useState<{ at: RuleRef | null } | null>(null);
   if (!schedule) return <section className="min-h-0 flex-1 px-6 py-5" />;
@@ -59,9 +71,25 @@ export function SchedulesView({ schedule, queue, save, onError }: Props) {
           New schedule
         </button>
       </div>
+      <div className="-mx-6 mb-3 empty:hidden">
+        <MissedNotice
+          groups={missed}
+          onStartAll={() => starts.startNow(missed)}
+          onReschedule={(at) => starts.rescheduleTo(missed, at)}
+          onPickTime={() => starts.askReschedule(missed)}
+          onDismiss={() => starts.dismiss(missed)}
+        />
+      </div>
       <p data-testid="schedule-status" className="mb-4 min-h-5 text-g600">
         {statusLine(schedule, queue)}
       </p>
+
+      {missed.length > 0 && (
+        <GroupList title="Missed" groups={missed} starts={starts} testId="missed-list" />
+      )}
+      {upcoming.length > 0 && (
+        <GroupList title="Coming up" groups={upcoming} starts={starts} testId="coming-up" />
+      )}
 
       <h2 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-g400">Rules</h2>
       {rules.length === 0 ? (
@@ -97,5 +125,38 @@ export function SchedulesView({ schedule, queue, save, onError }: Props) {
         />
       )}
     </section>
+  );
+}
+
+function GroupList({
+  title,
+  groups,
+  starts,
+  testId,
+}: {
+  title: string;
+  groups: StartGroup[];
+  starts: Props["starts"];
+  testId: string;
+}) {
+  return (
+    <>
+      <h2 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-g400">{title}</h2>
+      <ul
+        data-testid={testId}
+        className="mb-5 rounded-lg bg-raised shadow-[inset_0_0_0_1px_var(--line)]"
+      >
+        {groups.map((g) => (
+          <StartGroupRow
+            key={g.group}
+            group={g}
+            onStartNow={() => starts.startNow([g])}
+            onEdit={() => starts.askReschedule([g], "Edit start time")}
+            onReschedule={(at) => starts.rescheduleTo([g], at)}
+            onPickTime={() => starts.askReschedule([g])}
+          />
+        ))}
+      </ul>
+    </>
   );
 }

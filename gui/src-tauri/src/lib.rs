@@ -80,6 +80,7 @@ fn add_download(
     checksum: Option<String>,
     limit: Option<String>,
     tags: Option<Vec<String>>,
+    start_at: Option<String>,
 ) -> Result<u64, String> {
     let dir = match dir {
         Some(d) if !d.trim().is_empty() => download_dir(&d)?,
@@ -95,12 +96,55 @@ fn add_download(
         checksum,
         limit: parse_limit(limit)?,
         tags: tags.unwrap_or_default(),
-        ..AddOptions::default()
+        start_at: parse_start_at(&state, start_at)?,
     };
     state
         .manager
         .add_with(url, dir, options)
         .map_err(|e| e.to_string())
+}
+
+/// A start time typed in the GUI (blank is none), read by the engine.
+fn parse_start_at(
+    state: &State<'_, AppState>,
+    text: Option<String>,
+) -> Result<Option<rdm::engine::schedule::StartAt>, String> {
+    match text.as_deref().map(str::trim) {
+        Some(t) if !t.is_empty() => state
+            .manager
+            .parse_start_at(t)
+            .map(Some)
+            .map_err(|e| e.to_string()),
+        _ => Ok(None),
+    }
+}
+
+/// Hold downloads out of the queue until a time as one schedule (a row's
+/// Start at…). Returns how many could be scheduled.
+#[tauri::command]
+fn schedule_start(state: State<'_, AppState>, ids: Vec<u64>, at: String) -> Result<usize, String> {
+    let at = state.manager.parse_start_at(&at).map_err(|e| e.to_string())?;
+    Ok(state.manager.schedule_start(&ids, at))
+}
+
+/// Move schedules to a new time (Edit, and the Reschedule menu).
+#[tauri::command]
+fn reschedule(state: State<'_, AppState>, groups: Vec<u64>, at: String) -> Result<(), String> {
+    let at = state.manager.parse_start_at(&at).map_err(|e| e.to_string())?;
+    state.manager.reschedule(&groups, at);
+    Ok(())
+}
+
+/// Start schedules now (Start now, Start all): their downloads join the queue.
+#[tauri::command]
+fn start_schedules_now(state: State<'_, AppState>, groups: Vec<u64>) {
+    state.manager.start_schedule_now(&groups);
+}
+
+/// Drop schedules, leaving their downloads paused (Dismiss).
+#[tauri::command]
+fn dismiss_schedules(state: State<'_, AppState>, groups: Vec<u64>) {
+    state.manager.dismiss_schedules(&groups);
 }
 
 /// How [`add_batch`] went, for the Add dialog: the batch it made (if any), how
@@ -133,6 +177,7 @@ fn add_batch(
     label: Option<String>,
     folder: Option<bool>,
     batch_limit: Option<String>,
+    start_at: Option<String>,
 ) -> Result<BatchAdded, String> {
     let dir = match dir {
         Some(d) if !d.trim().is_empty() => download_dir(&d)?,
@@ -141,6 +186,7 @@ fn add_batch(
     let options = AddOptions {
         limit: parse_limit(limit)?,
         tags: tags.unwrap_or_default(),
+        start_at: parse_start_at(&state, start_at)?,
         ..AddOptions::default()
     };
     let batch_limit = parse_limit(batch_limit)?;
@@ -1191,6 +1237,10 @@ pub fn run() {
             reveal_batch,
             get_settings,
             set_settings,
+            schedule_start,
+            reschedule,
+            start_schedules_now,
+            dismiss_schedules,
             get_schedule,
             set_schedule,
             get_queue_state,

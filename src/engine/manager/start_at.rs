@@ -137,6 +137,14 @@ impl Manager {
         }
     }
 
+    /// Read a start time typed by a person against the clock's now (see
+    /// [`StartAt::parse`]); refused as
+    /// [`Error::InvalidRequest`](crate::engine::Error::InvalidRequest).
+    pub fn parse_start_at(&self, text: &str) -> crate::engine::Result<StartAt> {
+        StartAt::parse(text, self.inner.clock.now())
+            .map_err(|e| crate::engine::Error::InvalidRequest(e.to_string()))
+    }
+
     /// Hold `ids` out of the queue until `at` as one new schedule, taking
     /// them out of any schedule they were in. Waiting, paused, failed and
     /// stopped downloads can be scheduled; running, finished or unknown ones

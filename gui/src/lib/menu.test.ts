@@ -71,6 +71,7 @@ describe("menuItems", () => {
     expect(menu([snap({ id: 1 })], q)).toEqual([
       "Pause",
       "Move down",
+      "Start at…",
       "Stop…",
       "-",
       "Copy link",
@@ -81,6 +82,7 @@ describe("menuItems", () => {
       "Start next",
       "Move up",
       "Move down",
+      "Start at…",
       "Stop…",
       "-",
       "Copy link",
@@ -90,6 +92,7 @@ describe("menuItems", () => {
       "Pause",
       "Start next",
       "Move up",
+      "Start at…",
       "Stop…",
       "-",
       "Copy link",
@@ -100,6 +103,7 @@ describe("menuItems", () => {
   it("offers to delete a kept partial, and archives", () => {
     expect(menu([snap({ status: "cancelled", partial_kept: true })])).toEqual([
       "Resume",
+      "Start at…",
       "-",
       "Copy link",
       "Tags…",
@@ -166,7 +170,15 @@ describe("menuItems", () => {
 
   it("offers Retry all failed only when more than one failed", () => {
     const f = snap({ status: "failed" });
-    expect(menu([f], [], 1)).toEqual(["Retry", "-", "Copy link", "Tags…", "-", "Archive"]);
+    expect(menu([f], [], 1)).toEqual([
+      "Start at…",
+      "Retry",
+      "-",
+      "Copy link",
+      "Tags…",
+      "-",
+      "Archive",
+    ]);
     expect(menu([f], [], 2)).toContain("Retry all failed");
   });
 
@@ -196,6 +208,7 @@ describe("menuItems", () => {
       "Open",
       "Pause",
       "Resume",
+      "Start at…",
       "Stop…",
       "-",
       "Copy links",

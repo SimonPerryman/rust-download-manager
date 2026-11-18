@@ -4,6 +4,7 @@
 import { isArchivable, toRemove } from "./archive";
 import { isMissing } from "./filters";
 import { removeDiskNote } from "./copy";
+import { canSchedule } from "./startAt";
 import { isPausable, isRemovable, isStoppable, toResume } from "./rowView";
 import type { DownloadSnapshot } from "./types";
 
@@ -17,6 +18,7 @@ export type MenuCommand =
   | "pause"
   | "resume"
   | "startNext"
+  | "startAt"
   | "moveUp"
   | "moveDown"
   | "stop"
@@ -87,6 +89,7 @@ export function menuItems(
     }
     if (i >= 0 && i < queue.length - 1) out.push(item("moveDown", "Move down", "Alt+↓"));
   }
+  if (any(canSchedule)) out.push(item("startAt", "Start at…"));
   if (any(isStoppable)) out.push(item("stop", "Stop…"));
   if (any(failed)) {
     out.push(item("retry", "Retry"));
