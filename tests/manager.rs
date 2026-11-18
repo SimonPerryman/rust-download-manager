@@ -911,6 +911,7 @@ async fn settings_and_limits_survive_restart() {
             global_limit: Some(MIB),
             max_connections: 8,
             proxy: rdm::ProxyMode::System,
+            schedule: Default::default(),
         }
     );
     let snap = mgr.snapshot();

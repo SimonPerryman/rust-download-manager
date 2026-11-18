@@ -35,6 +35,7 @@ mod proxy;
 mod ramp;
 mod redact;
 pub mod retry;
+pub mod schedule;
 mod segment;
 mod single;
 pub mod state;

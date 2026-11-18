@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::engine::schedule::Schedule;
 use crate::engine::{segment, Error, ProxyMode, Result, DEFAULT_CONNECTIONS};
 
 /// Current store schema version. Bump when the on-disk shape changes in a
@@ -189,6 +190,10 @@ pub struct Settings {
         deserialize_with = "proxy_mode_or_system"
     )]
     pub proxy: ProxyMode,
+    /// Queue windows and speed entries; absent (as in files from before
+    /// scheduling) is no rules.
+    #[serde(skip_serializing_if = "Schedule::is_empty")]
+    pub schedule: Schedule,
 }
 
 fn is_system(mode: &ProxyMode) -> bool {
@@ -218,6 +223,7 @@ impl Default for Settings {
             global_limit: None,
             max_connections: DEFAULT_CONNECTIONS,
             proxy: ProxyMode::System,
+            schedule: Schedule::default(),
         }
     }
 }
@@ -231,6 +237,7 @@ impl Settings {
             global_limit: self.global_limit.filter(|&r| r > 0),
             max_connections: self.max_connections.clamp(1, segment::MAX_CONNECTIONS),
             proxy: self.proxy,
+            schedule: self.schedule,
         }
     }
 }
@@ -420,6 +427,7 @@ mod tests {
                 global_limit: Some(512 * 1024),
                 max_connections: 8,
                 proxy: ProxyMode::None,
+                schedule: Schedule::default(),
             },
         };
         store.save(&data).unwrap();
@@ -509,6 +517,27 @@ mod tests {
         assert!(!rec.partial_kept);
         assert_eq!(rec.checksum_state, ChecksumState::None);
         assert_eq!(loaded.settings, Settings::default());
+    }
+
+    #[test]
+    fn settings_from_before_scheduling_load_with_no_rules() {
+        let old = r#"{"max_concurrent":5,"global_limit":1048576,"max_connections":8}"#;
+        let loaded: Settings = serde_json::from_str(old).unwrap();
+        assert_eq!(loaded.max_concurrent, 5);
+        assert!(loaded.schedule.is_empty());
+        // No rules, nothing written: the file stays what an older build wrote.
+        assert!(!serde_json::to_string(&loaded).unwrap().contains("schedule"));
+    }
+
+    #[test]
+    fn schedule_rules_are_saved_with_the_settings() {
+        let rules = r#"{"queue_windows":[{"window":{"start":"22:00","end":"06:00","days":["mon","tue"]}}]}"#;
+        let loaded: Settings = serde_json::from_str(&format!(r#"{{"schedule":{rules}}}"#)).unwrap();
+        assert_eq!(loaded.schedule.queue_windows.len(), 1);
+        let again: Settings =
+            serde_json::from_str(&serde_json::to_string(&loaded).unwrap()).unwrap();
+        assert_eq!(again, loaded);
+        assert_eq!(loaded.clone().clamped(), loaded);
     }
 
     #[test]
@@ -640,6 +669,7 @@ mod tests {
             global_limit: Some(0),
             max_connections: 200,
             proxy: ProxyMode::None,
+            schedule: Schedule::default(),
         };
         let clamped = wild.clamped();
         assert_eq!(clamped.max_concurrent, 1);
