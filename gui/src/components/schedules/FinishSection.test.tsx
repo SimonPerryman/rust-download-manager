@@ -92,6 +92,20 @@ describe("When downloads finish", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  it("keeps the empty program hint neutral until it is touched", () => {
+    render(OFF);
+    click(q("finish-command-switch"));
+    const hint = document.querySelector<HTMLElement>('[data-testid="command-problem"]')!;
+    expect(hint.textContent).toBe("");
+    expect(hint.className).not.toContain("danger");
+    const input = document.querySelector<HTMLInputElement>("#cmd-program")!;
+    act(() => {
+      input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    expect(hint.textContent).toBe("Enter the program to run");
+    expect(hint.className).toContain("danger");
+  });
+
   it("saves the program and one argument per line", async () => {
     const save = render({
       ...OFF,

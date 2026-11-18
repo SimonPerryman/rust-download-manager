@@ -11,6 +11,7 @@ see [Installing rdm](install.md#desktop-app); to build it, see
 - [Batches](#batches)
 - [Finding and selecting](#finding-and-selecting)
 - [The queue](#the-queue)
+- [Speed limits](#speed-limits)
 - [Schedules](#schedules)
 - [Lanes and details](#lanes-and-details)
 - [Completed and failed downloads](#completed-and-failed-downloads)
@@ -136,6 +137,8 @@ turns orange and the Speed column reads the speed against the limit:
 downloads run. One line at the top says where the queue stands ("Queue paused.
 The window opens at 22:00."), and the list below has one row per rule.
 
+![The Schedules view: a download window, a tag-scoped window and a weekday speed limit under Rules, two scheduled downloads under Coming up, and the When downloads finish section](screenshots/schedules.png)
+
 A **download window** is the span of the day when downloads run, on every day,
 weekdays, weekends or days you choose. It may cross midnight (22:00 to 08:00).
 Outside it the queue is paused: nothing new starts, and the status bar says
@@ -196,7 +199,7 @@ counts the missed schedules. **Start all** (or **Start now** on one) sends the
 downloads into the queue, oldest due first, under the usual limit. **Reschedule**
 offers real times (Tue 22:00 Tonight, Wed 22:00 Tomorrow, then a week on) and
 **Pick a time…**. **Dismiss** drops the schedules and leaves their downloads
-in the list, paused.
+in the list, paused, to resume when you want.
 
 ### When downloads finish
 

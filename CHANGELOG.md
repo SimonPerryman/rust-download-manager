@@ -7,6 +7,22 @@ desktop app share one version.
 
 ## Unreleased
 
+### Added
+
+- Scheduling and automation in the desktop app: a **Schedules** view (sidebar,
+  under Automation) holds download windows (the queue runs only between set
+  times and days, pausing running downloads at close and resuming at open),
+  speed limits that replace the global limit at set times, and a **Start at**
+  time for downloads. A start time that passed while rdm was closed is shown
+  as missed, with Start all, Reschedule and Dismiss. A window or speed limit
+  can apply to all downloads, a tag, a host or a batch.
+- **When downloads finish** actions: run a program after each download (never
+  through a shell, with `{path}` and `{name}` filled in), and sleep, hibernate
+  or shut down when everything is done, after a 60 second countdown with Cancel.
+- `rdm --at <time>` waits until a local time before downloading, and
+  `rdm --on-finish <sleep|shutdown>` puts the machine to sleep or shuts it
+  down after the run (CLI).
+
 ## 0.5.0 - 2026-11-16
 
 ### Added

@@ -12,6 +12,7 @@ share it, so everything here applies to both.
 - [Safe file names](#safe-file-names)
 - [Marked as downloaded (Windows)](#marked-as-downloaded-windows)
 - [The queue and speed limits](#the-queue-and-speed-limits)
+- [Scheduling and automation](#scheduling-and-automation)
 - [Proxies](#proxies)
 - [Missing and moved files](#missing-and-moved-files)
 - [Engine and frontends](#engine-and-frontends)
@@ -152,6 +153,22 @@ network shares) leaves the file unmarked, and the download still succeeds.
   download's file, makes it `<name> (1)`, and files that clash inside it
   become `name (1).ext`. Retry failed for a batch restarts only that batch's
   failed downloads. Without a name the links are plain downloads.
+- **Speed limits:** `--limit-rate` on the CLI; in the GUI, a global limit and
+  an optional per-download limit, both changeable while a download runs. A
+  download's limit is shared across all of its connections.
+- **From the first byte:** a download that starts or resumes runs at its
+  limit straight away, with no initial burst. Its speed is measured over the
+  last 5 seconds from bytes that have passed the limit's wait, so it reads
+  close to the limit, even when data arrives less often than that.
+
+## Scheduling and automation
+
+Rules for when downloads run, and what happens when they finish. The rules
+are Manager state, evaluated against an injected clock (the tests run on a
+fake one), and saved with the settings. The CLI has only the one-off forms
+(`--at`, `--on-finish`); the rest is the desktop app's
+[Schedules](gui.md#schedules).
+
 - **Queue window (GUI):** a rule gives the queue hours of the day and days of
   the week, in the machine's local time; it may cross midnight (22:00 to
   06:00). Outside every enabled window nothing starts; downloads wait as
@@ -165,8 +182,8 @@ network shares) leaves the file unmarked, and the download still succeeds.
   it is an hour shorter or longer; a close inside the hour that repeats when
   the clock falls back is crossed once, not again. Rules are checked every
   second, apply at launch, and are saved with the settings. Rdm only
-  schedules while it is running. See the [roadmap](../roadmap.md) for what
-  comes next.
+  schedules while it is running: it never wakes the machine or runs as a
+  service.
 - **Speed schedule (GUI):** a speed entry is a window and a limit. Inside the
   first enabled entry whose window is open, its limit replaces the global
   limit; outside every entry the global limit applies. The result is set on
@@ -212,13 +229,6 @@ network shares) leaves the file unmarked, and the download still succeeds.
   nobody gave one refuses, and tests use a fake. Both actions are saved with
   the settings. In the CLI, `--on-finish` waits the same 60 seconds after the
   run, but only when every download succeeded.
-- **Speed limits:** `--limit-rate` on the CLI; in the GUI, a global limit and
-  an optional per-download limit, both changeable while a download runs. A
-  download's limit is shared across all of its connections.
-- **From the first byte:** a download that starts or resumes runs at its
-  limit straight away, with no initial burst. Its speed is measured over the
-  last 5 seconds from bytes that have passed the limit's wait, so it reads
-  close to the limit, even when data arrives less often than that.
 
 ## Proxies
 
