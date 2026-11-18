@@ -67,7 +67,7 @@ describe("rdm GUI when downloads finish", () => {
 
   it("picks what the power action does from its menu, and switches it on and off", async () => {
     await $('[data-testid="finish-power-menu-button"]').click();
-    await $('[data-testid="finish-power-menu"] [role="menuitemradio"]=Sleep').click();
+    await $('[data-testid="finish-power-menu"]').$("button=Sleep").click();
     await waitForText(POWER_ROW, "Sleep when everything is done");
     expect((await saved()).power).toEqual({ enabled: false, action: "sleep" });
 

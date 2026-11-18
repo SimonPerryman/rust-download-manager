@@ -446,6 +446,7 @@ mod tests {
                 max_connections: 8,
                 proxy: ProxyMode::None,
                 schedule: Schedule::default(),
+                actions: PostActions::default(),
             },
         };
         store.save(&data).unwrap();
@@ -688,6 +689,7 @@ mod tests {
             max_connections: 200,
             proxy: ProxyMode::None,
             schedule: Schedule::default(),
+            actions: PostActions::default(),
         };
         let clamped = wild.clamped();
         assert_eq!(clamped.max_concurrent, 1);
