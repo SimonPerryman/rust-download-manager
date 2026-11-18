@@ -46,6 +46,7 @@ impl ManagerState {
     /// for a start time.
     fn downloads_in_play(&self) -> Option<WaitReason> {
         let mut queued = false;
+        let mut startable = false;
         let mut scheduled: Option<StartAt> = None;
         for e in self.entries.values() {
             if e.task.is_some() {
@@ -58,11 +59,14 @@ impl ManagerState {
                 Some(at) => {
                     scheduled = Some(scheduled.map_or(at, |s| if at.0 < s.0 { at } else { s }))
                 }
-                None => queued = true,
+                None => {
+                    queued = true;
+                    startable |= e.gate_open;
+                }
             }
         }
         if queued {
-            return Some(if self.queue_open {
+            return Some(if startable {
                 WaitReason::Queued
             } else {
                 WaitReason::Window

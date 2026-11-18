@@ -39,7 +39,7 @@ pub struct Control {
 struct Inner {
     cancelled: AtomicBool,
     paused: AtomicBool,
-    limiters: Vec<Arc<RateLimiter>>,
+    limiters: std::sync::Mutex<Vec<Arc<RateLimiter>>>,
 }
 
 impl Control {
@@ -58,8 +58,28 @@ impl Control {
         Arc::get_mut(&mut self.inner)
             .expect("Control::with_limiters must be called before the handle is cloned")
             .limiters
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .extend(limiters);
         self
+    }
+
+    /// Also throttle by `limiter` from the next chunk on, on a handle that is
+    /// already running. A limiter this handle already holds is not added twice.
+    pub fn add_limiter(&self, limiter: &Arc<RateLimiter>) {
+        let mut held = self.limiters();
+        if !held.iter().any(|l| Arc::ptr_eq(l, limiter)) {
+            held.push(limiter.clone());
+        }
+    }
+
+    fn limiters(&self) -> std::sync::MutexGuard<'_, Vec<Arc<RateLimiter>>> {
+        crate::engine::lock::lock(&self.inner.limiters)
+    }
+
+    /// Charge `n` bytes to every limiter; the latest deadline among them.
+    fn charge_all(&self, n: u64) -> Option<Instant> {
+        self.limiters().iter().filter_map(|l| l.charge(n)).max()
     }
 
     /// Request cancellation. The engine notices at the next chunk boundary,
@@ -104,13 +124,13 @@ impl Control {
     /// The pace the download is held to: its slowest limiter's rate, `None`
     /// when unlimited.
     pub(crate) fn rate_limit(&self) -> Option<u64> {
-        self.inner.limiters.iter().filter_map(|l| l.rate()).min()
+        self.limiters().iter().filter_map(|l| l.rate()).min()
     }
 
     /// Called as a stream starts: drop the credit every limiter banked while
     /// idle (a pause, a retry's backoff), so the stream starts at the rate.
     pub(crate) fn restart_limiters(&self) {
-        for limiter in &self.inner.limiters {
+        for limiter in self.limiters().iter() {
             limiter.restart();
         }
     }
@@ -120,11 +140,10 @@ impl Control {
     /// pause/cancel (the debt stays owed). Time spent waiting is added to
     /// `waited` (ns) as it passes, so a ramp window sees in-progress waits.
     pub(crate) async fn throttle(&self, chunk_len: usize, waited: Option<&AtomicU64>) {
-        let limiters = &self.inner.limiters;
         let n = chunk_len as u64;
         // Waiting on the latest deadline (not each in turn) keeps the pace at
         // the slowest limiter rather than the sum of their waits.
-        let mut deadline = limiters.iter().filter_map(|l| l.charge(n)).max();
+        let mut deadline = self.charge_all(n);
         while let Some(until) = deadline {
             if self.poll() != Flow::Continue {
                 return;
@@ -138,7 +157,7 @@ impl Control {
             tokio::time::sleep_until(until.min(Instant::now() + THROTTLE_SLICE)).await;
             // Re-peek rather than trust `until`: a live rate change may have
             // moved it.
-            deadline = limiters.iter().filter_map(|l| l.charge(0)).max();
+            deadline = self.charge_all(0);
         }
     }
 }

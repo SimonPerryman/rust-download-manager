@@ -8,10 +8,12 @@
 
 mod clock;
 mod days;
+mod scope;
 mod time;
 
 pub use clock::{Clock, FakeClock, SystemClock};
 pub use days::{Days, DaysName, EmptyDays};
+pub use scope::{Scope, Subject};
 pub use time::{Date, LocalDateTime, ParseTimeError, TimeOfDay, Weekday};
 
 use serde::{Deserialize, Serialize};
@@ -123,6 +125,9 @@ pub struct QueueWindow {
     /// pausing them.
     #[serde(default)]
     pub finish_running: bool,
+    /// The downloads it gates; others ignore it.
+    #[serde(default, skip_serializing_if = "Scope::is_all")]
+    pub scope: Scope,
 }
 
 /// Inside its window, `limit` replaces the global speed limit.
@@ -138,6 +143,10 @@ pub struct SpeedEntry {
     pub window: Window,
     /// The cap in bytes/s; never zero, since zero means unlimited elsewhere.
     pub limit: NonZeroU64,
+    /// The downloads it limits. For `All` it replaces the global limit; for
+    /// anything else it caps the matching downloads together, on top of it.
+    #[serde(default, skip_serializing_if = "Scope::is_all")]
+    pub scope: Scope,
 }
 
 fn enabled() -> bool {
@@ -195,21 +204,56 @@ impl Schedule {
         queue.map(|r| &r.window).chain(speed.map(|r| &r.window))
     }
 
-    /// Whether the queue is open at `at`: always, unless an enabled queue
-    /// window exists and none is open.
+    /// Whether the queue is open at `at` for downloads in general: always,
+    /// unless an enabled all-downloads queue window exists and none is open.
+    /// Scoped windows don't count; see [`queue_open_for`](Self::queue_open_for).
     pub fn queue_open(&self, at: LocalDateTime) -> bool {
-        let mut windows = self.queue_windows.iter().filter(|r| r.enabled).peekable();
+        self.open_where(at, Scope::is_all)
+    }
+
+    /// Whether the queue is open at `at` for one download: always, unless an
+    /// enabled window applies to it and none of those is open.
+    pub fn queue_open_for(&self, at: LocalDateTime, subject: &Subject<'_>) -> bool {
+        self.open_where(at, |scope| scope.matches(subject))
+    }
+
+    fn open_where(&self, at: LocalDateTime, applies: impl Fn(&Scope) -> bool) -> bool {
+        let mut windows = self
+            .queue_windows
+            .iter()
+            .filter(|r| r.enabled && applies(&r.scope))
+            .peekable();
         windows.peek().is_none() || windows.any(|r| r.window.contains(at))
     }
 
     /// The speed limit in bytes/s that replaces the global one at `at`: the
-    /// first enabled entry whose window is open, or `None` for the global
-    /// limit.
+    /// first enabled all-downloads entry whose window is open, or `None` for
+    /// the global limit.
     pub fn speed_limit(&self, at: LocalDateTime) -> Option<u64> {
+        self.scoped_speed_limit(at, &Scope::All)
+    }
+
+    /// The cap in bytes/s the first enabled entry for exactly `scope` imposes
+    /// at `at`, or `None` if none is open. Tags and hosts compare ignoring case.
+    pub fn scoped_speed_limit(&self, at: LocalDateTime, scope: &Scope) -> Option<u64> {
+        let scope = scope.canonical();
         self.speed_entries
             .iter()
-            .find(|r| r.enabled && r.window.contains(at))
+            .find(|r| r.enabled && r.scope.canonical() == scope && r.window.contains(at))
             .map(|r| r.limit.get())
+    }
+
+    /// The distinct scopes (other than all downloads) the enabled speed
+    /// entries name, in canonical form.
+    pub fn speed_scopes(&self) -> Vec<Scope> {
+        let mut out: Vec<Scope> = Vec::new();
+        for r in self.speed_entries.iter().filter(|r| r.enabled) {
+            let scope = r.scope.canonical();
+            if !scope.is_all() && !out.contains(&scope) {
+                out.push(scope);
+            }
+        }
+        out
     }
 
     /// The next moment after `at` any enabled rule opens or closes, when the
@@ -230,7 +274,7 @@ impl Schedule {
             from = self
                 .speed_entries
                 .iter()
-                .filter(|r| r.enabled)
+                .filter(|r| r.enabled && r.scope.is_all())
                 .filter_map(|r| r.window.next_edge(from))
                 .min()?;
             if self.speed_limit(from) != limit {
@@ -252,7 +296,7 @@ impl Schedule {
             from = self
                 .queue_windows
                 .iter()
-                .filter(|r| r.enabled)
+                .filter(|r| r.enabled && r.scope.is_all())
                 .filter_map(|r| r.window.next_edge(from))
                 .min()?;
             if self.queue_open(from) != open {
@@ -285,6 +329,7 @@ mod tests {
             enabled: true,
             window,
             finish_running: false,
+            scope: Scope::All,
         }
     }
 
@@ -294,6 +339,7 @@ mod tests {
             enabled: true,
             window,
             limit: NonZeroU64::new(limit).unwrap(),
+            scope: Scope::All,
         }
     }
 
@@ -805,5 +851,52 @@ mod tests {
         let now = SystemClock::new().now();
         assert!(now.date() > Date::new(2025, 1, 1).unwrap());
         assert!(now.repeat_end().is_none());
+    }
+
+    #[test]
+    fn rules_saved_before_scopes_load_as_all_downloads_and_save_unchanged() {
+        let json = serde_json::to_string(&Schedule {
+            queue_windows: vec![queue(window("22:00", "06:00", Days::DAILY))],
+            ..Schedule::default()
+        })
+        .unwrap();
+        assert!(
+            !json.contains("scope"),
+            "an all-downloads rule writes no scope"
+        );
+        let loaded: Schedule = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.queue_windows[0].scope, Scope::All);
+    }
+
+    #[test]
+    fn a_scoped_rule_round_trips_and_only_binds_its_downloads() {
+        let mut rule = queue(window("22:00", "06:00", Days::DAILY));
+        rule.scope = Scope::Tag { tag: "x".into() };
+        let schedule = Schedule {
+            queue_windows: vec![rule],
+            ..Schedule::default()
+        };
+        let back: Schedule =
+            serde_json::from_str(&serde_json::to_string(&schedule).unwrap()).unwrap();
+        assert_eq!(back, schedule);
+        let noon = at(2026, 3, 9, 12, 0);
+        assert!(
+            schedule.queue_open(noon),
+            "a scoped window isn't a general gate"
+        );
+        let tags = vec!["X".to_string()];
+        let mine = Subject {
+            tags: &tags,
+            url: "http://a/b",
+            batch: None,
+        };
+        let other = Subject {
+            tags: &[],
+            url: "http://a/b",
+            batch: None,
+        };
+        assert!(!schedule.queue_open_for(noon, &mine));
+        assert!(schedule.queue_open_for(noon, &other));
+        assert_eq!(schedule.next_queue_change(noon), None);
     }
 }

@@ -206,6 +206,8 @@ struct Entry {
     /// The queue window asked the running task to pause; it goes back to
     /// waiting rather than to paused when it reports in.
     window_pause: bool,
+    /// Whether the queue windows that apply to it were open at the last look.
+    gate_open: bool,
     /// Its start time passed while rdm was closed, so it was not started by
     /// itself; it waits for the user (see [`Manager::start_schedules`]).
     missed: bool,
@@ -232,6 +234,7 @@ impl Entry {
             tally: Arc::default(),
             file_missing: false,
             window_pause: false,
+            gate_open: true,
             missed: false,
             command_warning: None,
         }
@@ -336,8 +339,8 @@ struct ManagerState {
     order: Vec<u64>,
     entries: HashMap<u64, Entry>,
     settings: Settings,
-    /// Whether the queue window was open at the last look at the clock.
-    queue_open: bool,
+    /// One shared limiter per scope a speed entry names; see `window.rs`.
+    scope_limiters: HashMap<crate::engine::schedule::Scope, Arc<RateLimiter>>,
     /// The id the next start schedule gets.
     next_group: u64,
     /// What the post-download actions are doing.

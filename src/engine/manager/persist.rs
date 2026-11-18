@@ -150,7 +150,7 @@ impl Manager {
             next_id,
             order,
             entries,
-            queue_open: queue.open,
+            scope_limiters: Default::default(),
             actions: Default::default(),
             settings,
         };

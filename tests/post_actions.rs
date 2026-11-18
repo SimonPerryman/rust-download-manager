@@ -284,6 +284,7 @@ async fn it_is_dropped_while_the_queue_window_holds_a_download() {
             enabled: true,
             window: Window::new(time("08:00"), time("18:00"), Days::DAILY).unwrap(),
             finish_running: true,
+            scope: Default::default(),
         }],
         ..Schedule::default()
     });

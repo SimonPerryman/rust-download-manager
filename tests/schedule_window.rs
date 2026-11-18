@@ -36,6 +36,7 @@ fn queue_window(start: &str, end: &str, days: Days, finish_running: bool) -> Sch
             enabled: true,
             window: Window::new(tod(start), tod(end), days).unwrap(),
             finish_running,
+            scope: Default::default(),
         }],
         ..Schedule::default()
     }
@@ -340,6 +341,7 @@ fn weekday_cap(limit: u64) -> Schedule {
             enabled: true,
             window: Window::new(tod("08:00"), tod("18:00"), Days::WEEKDAYS).unwrap(),
             limit: std::num::NonZeroU64::new(limit).unwrap(),
+            scope: Default::default(),
         }],
         ..Schedule::default()
     }
