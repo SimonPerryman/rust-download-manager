@@ -1,7 +1,7 @@
 ---
 id: M13
 title: Scheduling & automation
-status: todo
+status: done
 depends-on: [M4, M5, M12]
 tags: [engine, cli, gui, testing]
 ---
@@ -157,29 +157,29 @@ status-bar and row states; CLI `--at` and `--on-finish`; docs.
 
 ## Tasks
 Each is its own PR, in this order.
-- [ ] `schedule-engine`: `engine::schedule` (rule types, window and
+- [x] `schedule-engine`: `engine::schedule` (rule types, window and
       speed-entry evaluation, midnight crossing, DST), injected clock,
       settings schema, unit tests on the fake clock
-- [ ] `schedule-window`: Manager honours the queue window (pause at close,
+- [x] `schedule-window`: Manager honours the queue window (pause at close,
       resume at open, launch-time evaluation), status-bar state, the
       Schedules view with its rule list, and the New schedule form for
       Download window
-- [ ] `schedule-speed`: speed schedule feeding the limiter, mid-download
+- [x] `schedule-speed`: speed schedule feeding the limiter, mid-download
       change, Speed limit in the New schedule form, status line
-- [ ] `schedule-start-at`: per-download and per-add start time, Scheduled
+- [x] `schedule-start-at`: per-download and per-add start time, Scheduled
       row state, Coming up section, Missed notice with Reschedule menu,
       CLI `--at`
-- [ ] `schedule-actions`: finish and queue-empty actions, power countdown
+- [x] `schedule-actions`: finish and queue-empty actions, power countdown
       with Cancel, run-a-command, CLI `--on-finish`
-- [ ] `schedule-scope` (needs the owner's go-ahead): a window or speed
+- [x] `schedule-scope` (needs the owner's go-ahead): a window or speed
       entry can apply to all downloads, a tag, a host or a batch, so
       "this tag only overnight" works; settings UI, tests
-- [ ] `schedule-docs`: `docs/gui.md`, `docs/cli.md`,
+- [x] `schedule-docs`: `docs/gui.md`, `docs/cli.md`,
       `docs/how-it-works.md`, README highlight, screenshots
 
 ## Acceptance criteria
 Binary pass/fail, each mapping to something an agent can run.
-- [ ] `cargo test` passes, with offline fixture tests on a fake clock for:
+- [x] `cargo test` passes, with offline fixture tests on a fake clock for:
       a window that crosses midnight; a window on selected weekdays; a
       download running at close pausing (not failing) and resuming at open,
       with bytes kept; a speed entry replacing the global limit inside it
@@ -188,23 +188,23 @@ Binary pass/fail, each mapping to something an agent can run.
       status, or a `/gated` fixture, not progress bytes); a past *start at*
       becoming Missed at launch and not starting by itself, with Start all
       feeding the queue under its cap; a 23- and a 25-hour DST day.
-- [ ] The days set names itself (all seven Daily, Mon–Fri Weekdays, Sat
+- [x] The days set names itself (all seven Daily, Mon–Fri Weekdays, Sat
       and Sun Weekends, else the listed days) and an empty set is refused
       (GUI unit test).
-- [ ] A power action is dropped when anything is queued, paused by a window
+- [x] A power action is dropped when anything is queued, paused by a window
       or scheduled for later, waits for a running command to exit, and
       Cancel stops it during the countdown (tests use a fake power backend; no
       test ever sleeps or shuts the machine down).
-- [ ] *Run a command* fills `{path}` and `{name}`, passes arguments without
+- [x] *Run a command* fills `{path}` and `{name}`, passes arguments without
       a shell (a name containing `;` or a space arrives intact), and a
       non-zero exit warns without failing the download.
-- [ ] `rdm --at <time> <URL>` against the fixture server waits, downloads
+- [x] `rdm --at <time> <URL>` against the fixture server waits, downloads
       and exits 0; `--on-finish` with an unknown action is a usage error
       (`tests/cli.rs`).
-- [ ] A webview e2e spec covers setting a queue window, a *Scheduled* row,
+- [x] A webview e2e spec covers setting a queue window, a *Scheduled* row,
       the status-bar state, and the Schedules view listing the rule, the
       scheduled download and a missed one, with a rule switched off and on,
       and creating a rule through the New schedule form.
-- [ ] `docs/cli.md`, `docs/gui.md` and `docs/how-it-works.md` describe the
+- [x] `docs/cli.md`, `docs/gui.md` and `docs/how-it-works.md` describe the
       behaviour, the README highlights mention it, and the screenshots are
       regenerated.
