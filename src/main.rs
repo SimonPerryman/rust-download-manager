@@ -16,6 +16,7 @@ use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
+use rdm::engine::schedule::{Clock, FakeClock, LocalDateTime, StartAt, SystemClock};
 use rdm::{
     download, engine::state, parse_list, parse_rate, redact_url, redact_urls_in, run_limited,
     Checksum, Control, DownloadRequest, Error, Proxy, ProxyMode, RateLimiter, Summary,
@@ -68,7 +69,10 @@ Examples:
   rdm -i urls.txt -j 5
 
   # a numbered range of links
-  rdm 'https://example.com/lesson[01-12].mp4'"
+  rdm 'https://example.com/lesson[01-12].mp4'
+
+  # wait until 01:30 (tonight, or tomorrow if it has passed), then download
+  rdm --at 01:30 https://example.com/big.iso"
 )]
 struct Cli {
     /// URL(s) to download. Several links download as a batch.
@@ -133,6 +137,13 @@ struct Cli {
     #[arg(long = "no-proxy", conflicts_with = "proxy")]
     no_proxy: bool,
 
+    /// Wait until this local time, then download: `HH:MM` is the next such
+    /// time (tomorrow's if it has passed today), or give a full
+    /// `YYYY-MM-DDTHH:MM`. rdm must stay running; Ctrl-C while waiting
+    /// cancels. Without it the download starts at once.
+    #[arg(long = "at", value_name = "TIME", value_parser = parse_at)]
+    at: Option<String>,
+
     /// Also log informational engine events (download start, fallbacks) to
     /// stderr; `RUST_LOG` overrides the level.
     #[arg(short = 'v', long = "verbose")]
@@ -142,6 +153,44 @@ struct Cli {
 /// clap value parser: `sha256:<hex>` → [`Checksum`].
 fn parse_checksum(s: &str) -> Result<Checksum, String> {
     s.parse()
+}
+
+/// clap value parser for `--at`: the text if it reads as a start time. It is
+/// resolved against the clock only once the wait begins.
+fn parse_at(s: &str) -> Result<String, String> {
+    let probe = LocalDateTime::from_parts(2000, 1, 1, 0, 0).expect("a real date");
+    StartAt::parse(s, probe)
+        .map(|_| s.trim().to_string())
+        .map_err(|e| e.to_string())
+}
+
+/// Wait for `--at`, polling the clock. The `RDM_TEST_NOW` environment
+/// variable (`YYYY-MM-DDTHH:MM`) swaps the system clock for one that starts
+/// there and moves a minute per poll, so tests don't wait in real time.
+async fn wait_for_start(text: &str) {
+    let test_now = std::env::var("RDM_TEST_NOW")
+        .ok()
+        .and_then(|v| v.parse::<LocalDateTime>().ok());
+    let fake = test_now.map(FakeClock::new);
+    let system = SystemClock::new();
+    let clock: &dyn Clock = match &fake {
+        Some(fake) => fake,
+        None => &system,
+    };
+    let at = StartAt::parse(text, clock.now()).expect("checked when the arguments were read");
+    println!(
+        "Waiting until {} to start",
+        at.0.to_string().replace('T', " ")
+    );
+    while !at.is_due(clock.now()) {
+        match &fake {
+            Some(fake) => {
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                fake.advance(1);
+            }
+            None => tokio::time::sleep(std::time::Duration::from_secs(1)).await,
+        }
+    }
 }
 
 /// `--proxy` → [`Proxy`], or exit with a usage error that names the flag but
@@ -162,10 +211,14 @@ async fn main() -> anyhow::Result<ExitCode> {
     install_panic_hook();
     let cli = Cli::parse();
 
-    if cli.input.is_some() || cli.urls.len() > 1 || is_range_link(&cli.urls[0]) {
-        if cli.output.is_some() || cli.checksum.is_some() {
-            usage_error("-o and --checksum take a single link, not a batch");
-        }
+    let is_batch = cli.input.is_some() || cli.urls.len() > 1 || is_range_link(&cli.urls[0]);
+    if is_batch && (cli.output.is_some() || cli.checksum.is_some()) {
+        usage_error("-o and --checksum take a single link, not a batch");
+    }
+    if let Some(at) = &cli.at {
+        wait_for_start(at).await;
+    }
+    if is_batch {
         return run_batch(cli).await;
     }
     let url = cli.urls.into_iter().next().expect("clap requires a URL");

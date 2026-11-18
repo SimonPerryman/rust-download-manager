@@ -34,6 +34,9 @@ export function snap(overrides: Partial<DownloadSnapshot> = {}): DownloadSnapsho
     batch_label: null,
     paused_for_update: false,
     file_missing: false,
+    start_at: null,
+    start_group: null,
+    start_missed: false,
     ...overrides,
   };
 }

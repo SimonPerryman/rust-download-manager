@@ -59,7 +59,14 @@ describe("archive and tags", () => {
       ["remove_tags", { ids: [3], tags: ["work"] }],
       [
         "add_download",
-        { url: "http://x/a", dir: null, checksum: null, limit: null, tags: ["iso"] },
+        {
+          url: "http://x/a",
+          dir: null,
+          checksum: null,
+          limit: null,
+          tags: ["iso"],
+          startAt: null,
+        },
       ],
       [
         "add_batch",
@@ -71,6 +78,7 @@ describe("archive and tags", () => {
           label: "Course files",
           folder: true,
           batchLimit: "2M",
+          startAt: null,
         },
       ],
       ["retry_batch", { batch: 7 }],

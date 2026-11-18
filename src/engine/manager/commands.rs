@@ -51,7 +51,8 @@ impl Manager {
     /// Add a download whose options are already valid.
     fn insert(&self, url: String, dir: PathBuf, options: AddOptions) -> u64 {
         let st = &mut *lock(&self.inner.state);
-        let (id, probe_url) = self.push_entry(st, url, dir, options, None);
+        let group = st.new_group();
+        let (id, probe_url) = self.push_entry(st, url, dir, options, None, group);
         self.inner.schedule(st);
         self.inner.persist(st);
         self.inner.publish(st);
@@ -62,8 +63,9 @@ impl Manager {
 
     /// Put a new queued download in the list, tagged with `batch` (its id and
     /// name) if it belongs to one. The caller schedules, persists, publishes
-    /// and probes, so a batch does that once. Returns the id and the URL to
-    /// probe.
+    /// and probes, so a batch does that once. `group` is the start schedule
+    /// it joins when `options` carry a start time. Returns the id and the URL
+    /// to probe.
     pub(super) fn push_entry(
         &self,
         st: &mut ManagerState,
@@ -71,6 +73,7 @@ impl Manager {
         dir: PathBuf,
         options: AddOptions,
         batch: Option<super::batches::BatchTag<'_>>,
+        group: u64,
     ) -> (u64, String) {
         let id = st.next_id;
         st.next_id += 1;
@@ -107,6 +110,8 @@ impl Manager {
             batch: batch.as_ref().map(|b| b.id),
             batch_label: batch.as_ref().map(|b| b.label.to_string()),
             batch_limit: batch.as_ref().and_then(|b| b.limiter.as_ref()?.rate()),
+            start_at: options.start_at,
+            start_group: options.start_at.map(|_| group),
         };
         st.order.push(id);
         let mut entry = Entry::new(record, limiter);
@@ -128,6 +133,7 @@ impl Manager {
             e.window_pause = false;
             e.control.pause();
         } else if e.record.status == Status::Queued {
+            e.clear_start();
             e.record.status = Status::Paused;
             self.inner.schedule(st);
             self.inner.persist(st);
@@ -144,29 +150,9 @@ impl Manager {
     /// downloads are). No-op if it's already running, queued or completed.
     pub fn resume(&self, id: u64) {
         let st = &mut *lock(&self.inner.state);
-        // A row that owns nothing on disk may have had its target claimed by a
-        // newer download since; restarting onto it would share one `.part`.
-        let retarget = st
-            .entries
-            .get(&id)
-            .filter(|e| !e.record.target_provisional && !owns_partial(&e.record))
-            .map(|e| unique_target(st, e.record.target.clone()));
-        let Some(e) = st.entries.get_mut(&id) else {
-            return;
-        };
-        if e.task.is_some() || !e.record.status.is_resumable() {
+        if !requeue(st, id) {
             return;
         }
-        if let Some(target) = retarget {
-            e.record.target = target;
-        }
-        e.record.status = Status::Queued;
-        e.record.paused_for_update = false;
-        e.record.archived = false;
-        e.record.error = None;
-        e.record.finished_at = None;
-        e.record.partial_kept = false;
-        e.record.checksum_state = ChecksumState::None;
         self.inner.schedule(st);
         self.inner.persist(st);
         self.inner.publish(st);
@@ -236,6 +222,7 @@ impl Manager {
             }
             return;
         }
+        e.clear_start();
         match e.record.status {
             Status::Queued | Status::Paused if keep_partial => e.cancel_keeping(),
             // No task to observe it: discard the partial here and now (a
@@ -303,7 +290,7 @@ impl Manager {
             }
             e.record.active_ms = e.active_ms();
             e.started = None;
-            if for_restart && e.record.status.is_running() {
+            if for_restart && e.record.status.is_running() && !e.is_held() {
                 e.record.paused_for_update = true;
             }
             if e.record.status == Status::Downloading {
@@ -314,4 +301,33 @@ impl Manager {
         // A frontend still showing the list (an update's restart) sees the pause.
         self.inner.publish(st);
     }
+}
+
+/// Put a resumable download back in the queue (see [`Manager::resume`]);
+/// false if it isn't one, or is running.
+pub(super) fn requeue(st: &mut ManagerState, id: u64) -> bool {
+    // A row that owns nothing on disk may have had its target claimed by a
+    // newer download since; restarting onto it would share one `.part`.
+    let retarget = st
+        .entries
+        .get(&id)
+        .filter(|e| !e.record.target_provisional && !owns_partial(&e.record))
+        .map(|e| unique_target(st, e.record.target.clone()));
+    let Some(e) = st.entries.get_mut(&id) else {
+        return false;
+    };
+    if e.task.is_some() || !e.record.status.is_resumable() {
+        return false;
+    }
+    if let Some(target) = retarget {
+        e.record.target = target;
+    }
+    e.record.status = Status::Queued;
+    e.record.paused_for_update = false;
+    e.record.archived = false;
+    e.record.error = None;
+    e.record.finished_at = None;
+    e.record.partial_kept = false;
+    e.record.checksum_state = ChecksumState::None;
+    true
 }

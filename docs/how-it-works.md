@@ -174,6 +174,15 @@ network shares) leaves the file unmarked, and the download still succeeds.
   queue window and at launch, so a change lands mid-download without a
   restart. The global limit you set is kept as it is; a limit on a single
   download or batch still applies on top.
+- **Start at:** a download can carry a local start time. Until it, it stays
+  queued but is held out of the queue, so it uses no slot; the Manager checks
+  the clock every second and then releases the download into the normal queue,
+  under the usual cap. Everything given one start time together (one add, one
+  batch, one selection) is one schedule. The time is saved with the download.
+  One that passed while rdm was closed is not started at launch: it is marked
+  missed and waits for the user, who can start it (the downloads join the
+  queue oldest due first), give it a new time, or dismiss it, which leaves the
+  downloads paused. The CLI's `--at` just waits in the foreground first.
 - **Speed limits:** `--limit-rate` on the CLI; in the GUI, a global limit and
   an optional per-download limit, both changeable while a download runs. A
   download's limit is shared across all of its connections.

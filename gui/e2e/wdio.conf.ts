@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { baseConfig, startFixture, startTauriDriver, stopAll } from "./launch";
+import { seedMissedStarts } from "./seedMissed";
 import { bundleKind, startUpdateFeed } from "./updateFeed";
 
 // One temp root per run: created when the launcher loads this config, and
@@ -64,6 +65,14 @@ export const config: WebdriverIO.Config = {
       String(SEG_DELAY_MS),
     ]);
     await startTauriDriver();
+  },
+
+  // The missed-starts spec needs start times that passed while the app was closed, which only a
+  // state file written before its app starts can have.
+  beforeSession: (_config, _capabilities, specs) => {
+    if (specs.some((s) => s.includes("schedule-missed"))) {
+      seedMissedStarts(rdmHome, process.env.RDM_E2E_BASE_URL!, process.env.RDM_DOWNLOAD_DIR!);
+    }
   },
 
   // A failed run keeps its temp root (state.json, rdm.*.log, opened.log, saved.log, downloads) to inspect.

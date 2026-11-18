@@ -69,6 +69,15 @@ export interface DownloadSnapshot {
    * the engine's checks, never saved; the status stays "completed".
    */
   file_missing: boolean;
+  /**
+   * While held out of the queue for a start time, when it starts ("YYYY-MM-DDTHH:MM", local), or
+   * was due to if `start_missed`; null otherwise.
+   */
+  start_at: string | null;
+  /** The start schedule it is in: downloads given one start time together share it. */
+  start_group: number | null;
+  /** Its start time passed while rdm was closed, so it waits for the user. */
+  start_missed: boolean;
 }
 
 /** Mirrors the engine's `LogLevel`. */

@@ -28,6 +28,7 @@ mod persist;
 mod probe;
 mod queue;
 mod settings;
+mod start_at;
 mod tagging;
 mod task;
 mod verify;
@@ -45,7 +46,7 @@ use tokio::task::JoinHandle;
 
 use crate::engine::download_log::DownloadLogs;
 use crate::engine::lock::lock;
-use crate::engine::schedule::Clock;
+use crate::engine::schedule::{Clock, StartAt};
 use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Store};
 use crate::engine::tally::Tally;
 use crate::engine::{Checksum, Control, RateLimiter, Segment};
@@ -53,6 +54,7 @@ pub use batches::{BatchAdded, BatchSpec, MAX_BATCH_LABEL_LEN};
 use files::{has_partial, remove_partial};
 pub use find::{FindEvent, FindResult, FoundFile, MatchReason};
 pub use missing::{FolderMatch, FolderRelink, MissingChange, SameFolderOffer};
+pub use start_at::{MissedSummary, StartSchedule};
 pub use window::QueueState;
 
 /// Minimum wall-clock gap between progress-driven snapshot publishes.
@@ -133,6 +135,13 @@ pub struct DownloadSnapshot {
     /// A completed download whose file was not found at its last check (see
     /// [`Manager::check_missing`]); derived, never saved. Still `Completed`.
     pub file_missing: bool,
+    /// While held out of the queue, the local time it starts (or was due to,
+    /// if `start_missed`); `None` otherwise.
+    pub start_at: Option<StartAt>,
+    /// The start schedule it is in, with `start_at`.
+    pub start_group: Option<u64>,
+    /// Its `start_at` passed while rdm was closed; it waits for the user.
+    pub start_missed: bool,
 }
 
 /// Optional extras for [`Manager::add_with`].
@@ -146,6 +155,9 @@ pub struct AddOptions {
     pub limit: Option<u64>,
     /// Tags to start with, under the [`tags`](crate::engine::tags) rules.
     pub tags: Vec<String>,
+    /// Hold the download out of the queue until this time. Every download of
+    /// one add (or batch) shares it as one schedule.
+    pub start_at: Option<StartAt>,
 }
 
 /// Live, non-persisted throughput for one download.
@@ -189,6 +201,9 @@ struct Entry {
     /// The queue window asked the running task to pause; it goes back to
     /// waiting rather than to paused when it reports in.
     window_pause: bool,
+    /// Its start time passed while rdm was closed, so it was not started by
+    /// itself; it waits for the user (see [`Manager::start_schedules`]).
+    missed: bool,
 }
 
 impl Entry {
@@ -209,7 +224,21 @@ impl Entry {
             tally: Arc::default(),
             file_missing: false,
             window_pause: false,
+            missed: false,
         }
+    }
+
+    /// Waiting for its start time (or for the user, if that was missed): out
+    /// of the queue, using no slot.
+    fn is_held(&self) -> bool {
+        self.record.status == Status::Queued && self.record.start_at.is_some()
+    }
+
+    /// Leave the start schedule, if in one.
+    fn clear_start(&mut self) {
+        self.record.start_at = None;
+        self.record.start_group = None;
+        self.missed = false;
     }
 
     /// Marked by an update restart and still paused.
@@ -256,6 +285,9 @@ impl Entry {
             batch: self.record.batch,
             batch_label: self.record.batch_label.clone(),
             file_missing: self.file_missing && self.record.status == Status::Completed,
+            start_at: self.record.start_at.filter(|_| self.is_held()),
+            start_group: self.record.start_group.filter(|_| self.is_held()),
+            start_missed: self.missed && self.is_held(),
         }
     }
 
@@ -293,6 +325,15 @@ struct ManagerState {
     settings: Settings,
     /// Whether the queue window was open at the last look at the clock.
     queue_open: bool,
+    /// The id the next start schedule gets.
+    next_group: u64,
+}
+
+impl ManagerState {
+    fn new_group(&mut self) -> u64 {
+        self.next_group += 1;
+        self.next_group - 1
+    }
 }
 
 /// Shared manager internals, held behind an `Arc` so download tasks can report
@@ -445,6 +486,8 @@ mod tests {
             batch: None,
             batch_label: None,
             batch_limit: None,
+            start_at: None,
+            start_group: None,
         }
     }
 }

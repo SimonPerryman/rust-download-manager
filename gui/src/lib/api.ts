@@ -38,6 +38,7 @@ export const addDownload = (
   checksum?: string | null,
   limit?: string | null,
   tags?: string[] | null,
+  startAt?: string | null,
 ) =>
   invoke<number>("add_download", {
     url,
@@ -45,6 +46,7 @@ export const addDownload = (
     checksum: checksum ?? null,
     limit: limit ?? null,
     tags: tags ?? null,
+    startAt: startAt ?? null,
   });
 
 /**
@@ -61,7 +63,27 @@ export const addBatch = (
   label: string | null,
   folder: boolean,
   batchLimit: string | null = null,
-) => invoke<BatchAdded>("add_batch", { urls, dir, limit, tags, label, folder, batchLimit });
+  startAt: string | null = null,
+) =>
+  invoke<BatchAdded>("add_batch", { urls, dir, limit, tags, label, folder, batchLimit, startAt });
+
+/**
+ * Hold downloads out of the queue until a local time ("YYYY-MM-DDTHH:MM", or `HH:MM` for the
+ * next one) as one schedule. Resolves with how many could be scheduled; rejects on a bad time.
+ */
+export const scheduleStart = (ids: number[], at: string) =>
+  invoke<number>("schedule_start", { ids, at });
+
+/** Move whole start schedules to a new time. */
+export const reschedule = (groups: number[], at: string) =>
+  invoke<void>("reschedule", { groups, at });
+
+/** Start schedules now: their downloads join the queue, oldest due first, under its usual cap. */
+export const startSchedulesNow = (groups: number[]) =>
+  invoke<void>("start_schedules_now", { groups });
+
+/** Drop schedules; their downloads stay in the list, paused. */
+export const dismissSchedules = (groups: number[]) => invoke<void>("dismiss_schedules", { groups });
 
 /** Retry the failed downloads of one batch. Resolves with how many were retried. */
 export const retryBatch = (batch: number) => invoke<number>("retry_batch", { batch });

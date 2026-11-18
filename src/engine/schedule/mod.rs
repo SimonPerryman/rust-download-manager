@@ -155,6 +155,22 @@ impl StartAt {
     pub fn is_due(&self, now: LocalDateTime) -> bool {
         now.effective() >= self.0
     }
+
+    /// Read a start time typed by a person: `HH:MM` is the next such time
+    /// at or after `now` (tonight's, or tomorrow's if it has passed), and
+    /// `YYYY-MM-DDTHH:MM` is exactly that moment.
+    pub fn parse(text: &str, now: LocalDateTime) -> Result<Self, ParseTimeError> {
+        let text = text.trim();
+        if text.contains('T') {
+            return Ok(Self(text.parse()?));
+        }
+        let today = LocalDateTime::new(now.date(), text.parse()?);
+        Ok(Self(if today >= now.effective() {
+            today
+        } else {
+            today.add_minutes(24 * 60)
+        }))
+    }
 }
 
 /// The rule set, saved with the manager's settings.
@@ -681,6 +697,23 @@ mod tests {
         let json = serde_json::to_string(&start).unwrap();
         assert_eq!(json, r#""2026-03-09T22:00""#);
         assert_eq!(serde_json::from_str::<StartAt>(&json).unwrap(), start);
+    }
+
+    #[test]
+    fn a_typed_start_time_means_the_next_one() {
+        let now = at(2026, 3, 9, 21, 0);
+        let parse = |s| StartAt::parse(s, now).map(|s| s.0);
+        assert_eq!(parse("22:00"), Ok(at(2026, 3, 9, 22, 0)));
+        assert_eq!(parse("21:00"), Ok(at(2026, 3, 9, 21, 0)), "this minute");
+        assert_eq!(
+            parse("01:30"),
+            Ok(at(2026, 3, 10, 1, 30)),
+            "passed: tomorrow"
+        );
+        assert_eq!(parse(" 2026-04-01T08:05 "), Ok(at(2026, 4, 1, 8, 5)));
+        for bad in ["", "25:00", "9:00", "noon", "2026-13-01T00:00"] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

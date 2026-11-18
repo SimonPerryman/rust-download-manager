@@ -55,8 +55,8 @@ pub use integrity::{Algo, Checksum};
 pub use limit::{parse_rate, RateLimiter};
 pub use manager::{
     AddOptions, BatchAdded, BatchSpec, DownloadSnapshot, FindEvent, FindResult, FolderMatch,
-    FolderRelink, FoundFile, Manager, MatchReason, MissingChange, QueueState, SameFolderOffer,
-    MAX_BATCH_LABEL_LEN,
+    FolderRelink, FoundFile, Manager, MatchReason, MissedSummary, MissingChange, QueueState,
+    SameFolderOffer, StartSchedule, MAX_BATCH_LABEL_LEN,
 };
 pub use probe::PROBE_CONCURRENCY;
 pub use progress::{Progress, SpeedMeter};

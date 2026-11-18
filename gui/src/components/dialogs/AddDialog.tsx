@@ -13,6 +13,7 @@ import {
 import { formatSpeed } from "../../lib/format";
 import { loadLastDir, saveLastDir } from "../../lib/prefs";
 import { NO_LIMIT, composeRate, exceeds, type RateDraft } from "../../lib/rate";
+import { startFromText, startsLabel } from "../../lib/startAt";
 import { parseTags, tagsError } from "../../lib/tags";
 import type { ParsedList } from "../../lib/types";
 import { ChevronDown } from "../icons/ChevronDown";
@@ -48,6 +49,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
   const nameTouched = useRef(false);
   const [limit, setLimit] = useState<RateDraft>(NO_LIMIT);
   const [batchLimit, setBatchLimit] = useState<RateDraft>(NO_LIMIT);
+  const [startText, setStartText] = useState("");
   const [moreOpen, setMoreOpen] = useState(false);
   const [globalLimit, setGlobalLimit] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +77,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     nameTouched.current = false;
     setLimit(NO_LIMIT);
     setBatchLimit(NO_LIMIT);
+    setStartText("");
     setMoreOpen(false);
     const last = loadLastDir();
     setDest(last ?? "");
@@ -164,7 +167,12 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     // An error about a field under "More options" must not be hidden there.
     const fail = (message: string) => {
       setError(message);
-      if ((single && checksum.trim()) || limit.amount || (named && batchLimit.amount)) {
+      if (
+        (single && checksum.trim()) ||
+        limit.amount ||
+        (named && batchLimit.amount) ||
+        startText.trim()
+      ) {
         setMoreOpen(true);
       }
     };
@@ -176,6 +184,11 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     const batchRate = named ? composeRate(batchLimit) : rate;
     if (!batchRate.ok) {
       fail(batchRate.error);
+      return;
+    }
+    const startAt = startText.trim() ? startFromText(startText) : null;
+    if (startText.trim() && startAt === null) {
+      fail("Times look like 22:00");
       return;
     }
     const tags = parseTags(tagsText);
@@ -191,7 +204,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     try {
       outcome = single
         ? await addLinks(links, (url) =>
-            api.addDownload(url, dir, checksum.trim() || null, rate.rate || null, tags),
+            api.addDownload(url, dir, checksum.trim() || null, rate.rate || null, tags, startAt),
           )
         : await api.addBatch(
             links,
@@ -201,6 +214,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
             named ? batchName.trim() : null,
             named && makeFolder,
             (named && batchRate.rate) || null,
+            startAt,
           );
     } catch (e) {
       setBusy(false);
@@ -396,6 +410,29 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
                       ? `The global limit is ${formatSpeed(globalLimit)} for all downloads combined, so ${single ? "this one" : "these"} won't go faster than that.`
                       : "Empty = no limit."}
                   </p>
+                </Field>
+
+                <Field label="Start at" htmlFor="add-start-at">
+                  <input
+                    id="add-start-at"
+                    type="text"
+                    aria-label="Start at"
+                    value={startText}
+                    onChange={(e) => setStartText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void submit();
+                      }
+                    }}
+                    placeholder="22:00"
+                    className="flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 text-sm transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden"
+                  />
+                  {startFromText(startText) && (
+                    <p data-testid="add-start-at-echo" className="text-xs text-g600">
+                      {startsLabel(startFromText(startText)!)}
+                    </p>
+                  )}
                 </Field>
 
                 {named && (

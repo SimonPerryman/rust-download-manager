@@ -55,6 +55,8 @@ type Props = {
   /** The Schedules view is showing, so no filter is the current one. */
   schedulesOpen: boolean;
   onSchedules: () => void;
+  /** Start-at schedules whose time was missed; the Schedules entry counts them, else no count. */
+  missedSchedules: number;
 };
 
 // The status and folder filters with their live counts, and the total-speed sparkline.
@@ -72,6 +74,7 @@ export function Sidebar({
   globalLimit,
   schedulesOpen,
   onSchedules,
+  missedSchedules,
 }: Props) {
   const doneCount = useRef<HTMLSpanElement>(null);
 
@@ -148,6 +151,15 @@ export function Sidebar({
                 <Clock />
               </span>
               <span className="f-label min-w-0 flex-1 truncate">Schedules</span>
+              {missedSchedules > 0 && (
+                <span
+                  data-testid="schedules-missed"
+                  aria-label={`${missedSchedules} missed`}
+                  className="f-count warn"
+                >
+                  {missedSchedules}
+                </span>
+              )}
             </button>
           </li>
         </ul>

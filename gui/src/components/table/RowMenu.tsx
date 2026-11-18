@@ -5,6 +5,7 @@ import { ArchiveRestore } from "../icons/ArchiveRestore";
 import { ArrowDown } from "../icons/ArrowDown";
 import { ArrowUp } from "../icons/ArrowUp";
 import { ChevronsUp } from "../icons/ChevronsUp";
+import { Clock } from "../icons/Clock";
 import { DownloadAgain } from "../icons/DownloadAgain";
 import { ExternalLink } from "../icons/ExternalLink";
 import { Folder } from "../icons/Folder";
@@ -28,6 +29,7 @@ const ICON: Record<MenuCommand, (p: { size?: number }) => React.ReactNode> = {
   pause: Pause,
   resume: Play,
   startNext: ChevronsUp,
+  startAt: Clock,
   moveUp: ArrowUp,
   moveDown: ArrowDown,
   stop: Stop,

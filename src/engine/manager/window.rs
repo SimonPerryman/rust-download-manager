@@ -58,6 +58,11 @@ impl Inner {
     /// opened, start the waiting ones. Call with the state lock held, after
     /// any change to the rules and on every clock tick.
     pub(super) fn apply_window(self: &Arc<Self>, st: &mut ManagerState) {
+        if self.fire_due_starts(st) {
+            self.schedule(st);
+            self.persist(st);
+            self.publish(st);
+        }
         let state = QueueState::at(&st.settings.schedule, self.clock.now());
         // The limiter is shared by running downloads, so this takes effect
         // mid-stream. Only touched on a change: set_rate settles the bucket.
