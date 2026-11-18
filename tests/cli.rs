@@ -396,6 +396,54 @@ async fn cli_prints_engine_warnings_by_default() {
     assert_eq!(std::fs::read(&out).unwrap(), common::payload());
 }
 
+/// `--at` waits for the time, then downloads and exits 0. The test clock
+/// (`RDM_TEST_NOW`) moves a minute per poll, so ten minutes pass at once.
+#[tokio::test]
+async fn at_waits_for_the_time_then_downloads() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("later.bin");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .env("RDM_TEST_NOW", "2026-03-09T01:20")
+        .args(["--at", "01:30", "-o"])
+        .arg(&out)
+        .arg(server.url("/file"))
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert!(output.status.success(), "rdm exited with {}", output.status);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Waiting until 2026-03-09 01:30 to start"),
+        "{stdout}"
+    );
+    assert_eq!(std::fs::read(&out).unwrap(), common::payload());
+}
+
+/// A time that is not one is a usage error (exit 2) that names the flag, and
+/// nothing is downloaded.
+#[tokio::test]
+async fn an_invalid_at_is_a_usage_error() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("never.bin");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .args(["--at", "25:00", "-o"])
+        .arg(&out)
+        .arg(server.url("/file"))
+        .output()
+        .await
+        .expect("spawn rdm");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--at"), "{stderr}");
+    assert!(!out.exists());
+}
+
 /// `--help` tells a reader (or an agent) about resuming, the exit codes and
 /// has runnable examples, not just the flag list.
 #[tokio::test]
@@ -414,6 +462,7 @@ async fn cli_help_explains_resume_exit_codes_and_examples() {
         "130",
         "Examples:",
         "rdm -i urls.txt",
+        "--at <TIME>",
     ] {
         assert!(stdout.contains(expected), "missing {expected:?}: {stdout}");
     }
