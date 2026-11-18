@@ -193,6 +193,43 @@ ramping follow-ups shipped in M10; ramp window tuning was dropped (below). These
 5. **Batch name length**: capped at 64 characters; a one-line change if it
    should be shorter.
 
+### From scheduling, in priority order
+
+1. **Scope: pick, don't type, and warn when a rule matches nothing**
+   ([[milestone-13-scheduling]]): a rule's tag becomes a select of existing
+   tags, like batch is today, and the host field suggests the hosts of
+   current downloads. A rule whose tag, batch or host matches no download
+   shows an amber warning icon and, under its sentence, the reason as
+   visible text ("No downloads have the tag course-2"); the same line shows
+   in the form under the host field. It warns and never blocks saving, since
+   a host rule for a site not yet used is fine. The tag, batch or host name
+   in a rule's sentence uses the tag chip style.
+2. **Several scopes on one rule**: a rule can name several tags, batches
+   and hosts. Any of them within a kind, all kinds together ("tagged
+   course-2 or course-3, from cdn.example.com"). A "Limit to…" menu adds a
+   Tags, Batches or Hosts row, each a multi-select of chips; long lists in
+   a rule's sentence shorten to "+2 more" with the full list on hover. The
+   saved scope becomes three lists, and an old single scope loads as a list
+   of one. The shared speed limiter keys on the combined scope.
+3. **Typed scope entry**: `tag:`, `batch:` and `host:` tokens in one box,
+   with suggestions as you type. It sits over the form from item 2, shows
+   what it understood and never saves by itself, like the free-text entry
+   that M13 left out.
+4. **Schedule history**: a saved log of what schedules did (a window
+   opening or closing, how many downloads it paused or resumed, a scheduled
+   start firing or being missed, a power action running or cancelled) and,
+   per run, what it downloaded ("Mon 22:00 to 08:00: 14 files, 12.3 GB"), as
+   a History section in Schedules. Open: how long entries are kept, and
+   whether the per-run totals come from what the engine already stores per
+   download or need new fields.
+5. **`--at` and Ctrl-C**: nothing handles Ctrl-C while `--at` waits, so the
+   exit code is whatever the operating system gives a killed process. Add a
+   handler with a documented exit code.
+6. **README screenshots run in isolation**: `pnpm screenshots` runs every
+   spec in one session on one data folder, so the batch spec's downloads
+   show up in the main-view shots. Give each spec its own folder, or run
+   them one at a time.
+
 ## Candidate crates
 
 `reqwest` (HTTP), `tokio` (async), `futures` (concurrency), `clap` (CLI),
