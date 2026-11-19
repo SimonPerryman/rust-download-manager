@@ -4,10 +4,13 @@ import {
   commandLine,
   POWER_ACTIONS,
   powerLabel,
+  powerHint,
   powerNote,
-  powerTitle,
+  POWER_TITLE,
 } from "../../lib/actions";
 import type { ActionsStatus, PostActions } from "../../lib/types";
+import { ChevronDown } from "../icons/ChevronDown";
+import { Pencil } from "../icons/Pencil";
 import { CommandForm } from "./CommandForm";
 import { MoreMenu } from "./MoreMenu";
 import { Switch } from "./Switch";
@@ -21,8 +24,8 @@ type Props = {
   onError: (e: unknown) => void;
 };
 
-// The "When downloads finish" section: two rows on the same switch column as the rules. Both
-// are global and off by default.
+// The "When downloads finish" section: two one-line rows on the rules' switch column, each a
+// title and a chip that edits it. Both are global and off by default.
 export function FinishSection({ actions, status, save, onError }: Props) {
   // The Edit command form is open; `enable` says a switch-on opened it, so saving also turns
   // the command on.
@@ -30,7 +33,9 @@ export function FinishSection({ actions, status, save, onError }: Props) {
   const { command, power } = actions;
   const change = (next: PostActions) => save(next).catch(onError);
   const hasCommand = command.program.trim() !== "";
+  const line = commandLine(command);
   const note = status ? powerNote(status.power, power.action) : null;
+  const failed = status?.power.state === "failed";
 
   return (
     <>
@@ -45,35 +50,47 @@ export function FinishSection({ actions, status, save, onError }: Props) {
           testId="finish-command"
           enabled={command.enabled}
           title={COMMAND_TITLE}
-          note={hasCommand ? commandLine(command) : null}
           switchLabel={`${COMMAND_TITLE} on`}
           onToggle={(on) => {
             if (on && !hasCommand) setForm({ enable: true });
             else void change({ ...actions, command: { ...command, enabled: on } });
           }}
-          menu={
-            <MoreMenu
-              label="Run a command options"
-              buttonTestId="finish-command-menu-button"
-              menuTestId="finish-command-menu"
-              items={[{ label: "Edit command", onSelect: () => setForm({ enable: false }) }]}
-            />
+          chip={
+            <button
+              type="button"
+              data-testid="finish-command-chip"
+              title={hasCommand ? line : undefined}
+              onClick={() => setForm({ enable: false })}
+              className={`${CHIP} max-w-[26rem] ${hasCommand ? "" : "text-g400"}`}
+            >
+              <span className="truncate">{hasCommand ? line : "No command"}</span>
+              <Pencil size={13} className="shrink-0 text-g400" />
+            </button>
           }
         />
         <Row
           testId="finish-power"
           enabled={power.enabled}
-          title={powerTitle(power.action)}
+          title={POWER_TITLE}
           note={note}
-          switchLabel={`${powerTitle(power.action)} on`}
+          noteWarns={failed}
+          switchLabel={`${POWER_TITLE} on`}
           onToggle={(on) => void change({ ...actions, power: { ...power, enabled: on } })}
-          menu={
+          chip={
             <MoreMenu
-              label="Power action options"
-              buttonTestId="finish-power-menu-button"
+              label="Power action"
+              buttonTestId="finish-power-chip"
               menuTestId="finish-power-menu"
+              buttonClassName={CHIP}
+              trigger={
+                <>
+                  {powerLabel(power.action)}
+                  <ChevronDown size={13} className="shrink-0 text-g400" />
+                </>
+              }
               items={POWER_ACTIONS.map((a) => ({
                 label: powerLabel(a),
+                title: powerHint(a) ?? undefined,
                 checked: a === power.action,
                 onSelect: () => void change({ ...actions, power: { ...power, action: a } }),
               }))}
@@ -98,35 +115,50 @@ export function FinishSection({ actions, status, save, onError }: Props) {
   );
 }
 
+const CHIP =
+  "inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-[13px] font-medium hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+
+// One line in the rules' grid: title and chip (the title column is as wide as the longer title,
+// so both chips start together), the switch, and a spacer where the rules have their ··· menu.
 function Row({
   testId,
   enabled,
   title,
   note,
+  noteWarns,
   switchLabel,
   onToggle,
-  menu,
+  chip,
 }: {
   testId: string;
   enabled: boolean;
   title: string;
-  note: string | null;
+  note?: string | null;
+  noteWarns?: boolean;
   switchLabel: string;
   onToggle: (on: boolean) => void;
-  menu: React.ReactNode;
+  chip: React.ReactNode;
 }) {
   return (
     <li
       data-testid={testId}
       data-enabled={enabled}
-      className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-t border-line px-3 py-2 first:border-t-0"
+      className="grid grid-cols-[1fr_auto_1.5rem] items-center gap-3 border-t border-line px-3 py-2 first:border-t-0"
     >
-      <div className={`min-w-0 ${enabled ? "" : "text-g400"}`}>
-        <div className="truncate font-medium">{title}</div>
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            data-testid={`${testId}-title`}
+            className={`w-40 shrink-0 truncate font-medium ${enabled ? "" : "text-g400"}`}
+          >
+            {title}
+          </span>
+          {chip}
+        </div>
         {note && (
           <div
             data-testid={`${testId}-note`}
-            className={`truncate text-xs ${enabled ? "text-g600" : ""}`}
+            className={`mt-0.5 truncate text-xs ${noteWarns ? "text-warn-ink" : enabled ? "text-g600" : "text-g400"}`}
           >
             {note}
           </div>
@@ -138,7 +170,7 @@ function Row({
         testId={`${testId}-switch`}
         onChange={onToggle}
       />
-      {menu}
+      <span aria-hidden="true" />
     </li>
   );
 }

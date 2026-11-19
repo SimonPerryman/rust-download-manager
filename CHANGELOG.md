@@ -19,6 +19,9 @@ desktop app share one version.
 - **When downloads finish** actions: run a program after each download (never
   through a shell, with `{path}` and `{name}` filled in), and sleep, hibernate
   or shut down when everything is done, after a 60 second countdown with Cancel.
+  Each is one line with a fixed title (**After each download**, **After all
+  downloads**) and a chip: press it to edit the command, or to pick Sleep,
+  Hibernate or Shut down.
 - `rdm --at <time>` waits until a local time before downloading, and
   `rdm --on-finish <sleep|shutdown>` puts the machine to sleep or shuts it
   down after the run (CLI).

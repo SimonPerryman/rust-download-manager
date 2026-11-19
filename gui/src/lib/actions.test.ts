@@ -6,7 +6,9 @@ import {
   commandProblem,
   countdownText,
   powerNote,
-  powerTitle,
+  powerHint,
+  POWER_TITLE,
+  COMMAND_TITLE,
   waitText,
 } from "./actions";
 
@@ -34,10 +36,15 @@ describe("the command row", () => {
 });
 
 describe("the power row", () => {
-  it("is titled by its action", () => {
-    expect(powerTitle("shutdown")).toBe("Shut down when everything is done");
-    expect(powerTitle("sleep")).toBe("Sleep when everything is done");
-    expect(powerTitle("hibernate")).toBe("Hibernate when everything is done");
+  it("keeps its title whatever the action", () => {
+    expect(POWER_TITLE).toBe("After all downloads");
+    expect(COMMAND_TITLE).toBe("After each download");
+  });
+
+  it("explains sleep and hibernate, and leaves shut down plain", () => {
+    expect(powerHint("sleep")).toBe("Low power; wakes in seconds");
+    expect(powerHint("hibernate")).toBe("Saves to disk and powers off completely");
+    expect(powerHint("shutdown")).toBeNull();
   });
 
   it("says what it is waiting for", () => {

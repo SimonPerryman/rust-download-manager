@@ -42,33 +42,63 @@ describe("When downloads finish", () => {
   const q = (id: string) => host.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)!;
   const click = (el: Element) => act(() => (el as HTMLElement).click());
 
-  it("shows two rows, off by default, on the rules' switch column", () => {
+  it("shows two one-line rows with fixed titles, off by default, on the rules' switch column", () => {
     render(OFF);
     const rows = host.querySelectorAll("li");
     expect(rows).toHaveLength(2);
-    expect(rows[0].textContent).toContain("Run a command after each download");
-    expect(rows[1].textContent).toContain("Shut down when everything is done");
+    expect(q("finish-command-title").textContent).toBe("After each download");
+    expect(q("finish-power-title").textContent).toBe("After all downloads");
     expect(q("finish-command-switch").getAttribute("aria-checked")).toBe("false");
     expect(q("finish-power-switch").getAttribute("aria-checked")).toBe("false");
-    // The same three columns as a rule row.
-    expect(rows[0].className).toContain("grid-cols-[1fr_auto_auto]");
+    expect(q("finish-command-switch").getAttribute("aria-label")).toBe("After each download on");
+    expect(q("finish-power-switch").getAttribute("aria-label")).toBe("After all downloads on");
+    // Title, switch and a spacer where a rule has its menu; no menu of their own.
+    expect(rows[0].className).toContain("grid-cols-[1fr_auto_1.5rem]");
+    expect(host.querySelector('[aria-label$="options"]')).toBeNull();
   });
 
   it("switches the power action on and off, keeping what it does", () => {
     const save = render({ ...OFF, power: { enabled: false, action: "sleep" } });
-    expect(host.textContent).toContain("Sleep when everything is done");
+    expect(q("finish-power-title").textContent).toBe("After all downloads");
+    expect(q("finish-power-chip").textContent).toBe("Sleep");
     click(q("finish-power-switch"));
     expect(save).toHaveBeenCalledWith({ ...OFF, power: { enabled: true, action: "sleep" } });
   });
 
-  it("picks shut down, sleep or hibernate from the row menu", () => {
+  it("picks shut down, sleep or hibernate from the chip, with tooltips", () => {
     const save = render(OFF);
-    click(q("finish-power-menu-button"));
+    const chip = q("finish-power-chip");
+    expect(chip.textContent).toBe("Shut down");
+    expect(chip.getAttribute("aria-haspopup")).toBe("menu");
+    expect(chip.getAttribute("aria-expanded")).toBe("false");
+    click(chip);
+    expect(chip.getAttribute("aria-expanded")).toBe("true");
     const items = [...host.querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
     expect(items.map((i) => i.textContent)).toEqual(["Shut down", "Sleep", "Hibernate"]);
     expect(items.map((i) => i.getAttribute("aria-checked"))).toEqual(["true", "false", "false"]);
+    expect(items.map((i) => i.getAttribute("title"))).toEqual([
+      null,
+      "Low power; wakes in seconds",
+      "Saves to disk and powers off completely",
+    ]);
     click(items[2]);
     expect(save).toHaveBeenCalledWith({ ...OFF, power: { enabled: false, action: "hibernate" } });
+  });
+
+  it("closes the chip's list with Escape and moves between choices with the arrows", () => {
+    render(OFF);
+    click(q("finish-power-chip"));
+    const items = [...host.querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
+    expect(document.activeElement).toBe(items[0]);
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+    expect(document.activeElement).toBe(items[1]);
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(host.querySelector('[role="menu"]')).toBeNull();
+    expect(q("finish-power-chip").getAttribute("aria-expanded")).toBe("false");
   });
 
   it("says what a switched-on power action is waiting for", () => {
@@ -77,6 +107,27 @@ describe("When downloads finish", () => {
       status({ state: "waiting", reason: { kind: "command" } }),
     );
     expect(q("finish-power-note").textContent).toBe("Waiting for the command to finish");
+  });
+
+  it("reads No command, dimmed and without a tooltip, until a program is set", () => {
+    render(OFF);
+    const chip = q("finish-command-chip");
+    expect(chip.textContent).toBe("No command");
+    expect(chip.className).toContain("text-g400");
+    expect(chip.hasAttribute("title")).toBe(false);
+    click(chip);
+    expect(document.querySelector('[role="dialog"]')!.getAttribute("aria-label")).toBe(
+      "Edit command",
+    );
+  });
+
+  it("shows a failed power action in amber under its title", () => {
+    render(
+      { ...OFF, power: { enabled: true, action: "sleep" } },
+      status({ state: "failed", message: "denied" }),
+    );
+    expect(q("finish-power-note").textContent).toBe("Couldn't sleep: denied");
+    expect(q("finish-power-note").className).toContain("text-warn-ink");
   });
 
   it("opens Edit command to switch on a command that has none yet", () => {
@@ -111,9 +162,9 @@ describe("When downloads finish", () => {
       ...OFF,
       command: { enabled: false, program: "scan.exe", args: ["{path}"] },
     });
-    expect(q("finish-command-note").textContent).toBe("scan.exe {path}");
-    click(q("finish-command-menu-button"));
-    click([...host.querySelectorAll<HTMLElement>('[role="menuitem"]')][0]);
+    expect(q("finish-command-chip").textContent).toBe("scan.exe {path}");
+    expect(q("finish-command-chip").getAttribute("title")).toBe("scan.exe {path}");
+    click(q("finish-command-chip"));
     const textarea = document.querySelector<HTMLTextAreaElement>("textarea")!;
     const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
     act(() => {
