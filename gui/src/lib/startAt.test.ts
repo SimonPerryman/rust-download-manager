@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canSchedule,
   missedText,
+  queuedUntilLabel,
   rescheduleChoices,
   scheduledForLabel,
   startFromText,
@@ -9,7 +10,9 @@ import {
   startsLabel,
   startState,
   wasDueLabel,
+  windowState,
 } from "./startAt";
+import { setHour12 } from "./clock";
 import { snap } from "./testSnapshot";
 
 // Monday 9 March 2026, 21:00 local.
@@ -23,9 +26,16 @@ describe("a typed start time", () => {
   });
 
   it("is refused when it isn't a time", () => {
-    for (const bad of ["", "9:00", "25:00", "22", "noon"]) {
+    for (const bad of ["", "25:00", "9:60", "noon", "13pm"]) {
       expect(startFromText(bad, MON_21), bad).toBeNull();
     }
+  });
+
+  it("accepts the short ways of typing one", () => {
+    expect(startFromText("930pm", MON_21)).toBe("2026-03-09T21:30");
+    expect(startFromText("9:30 pm", MON_21)).toBe("2026-03-09T21:30");
+    expect(startFromText("9", MON_21)).toBe("2026-03-10T09:00");
+    expect(startFromText("1.15", MON_21)).toBe("2026-03-10T01:15");
   });
 });
 
@@ -53,6 +63,27 @@ describe("start-at wording", () => {
     expect(startState(held, MON_21)).toBe("Scheduled for 22:00");
     expect(startState({ ...held, start_missed: true }, MON_21)).toBe("Was due today 22:00");
     expect(startState(snap(), MON_21)).toBeNull();
+  });
+
+  it("says when a closed queue window holds a waiting row, by time of day and weekday", () => {
+    expect(queuedUntilLabel("2026-03-09T22:00", MON_21)).toBe("Queued until 22:00");
+    expect(queuedUntilLabel("2026-03-10T08:00", MON_21)).toBe("Queued until Tue 08:00");
+    const held = snap({ window_until: "2026-03-09T22:00" });
+    expect(windowState(held, MON_21)).toBe("Queued until 22:00");
+    expect(windowState(snap(), MON_21)).toBeNull();
+    expect(windowState({ ...held, status: "paused" }, MON_21)).toBeNull();
+    expect(windowState({ ...held, start_at: "2026-03-09T23:00" }, MON_21)).toBeNull();
+  });
+
+  it("words times on a 12-hour clock when the OS uses one", () => {
+    setHour12(true);
+    try {
+      expect(scheduledForLabel("2026-03-09T22:00", MON_21)).toBe("Scheduled for 10:00 PM");
+      expect(queuedUntilLabel("2026-03-10T01:00", MON_21)).toBe("Queued until Tue 1:00 AM");
+      expect(rescheduleChoices(MON_21)[0].when).toBe("Mon 10:00 PM");
+    } finally {
+      setHour12(false);
+    }
   });
 
   it("offers a time to anything not running or finished", () => {

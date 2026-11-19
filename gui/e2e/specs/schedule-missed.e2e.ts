@@ -6,7 +6,15 @@
 // on the notice leaves the downloads paused in the list.
 
 import { $, $$, browser, expect } from "@wdio/globals";
-import { engineRows, invoke, removeAll, selectFilter, waitForGone, waitForText } from "../helpers";
+import {
+  clock,
+  engineRows,
+  invoke,
+  removeAll,
+  selectFilter,
+  waitForGone,
+  waitForText,
+} from "../helpers";
 
 const NOTICE = '[data-testid="missed-notice"]';
 const NOTICE_TEXT = '[data-testid="missed-text"]';
@@ -47,7 +55,7 @@ describe("rdm GUI missed start times", () => {
       expect(d.start_missed).toBe(true);
       expect(d.start_at).toBe("2020-01-06T22:00");
     }
-    await waitForText("table", "Was due 6 Jan 22:00");
+    await waitForText("table", `Was due 6 Jan ${await clock("22:00")}`);
   });
 
   it("lists them under Missed in the Schedules view, with the notice above", async () => {
@@ -57,7 +65,10 @@ describe("rdm GUI missed start times", () => {
     await expect($(NOTICE)).toBeDisplayed();
     await waitForText(`${MISSED_LIST} ${GROUP}:first-child`, "Season 2");
     await waitForText(`${MISSED_LIST} ${GROUP}:first-child`, "2 files");
-    await waitForText(`${MISSED_LIST} ${GROUP}:first-child`, "Was due 6 Jan 22:00");
+    await waitForText(
+      `${MISSED_LIST} ${GROUP}:first-child`,
+      `Was due 6 Jan ${await clock("22:00")}`,
+    );
   });
 
   it("reschedules one from its menu to a real time, and it moves to Coming up", async () => {

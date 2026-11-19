@@ -328,7 +328,7 @@
   }
   /* The command run after a finished download failed: the download itself is fine. */
   .row-warning {
-    @apply inline-flex shrink-0 items-center gap-1 text-xs font-medium;
+    @apply inline-flex shrink-0 items-center;
     color: var(--warn-ink);
   }
   .st-ico {

@@ -2,8 +2,8 @@
 // Reschedule menu's choices and the missed notice. The engine owns what a start time means (and
 // holds the downloads); this only reads and shows it. Times are local "YYYY-MM-DDTHH:MM".
 
+import { normalizeTime, timeLabel } from "./clock";
 import { MONTHS } from "./format";
-import { validTime } from "./schedule";
 import type { DownloadSnapshot } from "./types";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -26,12 +26,12 @@ const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * What a typed start time means: `HH:MM` is the next such time (tomorrow's if it has passed
+ * What a typed start time means (`22:00`, `930`, `9:30 pm`): the next such time (tomorrow's if it has passed
  * today), like the engine reads it. Null if it isn't a time.
  */
 export function startFromText(text: string, now: Date = new Date()): string | null {
-  const t = text.trim();
-  if (!validTime(t)) return null;
+  const t = normalizeTime(text);
+  if (t === null) return null;
   const [h, m] = t.split(":").map(Number);
   const on = (days: number) =>
     new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, h, m);
@@ -42,7 +42,7 @@ export function startFromText(text: string, now: Date = new Date()): string | nu
 export function wording(iso: string, now: Date): string {
   const at = dateOf(iso);
   const days = Math.round((dayStart(at) - dayStart(now)) / DAY_MS);
-  const time = iso.slice(11);
+  const time = timeLabel(iso.slice(11));
   if (days === 0) return `today ${time}`;
   if (days > 0 && days < 7) return `${DAYS[at.getDay()]} ${time}`;
   if (days < 0 && days > -7) return `${DAYS[at.getDay()]} ${time}`;
@@ -61,10 +61,22 @@ export function scheduledForLabel(iso: string, now: Date = new Date()): string {
   return `Scheduled for ${w.startsWith("today ") ? w.slice(6) : w}`;
 }
 
+/** A waiting row's state while a queue window holds it: "Queued until 22:00" (weekday when not today). */
+export function queuedUntilLabel(iso: string, now: Date = new Date()): string {
+  const w = wording(iso, now);
+  return `Queued until ${w.startsWith("today ") ? w.slice(6) : w}`;
+}
+
 /** What a download's Progress cell says while it waits for a start time, else null. */
 export function startState(d: DownloadSnapshot, now?: Date): string | null {
   if (d.start_at === null || d.status !== "queued") return null;
   return d.start_missed ? wasDueLabel(d.start_at, now) : scheduledForLabel(d.start_at, now);
+}
+
+/** What a download's Progress cell says while a closed queue window holds it, else null. */
+export function windowState(d: DownloadSnapshot, now?: Date): string | null {
+  if (d.window_until === null || d.status !== "queued" || d.start_at !== null) return null;
+  return queuedUntilLabel(d.window_until, now);
 }
 
 /** Whether a row can be given a start time: waiting, paused, failed, or stopped with its partial kept. */
@@ -138,8 +150,8 @@ export function rescheduleChoices(now: Date = new Date(), evening = "22:00"): Re
     const d = at(days);
     const when =
       days < 7
-        ? `${DAYS[d.getDay()]} ${evening}`
-        : `${d.getDate()} ${MONTHS[d.getMonth()]} ${evening}`;
+        ? `${DAYS[d.getDay()]} ${timeLabel(evening)}`
+        : `${d.getDate()} ${MONTHS[d.getMonth()]} ${timeLabel(evening)}`;
     out.push({ when, name, at: isoOf(d) });
   };
   if (isoOf(at(0)) > isoOf(now)) choice(0, "Tonight");

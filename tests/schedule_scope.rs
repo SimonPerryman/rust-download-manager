@@ -108,6 +108,34 @@ async fn a_tag_window_holds_only_tagged_downloads() {
 }
 
 #[tokio::test]
+async fn a_held_download_says_when_its_window_opens() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(on(12, 0)));
+    let mgr = manager(dir.path(), &clock);
+    mgr.set_schedule(queue_only(queue_rule(tag("course-2"))));
+
+    let held = mgr
+        .add_with(server.url("/gated"), dir.path(), tagged("course-2"))
+        .unwrap();
+    let free = mgr.add(server.url("/gated"), dir.path(), None, None);
+    let until = |id: u64| {
+        mgr.snapshot()
+            .iter()
+            .find(|s| s.id == id)
+            .unwrap()
+            .window_until
+    };
+    assert_eq!(until(held), Some(on(22, 0)), "its own window's opening");
+    assert_eq!(until(free), None, "the window doesn't apply to it");
+
+    clock.set(on(22, 0));
+    mgr.check_schedule();
+    assert_eq!(until(held), None, "open now, so nothing to wait for");
+    server.gate().release_all();
+}
+
+#[tokio::test]
 async fn a_closing_tag_window_pauses_only_its_downloads() {
     let server = common::spawn().await;
     let dir = tempfile::tempdir().unwrap();

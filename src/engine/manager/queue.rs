@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use super::task::spawn_task;
-use super::window::{attach_scope_limiters, subject, sync_scope_limiters};
+use super::window::{attach_scope_limiters, sync_scope_limiters};
 use super::{Inner, Manager, ManagerState};
 use crate::engine::lock::lock;
 use crate::engine::store::Status;
@@ -22,7 +22,7 @@ impl Inner {
         let settings = st.settings.clone();
         let now = self.clock.now();
         for e in st.entries.values_mut() {
-            e.gate_open = settings.schedule.queue_open_for(now, &subject(e));
+            e.refresh_gate(&settings.schedule, now);
         }
         let running = st.entries.values().filter(|e| e.task.is_some()).count();
         // A lowered cap can leave `running > cap`; nothing is preempted.

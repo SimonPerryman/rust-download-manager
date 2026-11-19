@@ -85,7 +85,7 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
                 }}
                 onBlur={() => setTouched(true)}
                 onKeyDown={(e) => e.key === "Enter" && void submit()}
-                placeholder="scan.exe"
+                placeholder={"C:\\Tools\\scan.exe"}
                 className={FIELD}
               />
             </Field>
@@ -97,7 +97,7 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
                 rows={4}
                 value={args}
                 onChange={(e) => setArgs(e.target.value)}
-                placeholder={"One per line\n{path}"}
+                placeholder={"One argument per line\n{path}"}
                 className={`${FIELD} h-auto resize-none py-2 font-mono`}
               />
             </Field>

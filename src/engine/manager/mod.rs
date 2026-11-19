@@ -48,7 +48,7 @@ use tokio::task::JoinHandle;
 use crate::engine::actions::{ActionsStatus, LifecycleEvent, PowerBackend};
 use crate::engine::download_log::DownloadLogs;
 use crate::engine::lock::lock;
-use crate::engine::schedule::{Clock, StartAt};
+use crate::engine::schedule::{Clock, LocalDateTime, Schedule, StartAt};
 use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Store};
 use crate::engine::tally::Tally;
 use crate::engine::{Checksum, Control, RateLimiter, Segment};
@@ -144,6 +144,9 @@ pub struct DownloadSnapshot {
     pub start_group: Option<u64>,
     /// Its `start_at` passed while rdm was closed; it waits for the user.
     pub start_missed: bool,
+    /// While it waits in the queue for a closed queue window that applies to
+    /// it, the local time that window next opens; `None` otherwise.
+    pub window_until: Option<LocalDateTime>,
     /// The command run after this download failed to start or exited
     /// non-zero; the download itself still completed. Never saved.
     pub command_warning: Option<String>,
@@ -208,6 +211,8 @@ struct Entry {
     window_pause: bool,
     /// Whether the queue windows that apply to it were open at the last look.
     gate_open: bool,
+    /// While `gate_open` is false, when it next opens.
+    gate_until: Option<LocalDateTime>,
     /// Its start time passed while rdm was closed, so it was not started by
     /// itself; it waits for the user (see [`Manager::start_schedules`]).
     missed: bool,
@@ -235,6 +240,7 @@ impl Entry {
             file_missing: false,
             window_pause: false,
             gate_open: true,
+            gate_until: None,
             missed: false,
             command_warning: None,
         }
@@ -244,6 +250,16 @@ impl Entry {
     /// of the queue, using no slot.
     fn is_held(&self) -> bool {
         self.record.status == Status::Queued && self.record.start_at.is_some()
+    }
+
+    /// Look at the queue windows that apply to it as of `now`; true if open.
+    fn refresh_gate(&mut self, schedule: &Schedule, now: LocalDateTime) -> bool {
+        let subject = window::subject(self);
+        let open = schedule.queue_open_for(now, &subject);
+        let until = schedule.next_open_for(now, &subject);
+        self.gate_open = open;
+        self.gate_until = until;
+        open
     }
 
     /// Leave the start schedule, if in one.
@@ -300,6 +316,9 @@ impl Entry {
             start_at: self.record.start_at.filter(|_| self.is_held()),
             start_group: self.record.start_group.filter(|_| self.is_held()),
             start_missed: self.missed && self.is_held(),
+            window_until: self
+                .gate_until
+                .filter(|_| self.record.status == Status::Queued && !self.is_held()),
             command_warning: self
                 .command_warning
                 .clone()

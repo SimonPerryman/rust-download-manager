@@ -14,9 +14,9 @@ import {
   baseUrl,
   invoke,
   Key,
+  rectOf,
   removeAll,
   retype,
-  rowById,
   selectFilter,
   waitForGone,
   waitForStatus,
@@ -132,10 +132,14 @@ describe("rdm GUI when downloads finish", () => {
   it("flags the failed command on the download's row, which stays completed", async () => {
     await selectFilter("all");
     const id = ids[0];
-    await rowById(id).$('[data-testid="command-warning"]').waitForExist({
-      timeoutMsg: "the failed command never showed on its row",
-    });
-    await waitForText(`tr[data-id="${id}"]`, "Command failed");
+    const warning = `tr[data-id="${id}"] td.c-prog [data-testid="command-warning"]`;
+    await $(warning).waitForExist({ timeoutMsg: "the failed command never showed on its row" });
+    // An icon in the Progress cell, with the reason as its label and tooltip; the name keeps its room.
+    expect(await $(warning).getAttribute("aria-label")).toMatch(/^Command failed: /);
+    expect(await $(warning).getAttribute("title")).toMatch(/^Command failed: /);
+    await expect($(`tr[data-id="${id}"] td.c-name [data-testid="command-warning"]`)).not.toExist();
+    const name = await rectOf(`tr[data-id="${id}"] td.c-name`);
+    expect((await rectOf(warning)).x).toBeGreaterThanOrEqual(name.x + name.width);
     const row = (await invoke<{ id: number; status: string; error: string | null }[]>("list")).find(
       (d) => d.id === id,
     )!;

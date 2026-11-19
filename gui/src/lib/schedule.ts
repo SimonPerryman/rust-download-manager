@@ -1,8 +1,9 @@
 // Schedule rules as the UI words them: names, the plain-sentence summaries, the form's
 // checks and when a queue state next flips. The engine owns what a rule means.
 
+import { normalizeTime, timeLabel } from "./clock";
 import { checkDays, daysKind, daysName, daysPhrase } from "./days";
-import { limitText } from "./rate";
+import { limitText, type RateUnit } from "./rate";
 import type { QueueState, QueueWindow, Schedule, Scope, SpeedEntry, Weekday } from "./types";
 
 /** `HH:MM`, two digits each, as the engine reads it. */
@@ -34,8 +35,9 @@ export interface RuleDraft {
   days: Weekday[];
   /** Download window only. */
   finishRunning: boolean;
-  /** Speed limit only: the number of MB/s, as typed. */
+  /** Speed limit only: the amount as typed, in `limitUnit`. */
   limit: string;
+  limitUnit: RateUnit;
   /** What it applies to; `scopeText` holds the tag or host as typed, `scopeBatch` the batch. */
   scopeKind: ScopeKind;
   scopeText: string;
@@ -52,6 +54,7 @@ export const NEW_WINDOW: RuleDraft = {
   days: EVERY_DAY,
   finishRunning: false,
   limit: "5",
+  limitUnit: "M",
   scopeKind: "all",
   scopeText: "",
   scopeBatch: null,
@@ -66,15 +69,28 @@ export const NEW_SPEED: RuleDraft = {
   days: EVERY_DAY.slice(0, 5),
 };
 
-const MB = 1024 * 1024;
+const UNIT_BYTES: Record<RateUnit, number> = { K: 1024, M: 1024 * 1024 };
 
-/** MB/s as typed to bytes/s, or null if it isn't a number above zero. */
-export function limitBytes(text: string): number | null {
+/** A limit as typed (KB/s or MB/s) to bytes/s, or null if it isn't a number above zero. */
+export function limitBytes(text: string, unit: RateUnit = "M"): number | null {
   const t = text.trim();
   if (!/^(\d+\.?\d*|\.\d+)$/.test(t)) return null;
-  const bytes = Math.round(Number(t) * MB);
+  const bytes = Math.round(Number(t) * UNIT_BYTES[unit]);
   return bytes >= 1 ? bytes : null;
 }
+
+/** A saved limit as the form shows it: in MB/s from a megabyte up, else KB/s. */
+export function limitFields(bytes: number): Pick<RuleDraft, "limit" | "limitUnit"> {
+  const limitUnit: RateUnit = bytes >= UNIT_BYTES.M ? "M" : "K";
+  return { limit: String(Number((bytes / UNIT_BYTES[limitUnit]).toFixed(4))), limitUnit };
+}
+
+/** The draft with its typed times as "HH:MM" where they mean a time (`930` is 09:30). */
+export const withTimes = (d: RuleDraft): RuleDraft => ({
+  ...d,
+  start: normalizeTime(d.start) ?? d.start,
+  end: normalizeTime(d.end) ?? d.end,
+});
 
 /** A limit as shown: "5 MB/s", or "512 KB/s" below a megabyte. */
 export const limitLabel = (bytes: number): string => limitText(bytes);
@@ -146,18 +162,20 @@ export function draftOf(rule: Rule): RuleDraft {
     ...scopeFields(rule.scope),
   };
   if (isSpeed(rule)) {
-    return { ...NEW_SPEED, ...common, limit: String(Number((rule.limit / MB).toFixed(4))) };
+    return { ...NEW_SPEED, ...common, ...limitFields(rule.limit) };
   }
   return { ...NEW_WINDOW, ...common, finishRunning: rule.finish_running };
 }
 
 /** What stops a draft being saved, or null. */
-export function draftProblem(d: RuleDraft): string | null {
+export function draftProblem(typed: RuleDraft): string | null {
+  const d = withTimes(typed);
   const days = checkDays(d.days);
   if (!days.ok) return days.error;
   if (!validTime(d.start) || !validTime(d.end)) return "Times look like 22:00";
   if (d.start === d.end) return "A window can't start and end at the same time";
-  if (d.kind === "speed" && limitBytes(d.limit) === null) return "Enter a speed above 0";
+  if (d.kind === "speed" && limitBytes(d.limit, d.limitUnit) === null)
+    return "Enter a speed above 0";
   if (scopeOfDraft(d) === null) {
     return d.scopeKind === "batch" ? "Pick a batch" : `Enter a ${d.scopeKind}`;
   }
@@ -183,7 +201,7 @@ export function speedOf(d: RuleDraft, enabled = true): SpeedEntry {
     ...(name ? { name } : {}),
     enabled,
     window: { start: d.start, end: d.end, days: d.days },
-    limit: limitBytes(d.limit) ?? 1,
+    limit: limitBytes(d.limit, d.limitUnit) ?? 1,
     ...scoped(scopeOfDraft(d)),
   };
 }
@@ -196,13 +214,14 @@ export const ruleFromDraft = (d: RuleDraft, enabled = true): Rule =>
 export function autoName(start: string, end: string, days: readonly Weekday[]): string {
   const daily = daysKind(days) === "daily";
   if (daily && crossesMidnight(start, end)) return "Overnight only";
-  return `${start} to ${end}${daily ? "" : `, ${daysName(days)}`}`;
+  return `${timeLabel(start)} to ${timeLabel(end)}${daily ? "" : `, ${daysName(days)}`}`;
 }
 
 /** The name a draft shows greyed while it has none. */
-export function draftAutoName(d: RuleDraft): string {
+export function draftAutoName(typed: RuleDraft): string {
+  const d = withTimes(typed);
   if (d.kind !== "speed") return autoName(d.start, d.end, d.days);
-  const bytes = limitBytes(d.limit);
+  const bytes = limitBytes(d.limit, d.limitUnit);
   return bytes === null ? "Speed limit" : `${limitLabel(bytes)} limit`;
 }
 
@@ -217,22 +236,25 @@ export function ruleName(r: Rule): string {
 /** The plain-sentence summary of a draft. */
 export function summary(
   d: Pick<RuleDraft, "start" | "end" | "days" | "finishRunning"> &
-    Partial<Pick<RuleDraft, "kind" | "limit">> & { scope?: Scope | null },
+    Partial<Pick<RuleDraft, "kind" | "limit" | "limitUnit">> & { scope?: Scope | null },
 ): string {
-  const when = `from ${d.start} to ${d.end} ${daysPhrase(d.days)}`;
+  const when = `from ${timeLabel(d.start)} to ${timeLabel(d.end)} ${daysPhrase(d.days)}`;
   const tail = scopeTail(d.scope);
   const who = (lead: string) => (tail ? `${lead} ${tail}` : lead);
   if (d.kind === "speed") {
-    const bytes = limitBytes(d.limit ?? "");
+    const bytes = limitBytes(d.limit ?? "", d.limitUnit);
     return `${who("Downloads")} are limited to ${bytes === null ? "a set speed" : limitLabel(bytes)} ${when}.`;
   }
   return d.finishRunning
     ? `${who("New downloads")} start ${when}. Running ones finish.`
-    : `${who("Downloads")} run ${when}, and pause at ${d.end}.`;
+    : `${who("Downloads")} run ${when}, and pause at ${timeLabel(d.end)}.`;
 }
 
 /** A draft's summary: its own fields, scope included. */
-export const draftSummary = (d: RuleDraft): string => summary({ ...d, scope: scopeOfDraft(d) });
+export const draftSummary = (typed: RuleDraft): string => {
+  const d = withTimes(typed);
+  return summary({ ...d, scope: scopeOfDraft(d) });
+};
 
 /** A rule's row text: a window's sentence, or "5 MB/s, 08:00–18:00, weekdays". */
 export function ruleSummary(r: Rule): string {
@@ -240,7 +262,7 @@ export function ruleSummary(r: Rule): string {
   const kind = daysKind(r.window.days);
   const days = kind === "daily" ? "daily" : daysName(r.window.days).toLowerCase();
   const tail = scopeTail(r.scope);
-  return `${limitLabel(r.limit)}, ${r.window.start}–${r.window.end}, ${kind === "chosen" ? daysName(r.window.days) : days}${tail ? `, ${tail}` : ""}`;
+  return `${limitLabel(r.limit)}, ${timeLabel(r.window.start)}–${timeLabel(r.window.end)}, ${kind === "chosen" ? daysName(r.window.days) : days}${tail ? `, ${tail}` : ""}`;
 }
 
 /** Where a rule sits in the rule set. */
@@ -288,7 +310,8 @@ const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
  * else with its weekday, "Tue 22:00".
  */
 export function whenLabel(until: string, now: Date = new Date()): string {
-  const [date, time] = until.split("T");
+  const [date, hhmm] = until.split("T");
+  const time = timeLabel(hhmm);
   const [y, m, d] = date.split("-").map(Number);
   const today = now.getFullYear() === y && now.getMonth() + 1 === m && now.getDate() === d;
   if (today) return time;

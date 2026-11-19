@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NEW_WINDOW, ruleOf, speedOf, NEW_SPEED } from "../../lib/schedule";
+import { draftOf, NEW_WINDOW, ruleOf, speedOf, NEW_SPEED } from "../../lib/schedule";
 import { RuleRow } from "./RuleRow";
 import { ScheduleForm } from "./ScheduleForm";
 
@@ -128,6 +128,64 @@ describe("schedule components", () => {
     });
     click(q("[data-testid=schedule-submit]"));
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ kind: "speed", limit: "2.5" }));
+  });
+
+  const type = (el: HTMLInputElement, text: string) =>
+    act(() => {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      set.call(el, text);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+  it("offers KB/s and MB/s, and saves the limit in the unit picked", () => {
+    const onSubmit = form();
+    pick(q("select[aria-label=Type]"), "speed");
+    const unit = q<HTMLSelectElement>("select[aria-label=Unit]");
+    expect([...unit.options].map((o) => o.textContent)).toEqual(["KB/s", "MB/s"]);
+    expect(unit.value).toBe("M");
+    type(q("input[aria-label=Limit]"), "200");
+    pick(unit, "K");
+    expect(q("[data-testid=schedule-summary]").textContent).toBe(
+      "Downloads are limited to 200 KB/s from 08:00 to 18:00 on weekdays.",
+    );
+    expect(q<HTMLInputElement>("input[aria-label=Name]").placeholder).toBe("200 KB/s limit");
+    click(q("[data-testid=schedule-submit]"));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "speed", limit: "200", limitUnit: "K" }),
+    );
+  });
+
+  it("shows an edited limit in its best unit", () => {
+    act(() =>
+      root.render(
+        <ScheduleForm
+          initial={draftOf(speedOf({ ...NEW_SPEED, limit: "200", limitUnit: "K" }))}
+          editing
+          onSubmit={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    expect(q<HTMLInputElement>("input[aria-label=Limit]").value).toBe("200");
+    expect(q<HTMLSelectElement>("select[aria-label=Unit]").value).toBe("K");
+  });
+
+  it("takes times typed loosely, tidies them on blur and saves them as HH:MM", () => {
+    const onSubmit = form();
+    const start = q<HTMLInputElement>("input[aria-label='Start time']");
+    type(start, "930pm");
+    expect(q("[data-testid=schedule-summary]").textContent).toBe(
+      "Downloads run from 21:30 to 08:00 every day, and pause at 08:00.",
+    );
+    act(() => start.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    expect(start.value).toBe("21:30");
+    type(q("input[aria-label='End time']"), "7");
+    click(q("[data-testid=schedule-submit]"));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ start: "21:30", end: "07:00" }),
+    );
+    type(start, "later");
+    expect(q("[data-testid=schedule-summary]").textContent).toBe("Times look like 22:00");
   });
 
   it("keeps an edited rule's type fixed", () => {

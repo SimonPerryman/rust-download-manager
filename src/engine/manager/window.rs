@@ -72,17 +72,22 @@ impl Inner {
         }
         sync_scope_limiters(st, now);
         let mut opened = false;
+        let mut gate_moved = false;
         let schedule = st.settings.schedule.clone();
         for e in st.entries.values_mut() {
-            let open = schedule.queue_open_for(now, &subject(e));
-            opened |= open && !e.gate_open;
-            e.gate_open = open;
+            let (was_open, was_until) = (e.gate_open, e.gate_until);
+            let open = e.refresh_gate(&schedule, now);
+            opened |= open && !was_open;
+            gate_moved |= was_until != e.gate_until;
             if !open {
                 pause_for_window(&schedule, e);
             }
         }
         if opened {
             self.schedule(st);
+        }
+        if gate_moved {
+            self.publish(st);
         }
         self.queue_tx.send_if_modified(|current| {
             let changed = *current != state;

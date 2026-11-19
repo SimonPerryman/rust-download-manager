@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { dayShort, daysKind, daysName, ordered, toggled, WEEKDAYS } from "../../lib/days";
-import { sanitizeAmount } from "../../lib/rate";
+import { normalizeTime, timeLabel } from "../../lib/clock";
+import { RATE_UNITS, sanitizeAmount, type RateUnit } from "../../lib/rate";
 import {
   draftAutoName,
   draftProblem,
@@ -10,6 +11,7 @@ import {
   type RuleDraft,
   type RuleKind,
   type ScopeKind,
+  withTimes,
 } from "../../lib/schedule";
 import type { Weekday } from "../../lib/types";
 import { ChevronDown } from "../icons/ChevronDown";
@@ -129,7 +131,7 @@ export function ScheduleForm({ initial, editing, choices = NO_CHOICES, onSubmit,
     setBusy(true);
     setError(null);
     try {
-      await onSubmit({ ...draft, days: ordered(draft.days) });
+      await onSubmit({ ...withTimes(draft), days: ordered(draft.days) });
     } catch (e) {
       setBusy(false);
       setError(String(e));
@@ -258,8 +260,17 @@ export function ScheduleForm({ initial, editing, choices = NO_CHOICES, onSubmit,
                     placeholder="5"
                     className={`${FIELD} tabular-nums`}
                   />
-                  <SelectField aria-label="Unit" defaultValue="M" className="col-start-3">
-                    <option value="M">MB/s</option>
+                  <SelectField
+                    aria-label="Unit"
+                    value={draft.limitUnit}
+                    onChange={(e) => set({ limitUnit: e.target.value as RateUnit })}
+                    className="col-start-3"
+                  >
+                    {RATE_UNITS.map((u) => (
+                      <option key={u.value} value={u.value}>
+                        {u.label}
+                      </option>
+                    ))}
                   </SelectField>
                 </div>
               </Field>
@@ -271,11 +282,12 @@ export function ScheduleForm({ initial, editing, choices = NO_CHOICES, onSubmit,
                   type="text"
                   aria-label="Start time"
                   inputMode="numeric"
-                  maxLength={5}
+                  maxLength={8}
                   value={draft.start}
                   onChange={(e) => set({ start: e.target.value })}
+                  onBlur={() => set({ start: normalizeTime(draft.start) ?? draft.start })}
                   onKeyDown={(e) => e.key === "Enter" && void submit()}
-                  placeholder="22:00"
+                  placeholder={timeLabel("22:00")}
                   className={`${FIELD} tabular-nums`}
                 />
                 <span className="text-center text-g600">to</span>
@@ -283,11 +295,12 @@ export function ScheduleForm({ initial, editing, choices = NO_CHOICES, onSubmit,
                   type="text"
                   aria-label="End time"
                   inputMode="numeric"
-                  maxLength={5}
+                  maxLength={8}
                   value={draft.end}
                   onChange={(e) => set({ end: e.target.value })}
+                  onBlur={() => set({ end: normalizeTime(draft.end) ?? draft.end })}
                   onKeyDown={(e) => e.key === "Enter" && void submit()}
-                  placeholder="08:00"
+                  placeholder={timeLabel("08:00")}
                   className={`${FIELD} tabular-nums`}
                 />
               </div>

@@ -33,8 +33,8 @@ added, so you can download it again. Ctrl+Enter adds. The folder starts at the
 one you used last. **Tags** (comma-separated) go on every download you add.
 Under **More options** you can give a SHA-256 checksum (for a single link) and
 a speed limit (per file, when there are several links), and **Start at**: type
-a time such as `22:00` and the links wait until then (the field says which
-day it means). Everything added together with one start time is one schedule.
+a time such as `22:00` (or `930`, `9.30`, `9:30 pm`) and the links wait until
+then (the field says which day it means). Everything added together with one start time is one schedule.
 
 A `[a-b]` range in a link, such as `lesson[01-12].mp4` or `img[a-f].png`,
 adds every file in it. The preview shows one row ("lesson01.mp4 to
@@ -108,7 +108,10 @@ kept, so Retry failed and a restart keep it. Leave a field empty for no limit.
 
 Downloads beyond the concurrency limit ([Settings](#settings); see
 [how the queue works](how-it-works.md#the-queue-and-speed-limits)) wait, and
-the first queued one says **Next up**. To reorder, drag a queued row by its
+the first queued one says **Next up**. A download held by a closed
+[queue window](#schedules) says what it waits for instead: **Queued until
+22:00**, with the weekday when that isn't today. A window scoped to a tag,
+host or batch marks only the downloads it matches. To reorder, drag a queued row by its
 handle, press Alt+↑/Alt+↓, or use **Start next**, **Move up** and **Move
 down** from its menu or the details pane.
 
@@ -152,7 +155,10 @@ shorter or longer on the night the clocks change. Rules apply only while rdm
 is running; it never wakes the computer.
 
 **New schedule** opens a form: an optional name, the times typed as `22:00`
-to `08:00`, the days, and the switch above. The footer says in a sentence what
+to `08:00`, the days, and the switch above. A time may be typed loosely, such
+as `930`, `0930`, `9:30`, `9.30`, `9` (9:00) or `9:30 pm`; it tidies to
+`HH:MM` when you leave the box. Times in sentences, rows and the status line
+follow the computer's 12 or 24-hour setting ("10:00 PM" or "22:00"). The footer says in a sentence what
 the rule does. **Days** offers Daily, Weekdays, Weekends and Choose days; the
 day buttons appear under Choose days, and with none picked **Add** stays off.
 Each rule has a switch (a switched-off rule keeps its settings) and a ···
@@ -160,7 +166,8 @@ menu with Edit, Duplicate and Delete. With several rules on, the queue is open
 whenever any of them is.
 
 A **speed limit** is a rule of the same shape with a cap: pick **Speed limit**
-as the Type, type the limit in MB/s, and set times and days. Inside its times
+as the Type, type the limit in KB/s or MB/s (the unit is beside the box), and
+set times and days. Inside its times
 the cap replaces the global speed limit; outside them the global limit
 applies. It takes effect on downloads already running, with no restart, and it
 doesn't touch a limit set on one download or batch. Where entries overlap, the
@@ -214,7 +221,8 @@ on with no command yet opens it too) takes the **Program** and its
 name) are filled in. The program is started directly, never through a shell,
 so a name with a space or a `;` arrives as one argument; it runs with your
 rights. If it can't start or exits with an error, the download stays
-completed and its row shows **Command failed** (the reason is its tooltip).
+completed and its Progress cell shows an amber warning icon beside **Done**
+(hover it for "Command failed" and the reason).
 
 **Shut down when everything is done** puts the computer to sleep, hibernates it
 or shuts it down: pick which in the row's ··· menu. When nothing is left, a

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { normalizeTime, timeLabel } from "../../lib/clock";
 import { startFromText, startsLabel } from "../../lib/startAt";
 import { trapTab } from "./trapTab";
 
@@ -71,7 +72,8 @@ export function StartAtDialog({ title, button, onSubmit, onClose }: Props) {
               aria-label="Start at"
               autoFocus
               value={text}
-              placeholder="22:00"
+              placeholder={timeLabel("22:00")}
+              onBlur={() => setText((t) => normalizeTime(t) ?? t)}
               onChange={(e) => {
                 setText(e.target.value);
                 setError(null);

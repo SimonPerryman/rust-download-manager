@@ -19,6 +19,7 @@ import {
   waitForGone,
   waitForStatus,
   waitForText,
+  clock,
   newIds,
   ADD_DIALOG,
 } from "../helpers";
@@ -61,8 +62,9 @@ describe("rdm GUI start time", () => {
     const dialog = await openAddDialog();
     await dialog.$(LINKS).setValue(`${baseUrl}/file?start-at`);
     await dialog.$("button=More options").click();
-    await dialog.$('input[aria-label="Start at"]').setValue(time);
-    await waitForText('[data-testid="add-start-at-echo"]', `${time}`);
+    // Typed without the colon, as people do: 1400 means 14:00.
+    await dialog.$('input[aria-label="Start at"]').setValue(time.replace(":", ""));
+    await waitForText('[data-testid="add-start-at-echo"]', await clock(time));
     await dialog.$("button=Add download").waitForEnabled();
     await dialog.$("button=Add download").click();
     await waitForGone(ADD_DIALOG);
@@ -70,7 +72,7 @@ describe("rdm GUI start time", () => {
     ids.push(...(await newIds(before, 1)));
     const id = ids[0];
     await rowById(id).waitForExist();
-    await waitForText(`tr[data-id="${id}"]`, `Scheduled for ${time}`);
+    await waitForText(`tr[data-id="${id}"]`, `Scheduled for ${await clock(time)}`);
 
     // Held for two hours: a link this small would be done by now if it were in the queue.
     await browser.pause(1500);
@@ -84,7 +86,7 @@ describe("rdm GUI start time", () => {
     await $(SCHEDULES_LINK).click();
     await $(COMING_UP).waitForDisplayed();
     expect(await $$(`${COMING_UP} ${GROUP}`).length).toBe(1);
-    await waitForText(`${GROUP} [data-testid="start-group-when"]`, `${time}`);
+    await waitForText(`${GROUP} [data-testid="start-group-when"]`, await clock(time));
     await waitForText(`${GROUP} [data-testid="start-group-when"]`, "Starts");
     // The pencil is icon-only and says what it is in a tooltip.
     await expect($(`${GROUP} [data-testid="start-group-edit"]`)).toHaveAttribute("title", "Edit");
@@ -121,7 +123,7 @@ describe("rdm GUI start time", () => {
     await $(ROW_MENU).$("button=Start at…").click();
     await $(START_AT_DIALOG).waitForDisplayed();
     await $(`${START_AT_DIALOG} input[aria-label="Start at"]`).setValue(later);
-    await waitForText('[data-testid="start-at-echo"]', later);
+    await waitForText('[data-testid="start-at-echo"]', await clock(later));
     await $('[data-testid="start-at-submit"]').click();
     await waitForGone(START_AT_DIALOG);
 
@@ -131,7 +133,7 @@ describe("rdm GUI start time", () => {
         timeoutMsg: "the row's Start at… never moved its schedule",
       },
     );
-    await waitForText(`tr[data-id="${second}"]`, later);
+    await waitForText(`tr[data-id="${second}"]`, await clock(later));
     expect((await startRow(second)).status).toBe("queued");
   });
 });
