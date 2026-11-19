@@ -168,28 +168,77 @@ describe("rdm GUI when downloads finish", () => {
     const args = $('textarea[aria-label="Arguments"]');
     await args.addValue("--scan");
     await browser.keys(Key.Enter);
-    await args.addValue("{path}");
+    await args.addValue("{download_path}");
     await $('[data-testid="command-submit"]').click();
     await waitForGone(FORM);
 
     await expect($(`${COMMAND_ROW} [role="switch"]`)).toHaveAttribute("aria-checked", "true");
-    await waitForText(COMMAND_CHIP, "rdm-e2e-no-such-program --scan {path}");
-    await expect($(COMMAND_CHIP)).toHaveAttribute("title", "rdm-e2e-no-such-program --scan {path}");
+    await waitForText(COMMAND_CHIP, "rdm-e2e-no-such-program --scan {download_path}");
+    await expect($(COMMAND_CHIP)).toHaveAttribute(
+      "title",
+      "rdm-e2e-no-such-program --scan {download_path}",
+    );
     expect((await saved()).command).toEqual({
       enabled: true,
       program: "rdm-e2e-no-such-program",
-      args: ["--scan", "{path}"],
+      args: ["--scan", "{download_path}"],
     });
+    // The variable is its own token on the chip, with its explanation.
+    const tokens = await browser.execute(
+      (sel) =>
+        [...document.querySelector(sel)!.querySelectorAll("span[title]")].map((t) => [
+          t.textContent,
+          t.getAttribute("title"),
+        ]),
+      COMMAND_CHIP,
+    );
+    expect(tokens).toEqual([["{download_path}", expect.stringContaining("with its folder")]]);
+  });
+
+  it("inserts a variable into Arguments from the Insert buttons, even from the Program field", async () => {
+    await $(COMMAND_CHIP).click();
+    await $(FORM).waitForDisplayed();
+    const args = $('textarea[aria-label="Arguments"]');
+    // Focus is on Program; the buttons still fill Arguments, after the existing text.
+    await $('input[aria-label="Program"]').click();
+    await $('[data-testid="insert-download_name"]').click();
+    await expect(args).toHaveValue(expect.stringContaining("{download_name}"));
+    await expect($('[data-testid="insert-download_name"]')).toHaveAttribute(
+      "title",
+      "Just the file's name. Example: report.zip",
+    );
+    expect(await browser.execute(() => document.activeElement?.getAttribute("aria-label"))).toBe(
+      "Arguments",
+    );
+    await $('[data-testid="command-submit"]').click();
+    await waitForGone(FORM);
+    await waitForText(COMMAND_CHIP, "{download_name}");
+    const saved1 = (await saved()).command.args;
+    expect(saved1.filter((a: string) => a.includes("{download_name}"))).toHaveLength(1);
+    expect(saved1).toContain("{download_path}");
+
+    // Put the failing command the later tests rely on back.
+    await invoke("set_post_actions", {
+      actions: {
+        command: {
+          enabled: true,
+          program: "rdm-e2e-no-such-program",
+          args: ["--scan", "{download_path}"],
+        },
+        power: { enabled: false, action: "sleep" },
+      },
+    });
+    await reopen();
   });
 
   it("cuts a long command with an ellipsis at the end and keeps the whole line as its tooltip", async () => {
     const program = `C:\\Tools\\${"scan-".repeat(30)}viewer.exe`;
     await invoke("set_post_actions", {
-      actions: { ...OFF, command: { enabled: true, program, args: ["{path}"] } },
+      actions: { ...OFF, command: { enabled: true, program, args: ["{download_path}"] } },
     });
     await reopen();
     await waitForText(COMMAND_CHIP, "C:\\Tools\\scan-");
-    expect(await $(COMMAND_CHIP).getAttribute("title")).toBe(`${program} {path}`);
+    expect(await $(COMMAND_CHIP).getAttribute("title")).toBe(`${program} {download_path}`);
     // The chip stops at about 26rem (416px at the default size) instead of growing with the text.
     expect((await rectOf(COMMAND_CHIP)).width).toBeLessThanOrEqual(420);
     const cut = await browser.execute((sel) => {
@@ -201,7 +250,11 @@ describe("rdm GUI when downloads finish", () => {
     // Back to the failing command the later tests rely on.
     await invoke("set_post_actions", {
       actions: {
-        command: { enabled: true, program: "rdm-e2e-no-such-program", args: ["--scan", "{path}"] },
+        command: {
+          enabled: true,
+          program: "rdm-e2e-no-such-program",
+          args: ["--scan", "{download_path}"],
+        },
         power: { enabled: false, action: "sleep" },
       },
     });

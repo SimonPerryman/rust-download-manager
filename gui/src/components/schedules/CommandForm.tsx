@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { argsFromText, argsText, commandProblem } from "../../lib/actions";
+import {
+  argsFromText,
+  argsText,
+  commandProblem,
+  COMMAND_VARIABLES,
+  insertAt,
+} from "../../lib/actions";
 import type { CommandAction } from "../../lib/types";
 import { trapTab } from "../dialogs/trapTab";
 import { X } from "../icons/X";
@@ -23,6 +29,7 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
   const [touched, setTouched] = useState(false);
   const dialog = useRef<HTMLDivElement>(null);
   const first = useRef<HTMLInputElement>(null);
+  const argsBox = useRef<HTMLTextAreaElement>(null);
   const problem = commandProblem(program);
 
   useEffect(() => first.current?.focus(), []);
@@ -34,6 +41,19 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [busy, onClose]);
+
+  // Into Arguments at the caret, replacing any selection, wherever focus was.
+  const insert = (token: string) => {
+    const box = argsBox.current;
+    if (!box) return;
+    const next = insertAt(args, box.selectionStart, box.selectionEnd, token);
+    setArgs(next.text);
+    // The caret can only be placed once the textarea holds the new value.
+    requestAnimationFrame(() => {
+      box.focus();
+      box.setSelectionRange(next.caret, next.caret);
+    });
+  };
 
   const submit = async () => {
     setTouched(true);
@@ -93,13 +113,35 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
             <Field label="Arguments" htmlFor="cmd-args">
               <textarea
                 id="cmd-args"
+                ref={argsBox}
                 aria-label="Arguments"
                 rows={4}
                 value={args}
                 onChange={(e) => setArgs(e.target.value)}
-                placeholder={"One argument per line\n{path}"}
+                placeholder={"One argument per line\n{download_path}"}
                 className={`${FIELD} h-auto resize-none py-2 font-mono`}
               />
+              <div className="flex items-center gap-2 pt-1 text-xs text-g600">
+                <span>Insert:</span>
+                {COMMAND_VARIABLES.map((v) => (
+                  <button
+                    key={v.token}
+                    type="button"
+                    data-testid={`insert-${v.token.slice(1, -1)}`}
+                    title={v.hint}
+                    aria-describedby={`cmd-hint-${v.token.slice(1, -1)}`}
+                    onClick={() => insert(v.token)}
+                    className="btn btn-line btn-sm"
+                  >
+                    {v.label}
+                  </button>
+                ))}
+                {COMMAND_VARIABLES.map((v) => (
+                  <span key={v.token} id={`cmd-hint-${v.token.slice(1, -1)}`} className="sr-only">
+                    {v.hint}
+                  </span>
+                ))}
+              </div>
             </Field>
 
             <p data-testid="command-rights" className="text-xs text-g600">

@@ -17,7 +17,7 @@ desktop app share one version.
   as missed, with Start all, Reschedule and Dismiss. A window or speed limit
   can apply to all downloads, a tag, a host or a batch.
 - **When downloads finish** actions: run a program after each download (never
-  through a shell, with `{path}` and `{name}` filled in), and sleep, hibernate
+  through a shell, with `{download_path}` and `{download_name}` filled in), and sleep, hibernate
   or shut down when everything is done, after a 60 second countdown with Cancel.
   Each is one line with a fixed title (**After each download**, **After all
   downloads**) and a chip: press it to edit the command, or to pick Sleep,

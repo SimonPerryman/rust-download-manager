@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   COMMAND_TITLE,
   commandLine,
+  commandParts,
   POWER_ACTIONS,
   powerLabel,
   powerHint,
@@ -63,7 +64,23 @@ export function FinishSection({ actions, status, save, onError }: Props) {
               onClick={() => setForm({ enable: false })}
               className={`${CHIP} max-w-[26rem] ${hasCommand ? "" : "text-g400"}`}
             >
-              <span className="truncate">{hasCommand ? line : "No command"}</span>
+              <span className="truncate">
+                {hasCommand
+                  ? commandParts(line).map((p, i) =>
+                      p.hint ? (
+                        <span
+                          key={i}
+                          title={p.hint}
+                          className="rounded-sm bg-primary-soft px-1 font-mono text-xs text-primary-ink"
+                        >
+                          {p.text}
+                        </span>
+                      ) : (
+                        p.text
+                      ),
+                    )
+                  : "No command"}
+              </span>
               <Pencil size={13} className="shrink-0 text-g400" />
             </button>
           }

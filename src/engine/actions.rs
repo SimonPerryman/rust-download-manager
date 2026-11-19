@@ -78,7 +78,7 @@ pub struct CommandAction {
     pub enabled: bool,
     /// The executable, started directly (never through a shell).
     pub program: String,
-    /// One argument per entry; `{path}` and `{name}` in each are filled in
+    /// One argument per entry; `{download_path}` and `{download_name}` in each are filled in
     /// with the finished file's path and name.
     pub args: Vec<String>,
 }
@@ -287,8 +287,8 @@ fn run_tool(program: &str, args: &[&str]) -> Result<(), String> {
     }
 }
 
-/// Fill `{path}` and `{name}` in `template` in one pass, so a value that
-/// itself contains `{name}` is left as it is.
+/// Fill `{download_path}` and `{download_name}` in `template` in one pass, so a value that
+/// itself contains `{download_name}` is left as it is.
 pub fn expand(template: &str, path: &Path, name: &str) -> String {
     let path = path.to_string_lossy();
     let mut out = String::with_capacity(template.len());
@@ -296,10 +296,10 @@ pub fn expand(template: &str, path: &Path, name: &str) -> String {
     while let Some(at) = rest.find('{') {
         out.push_str(&rest[..at]);
         rest = &rest[at..];
-        if let Some(tail) = rest.strip_prefix("{path}") {
+        if let Some(tail) = rest.strip_prefix("{download_path}") {
             out.push_str(&path);
             rest = tail;
-        } else if let Some(tail) = rest.strip_prefix("{name}") {
+        } else if let Some(tail) = rest.strip_prefix("{download_name}") {
             out.push_str(name);
             rest = tail;
         } else {
@@ -349,10 +349,22 @@ mod tests {
 
     #[test]
     fn expand_fills_both_placeholders_once() {
-        let path = Path::new("/dl/a;b {name}.zip");
+        let path = Path::new("/dl/a;b {download_name}.zip");
         assert_eq!(
-            expand("--in={path} [{name}] {other} {", path, "a;b {name}.zip"),
-            "--in=/dl/a;b {name}.zip [a;b {name}.zip] {other} {"
+            expand(
+                "--in={download_path} [{download_name}] {other} {",
+                path,
+                "a;b {download_name}.zip"
+            ),
+            "--in=/dl/a;b {download_name}.zip [a;b {download_name}.zip] {other} {"
+        );
+    }
+
+    #[test]
+    fn expand_leaves_the_old_short_names_as_typed() {
+        assert_eq!(
+            expand("{path} {name}", Path::new("/dl/a.zip"), "a.zip"),
+            "{path} {name}"
         );
     }
 

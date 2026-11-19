@@ -218,7 +218,7 @@ fake one), and saved with the settings. The CLI has only the one-off forms
   and the queue emptied (the last running or waiting download just completed
   or failed). The two post-download actions are subscribers; the download code
   doesn't know what they do. *Run a command* starts the program directly, with
-  one argument per entry and `{path}` and `{name}` filled in, never through a
+  one argument per entry and `{download_path}` and `{download_name}` filled in, never through a
   shell; a failure to start or a non-zero exit is kept as a warning on that
   download (memory only) and doesn't touch its status. *Power action* arms
   when the queue empties and counts 60 seconds, checked every second, but

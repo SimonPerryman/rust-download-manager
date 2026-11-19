@@ -217,10 +217,11 @@ a switch on the same column as the rules' switches.
 
 **After each download** starts a program of your choosing with the finished
 file. Its chip shows the command line (cut with an ellipsis if long; hover for
-the whole line), or "No command". Press the chip, or switch the row on with no
+the whole line), or "No command"; each variable shows as a tinted token. Press the chip, or switch the row on with no
 command yet, to open **Edit command**: the **Program** and its **Arguments**,
-one per line. `{path}` (the finished file) and `{name}` (its name) are filled
-in, and nothing else is: there is no `%VAR%` expansion, because the program is
+one per line. `{download_path}` (the finished file, with its folder) and
+`{download_name}` (just its name) are filled in, and nothing else is. The
+**Insert** buttons under Arguments add either one at the cursor: there is no `%VAR%` expansion, because the program is
 started directly and never through a shell, so a name with a space or a `;`
 arrives as one argument. It inherits rdm's own environment and runs with your
 rights. The Program and Arguments are saved as typed in the settings file, so
