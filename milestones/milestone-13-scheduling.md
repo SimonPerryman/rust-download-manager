@@ -72,7 +72,7 @@ is a time-aware layer on top, not a new scheduler. Roadmap index:
   schedules, so they have their own section ("When downloads finish") and
   not an entry in New schedule. Two rows:
   - *Run a command after each download*: an executable and argument list
-    with `{path}` and `{name}` filled in. Never through a shell, and the
+    with `{download_path}` and `{download_name}` filled in. Never through a shell, and the
     form says it runs with the user's rights. A non-zero exit is shown as
     a warning on the row, not a failed download.
   - *Shut down when everything is done*: its row menu picks shut down,
@@ -195,7 +195,7 @@ Binary pass/fail, each mapping to something an agent can run.
       or scheduled for later, waits for a running command to exit, and
       Cancel stops it during the countdown (tests use a fake power backend; no
       test ever sleeps or shuts the machine down).
-- [x] *Run a command* fills `{path}` and `{name}`, passes arguments without
+- [x] *Run a command* fills `{download_path}` and `{download_name}`, passes arguments without
       a shell (a name containing `;` or a space arrives intact), and a
       non-zero exit warns without failing the download.
 - [x] `rdm --at <time> <URL>` against the fixture server waits, downloads

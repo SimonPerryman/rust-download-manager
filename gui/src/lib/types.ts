@@ -321,7 +321,7 @@ export interface QueueState {
 /** What a power action does to the machine. */
 export type PowerAction = "shutdown" | "sleep" | "hibernate";
 
-/** Run a command after each download (`get_post_actions`); `{path}` and `{name}` fill in per argument. */
+/** Run a command after each download (`get_post_actions`); `{download_path}` and `{download_name}` fill in per argument. */
 export interface CommandAction {
   enabled: boolean;
   /** The executable, started directly, never through a shell. */

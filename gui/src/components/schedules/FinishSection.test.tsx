@@ -157,18 +157,77 @@ describe("When downloads finish", () => {
     expect(hint.className).toContain("danger");
   });
 
+  it("shows each variable on the chip as a token with its own tooltip", () => {
+    render({ ...OFF, command: { enabled: true, program: "scan.exe", args: ["{download_path}"] } });
+    const tokens = q("finish-command-chip").querySelectorAll("span[title]");
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0].textContent).toBe("{download_path}");
+    expect(tokens[0].getAttribute("title")).toContain("with its folder");
+    expect(q("finish-command-chip").getAttribute("title")).toBe("scan.exe {download_path}");
+  });
+
+  it("inserts a variable at the caret, over a selection, and puts focus back", async () => {
+    const save = render({
+      ...OFF,
+      command: { enabled: false, program: "scan.exe", args: ["--in", "XX"] },
+    });
+    click(q("finish-command-chip"));
+    const textarea = document.querySelector<HTMLTextAreaElement>("textarea")!;
+    const program = document.querySelector<HTMLInputElement>("#cmd-program")!;
+    act(() => textarea.focus());
+    act(() => program.focus());
+    // Select "XX" (the second line) while the Program field has focus last.
+    textarea.setSelectionRange(5, 7);
+    const name = document.querySelector<HTMLButtonElement>('[data-testid="insert-download_name"]')!;
+    expect(name.getAttribute("title")).toBe("Just the file's name. Example: report.zip");
+    const hint = document.getElementById(name.getAttribute("aria-describedby")!)!;
+    expect(hint.textContent).toBe(name.getAttribute("title"));
+    await act(async () => {
+      name.click();
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    });
+    expect(textarea.value).toBe("--in\n{download_name}");
+    expect(document.activeElement).toBe(textarea);
+    expect(textarea.selectionStart).toBe(textarea.value.length);
+    expect(document.querySelector('[data-testid="insert-download_path"]')!.textContent).toBe(
+      "Download path",
+    );
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-testid="command-submit"]')!.click(),
+    );
+    expect(save).toHaveBeenCalledWith({
+      ...OFF,
+      command: { enabled: false, program: "scan.exe", args: ["--in", "{download_name}"] },
+    });
+  });
+
+  it("adds a new last line when the Arguments box was never focused", async () => {
+    const save = render({
+      ...OFF,
+      command: { enabled: false, program: "scan.exe", args: ["--in"] },
+    });
+    click(q("finish-command-chip"));
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-testid="insert-download_path"]')!.click(),
+    );
+    expect(document.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe(
+      "--in\n{download_path}",
+    );
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it("saves the program and one argument per line", async () => {
     const save = render({
       ...OFF,
-      command: { enabled: false, program: "scan.exe", args: ["{path}"] },
+      command: { enabled: false, program: "scan.exe", args: ["{download_path}"] },
     });
-    expect(q("finish-command-chip").textContent).toBe("scan.exe {path}");
-    expect(q("finish-command-chip").getAttribute("title")).toBe("scan.exe {path}");
+    expect(q("finish-command-chip").textContent).toBe("scan.exe {download_path}");
+    expect(q("finish-command-chip").getAttribute("title")).toBe("scan.exe {download_path}");
     click(q("finish-command-chip"));
     const textarea = document.querySelector<HTMLTextAreaElement>("textarea")!;
     const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
     act(() => {
-      set.call(textarea, "--name\n{name} a;b\n\n{path}");
+      set.call(textarea, "--name\n{download_name} a;b\n\n{download_path}");
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () =>
@@ -177,7 +236,11 @@ describe("When downloads finish", () => {
     // Editing keeps the command's switch where it was.
     expect(save).toHaveBeenCalledWith({
       ...OFF,
-      command: { enabled: false, program: "scan.exe", args: ["--name", "{name} a;b", "{path}"] },
+      command: {
+        enabled: false,
+        program: "scan.exe",
+        args: ["--name", "{download_name} a;b", "{download_path}"],
+      },
     });
   });
 });

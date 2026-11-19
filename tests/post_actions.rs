@@ -137,7 +137,7 @@ fn probe() -> PathBuf {
     path
 }
 
-/// A command that runs the probe: it records `{name}` and `{path}` into
+/// A command that runs the probe: it records `{download_name}` and `{download_path}` into
 /// `out`, waits for `gate` (if any) and exits with `code`.
 fn probe_command(out: &Path, code: i32, gate: Option<&Path>) -> CommandAction {
     CommandAction {
@@ -147,8 +147,8 @@ fn probe_command(out: &Path, code: i32, gate: Option<&Path>) -> CommandAction {
             out.to_string_lossy().into_owned(),
             code.to_string(),
             gate.map_or("-".into(), |g| g.to_string_lossy().into_owned()),
-            "{name}".into(),
-            "{path}".into(),
+            "{download_name}".into(),
+            "{download_path}".into(),
         ],
     }
 }
@@ -432,7 +432,7 @@ async fn a_command_that_cannot_start_warns_too() {
             .join("no-such-program")
             .to_string_lossy()
             .into_owned(),
-        args: vec!["{path}".into()],
+        args: vec!["{download_path}".into()],
     };
     r.mgr.set_post_actions(with_command(missing, None));
     let id = r.mgr.add(r.server.url("/file"), r.dir.path(), None, None);
@@ -461,7 +461,7 @@ async fn actions_are_saved_with_settings_and_old_files_load_unchanged() {
         CommandAction {
             enabled: true,
             program: "scan".into(),
-            args: vec!["--file".into(), "{path}".into()],
+            args: vec!["--file".into(), "{download_path}".into()],
         },
         Some(PowerAction::Sleep),
     );
