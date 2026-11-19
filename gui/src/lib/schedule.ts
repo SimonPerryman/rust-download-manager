@@ -174,7 +174,8 @@ export function draftProblem(typed: RuleDraft): string | null {
   if (!days.ok) return days.error;
   if (!validTime(d.start) || !validTime(d.end)) return "Times look like 22:00";
   if (d.start === d.end) return "A window can't start and end at the same time";
-  if (d.kind === "speed" && limitBytes(d.limit, d.limitUnit) === null) return "Enter a speed above 0";
+  if (d.kind === "speed" && limitBytes(d.limit, d.limitUnit) === null)
+    return "Enter a speed above 0";
   if (scopeOfDraft(d) === null) {
     return d.scopeKind === "batch" ? "Pick a batch" : `Enter a ${d.scopeKind}`;
   }

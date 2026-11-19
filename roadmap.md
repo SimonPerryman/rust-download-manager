@@ -229,6 +229,9 @@ ramping follow-ups shipped in M10; ramp window tuning was dropped (below). These
    spec in one session on one data folder, so the batch spec's downloads
    show up in the main-view shots. Give each spec its own folder, or run
    them one at a time.
+7. **Sidebar growth**: the Folders and Tags lists can grow without limit;
+   options are collapsible sections that remember their state, a Show more
+   cap, or a scroll area per section.
 
 ## Candidate crates
 

@@ -222,6 +222,19 @@ export async function retype(
   if (enter) await browser.keys(Key.Enter);
 }
 
+/**
+ * A 24-hour "HH:MM" as the app words it: unchanged, or "10:00 PM" when the webview's locale uses
+ * a 12-hour clock (the app follows the OS, so what a spec expects must too).
+ */
+export async function clock(hhmm: string): Promise<string> {
+  const hour12 = await browser.execute(
+    () => new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hour12 === true,
+  );
+  if (!hour12) return hhmm;
+  const h = Number(hhmm.slice(0, 2));
+  return `${h % 12 === 0 ? 12 : h % 12}:${hhmm.slice(3, 5)} ${h < 12 ? "AM" : "PM"}`;
+}
+
 /** Calls a backend command directly, without touching the page (so focus stays put). */
 export async function invoke<T = unknown>(
   cmd: string,

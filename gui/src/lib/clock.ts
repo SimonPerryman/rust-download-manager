@@ -4,7 +4,9 @@
 /** Whether the OS locale shows a 12-hour clock (the `hour` option makes the answer resolve). */
 export function osHour12(): boolean {
   try {
-    return new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hour12 === true;
+    return (
+      new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hour12 === true
+    );
   } catch {
     return false;
   }

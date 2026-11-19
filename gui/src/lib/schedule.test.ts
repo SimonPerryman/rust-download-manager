@@ -3,8 +3,10 @@ import {
   autoName,
   draftOf,
   draftSummary,
+  draftAutoName,
   draftProblem,
   limitBytes,
+  limitFields,
   NEW_SPEED,
   NEW_WINDOW,
   pausedNote,
@@ -17,7 +19,9 @@ import {
   validTime,
   whenLabel,
   withCopy,
+  withTimes,
 } from "./schedule";
+import { setHour12 } from "./clock";
 import type { QueueState, Schedule } from "./types";
 
 const MB = 1024 * 1024;
@@ -115,10 +119,73 @@ describe("draftProblem", () => {
   });
 
   it("refuses bad or equal times", () => {
-    expect(draftProblem({ ...NEW_WINDOW, start: "8:00" })).toBe("Times look like 22:00");
+    expect(draftProblem({ ...NEW_WINDOW, start: "25:00" })).toBe("Times look like 22:00");
     expect(draftProblem({ ...NEW_WINDOW, end: "22:00" })).toMatch(/same time/);
     expect(validTime("24:00")).toBe(false);
     expect(validTime("23:59")).toBe(true);
+  });
+});
+
+describe("time entry in a draft", () => {
+  it("accepts typed times and words them as 24-hour HH:MM", () => {
+    const typed = { ...NEW_WINDOW, start: "930pm", end: "6" };
+    expect(draftProblem(typed)).toBeNull();
+    expect(draftSummary(typed)).toBe(
+      "Downloads run from 21:30 to 06:00 every day, and pause at 06:00.",
+    );
+    expect(withTimes(typed)).toMatchObject({ start: "21:30", end: "06:00" });
+    expect(draftProblem({ ...NEW_WINDOW, start: "930", end: "0930" })).toMatch(/same time/);
+    expect(draftProblem({ ...NEW_WINDOW, start: "nope" })).toBe("Times look like 22:00");
+  });
+
+  it("words times on the OS clock in sentences, names, rows and the status line", () => {
+    setHour12(true);
+    try {
+      expect(summary(NEW_WINDOW)).toBe(
+        "Downloads run from 10:00 PM to 8:00 AM every day, and pause at 8:00 AM.",
+      );
+      expect(autoName("08:00", "18:00", ["mon", "tue", "wed", "thu", "fri"])).toBe(
+        "8:00 AM to 6:00 PM, Weekdays",
+      );
+      expect(whenLabel("2026-11-17T22:00", NOW)).toBe("10:00 PM");
+      expect(pausedNote(state(false, "2026-11-18T01:30"), NOW)).toBe(
+        "Queue paused until Wed 1:30 AM",
+      );
+      const rule = speedOf({ ...NEW_SPEED, limit: "200", limitUnit: "K" });
+      expect(ruleSummary(rule)).toBe("200 KB/s, 8:00 AM–6:00 PM, weekdays");
+    } finally {
+      setHour12(false);
+    }
+  });
+});
+
+describe("speed limit units", () => {
+  it("reads the typed amount in KB/s or MB/s", () => {
+    expect(limitBytes("200", "K")).toBe(200 * 1024);
+    expect(limitBytes("5", "M")).toBe(5 * MB);
+    expect(limitBytes("5")).toBe(5 * MB);
+    expect(limitBytes("0", "K")).toBeNull();
+  });
+
+  it("saves a KB/s limit and words it in the sentence and the row", () => {
+    const d = { ...NEW_SPEED, limit: "200", limitUnit: "K" as const };
+    expect(speedOf(d).limit).toBe(200 * 1024);
+    expect(draftSummary(d)).toBe(
+      "Downloads are limited to 200 KB/s from 08:00 to 18:00 on weekdays.",
+    );
+    expect(draftAutoName(d)).toBe("200 KB/s limit");
+    expect(ruleSummary(speedOf(d))).toBe("200 KB/s, 08:00–18:00, weekdays");
+  });
+
+  it("shows a saved limit in the best unit when editing", () => {
+    expect(limitFields(200 * 1024)).toEqual({ limit: "200", limitUnit: "K" });
+    expect(limitFields(5 * MB)).toEqual({ limit: "5", limitUnit: "M" });
+    expect(limitFields(1.5 * MB)).toEqual({ limit: "1.5", limitUnit: "M" });
+    expect(limitFields(512 * 1024)).toEqual({ limit: "512", limitUnit: "K" });
+    expect(draftOf(speedOf({ ...NEW_SPEED, limit: "200", limitUnit: "K" }))).toMatchObject({
+      limit: "200",
+      limitUnit: "K",
+    });
   });
 });
 

@@ -8,7 +8,7 @@
 // The rules live in the shared app state, so the spec empties them before and after.
 
 import { $, $$, browser, expect } from "@wdio/globals";
-import { invoke, retype, selectFilter, waitForGone, waitForText } from "../helpers";
+import { clock, invoke, retype, selectFilter, waitForGone, waitForText } from "../helpers";
 
 const SCHEDULES_LINK = '[data-testid="schedules-link"]';
 const VIEW = '[data-testid="schedules-view"]';
@@ -73,14 +73,15 @@ describe("rdm GUI queue window", () => {
   it("says what a new window does before it is added", async () => {
     await openForm(win);
     await $('input[aria-label="Name"]').setValue("E2E window");
+    const [from, to] = [await clock(win.start), await clock(win.end)];
     await waitForText(
       SUMMARY,
-      `Downloads run from ${win.start} to ${win.end} every day, and pause at ${win.end}.`,
+      `Downloads run from ${from} to ${to} every day, and pause at ${to}.`,
     );
     await $('[data-testid="finish-running"]').click();
     await waitForText(
       SUMMARY,
-      `New downloads start from ${win.start} to ${win.end} every day. Running ones finish.`,
+      `New downloads start from ${from} to ${to} every day. Running ones finish.`,
     );
     await $('[data-testid="finish-running"]').click();
   });
@@ -90,10 +91,13 @@ describe("rdm GUI queue window", () => {
     await waitForGone(FORM);
     await waitForRules(1);
     await waitForText('[data-testid="rule-name"]', "E2E window");
-    await waitForText('[data-testid="rule-summary"]', `from ${win.start} to ${win.end}`);
+    await waitForText(
+      '[data-testid="rule-summary"]',
+      `from ${await clock(win.start)} to ${await clock(win.end)}`,
+    );
 
     await waitForText(PAUSED, "Queue paused until");
-    await waitForText(PAUSED, win.start);
+    await waitForText(PAUSED, await clock(win.start));
     expect(await $$(PAUSED).length).toBe(1);
     await waitForText(STATUS, "Queue paused. The window opens at");
 
@@ -141,7 +145,7 @@ describe("rdm GUI queue window", () => {
     expect(saved.queue_windows[1].window.days).toEqual(["mon", "tue"]);
     await waitForText(
       `${RULE}:nth-child(2) [data-testid="rule-name"]`,
-      `${win.start} to ${win.end}, Mon and Tue`,
+      `${await clock(win.start)} to ${await clock(win.end)}, Mon and Tue`,
     );
   });
 
@@ -158,14 +162,17 @@ describe("rdm GUI queue window", () => {
     await $(FORM).waitForDisplayed();
     await $('select[aria-label="Type"]').selectByAttribute("value", "speed");
     await expect($('[data-testid="finish-running"]')).not.toBeDisplayed();
-    await $('input[aria-label="Limit"]').setValue("2");
+    await $('input[aria-label="Limit"]').setValue("200");
+    // The unit offers KB/s as well as MB/s.
+    await expect($('select[aria-label="Unit"] option[value="K"]')).toHaveText("KB/s");
+    await $('select[aria-label="Unit"]').selectByAttribute("value", "K");
     // A new Speed limit starts on weekdays; every day keeps the cap's start independent of today.
     await $('select[aria-label="Days"]').selectByAttribute("value", "daily");
     await retype($('input[aria-label="Start time"]'), win.start, { enter: false });
     await retype($('input[aria-label="End time"]'), win.end, { enter: false });
     await waitForText(
       SUMMARY,
-      `Downloads are limited to 2 MB/s from ${win.start} to ${win.end} every day.`,
+      `Downloads are limited to 200 KB/s from ${await clock(win.start)} to ${await clock(win.end)} every day.`,
     );
     await $('input[aria-label="Name"]').setValue("E2E cap");
     await $('[data-testid="schedule-submit"]').click();
@@ -175,13 +182,13 @@ describe("rdm GUI queue window", () => {
     await waitForText(`${RULE}:nth-child(2) [data-testid="rule-name"]`, "E2E cap");
     await waitForText(
       `${RULE}:nth-child(2) [data-testid="rule-summary"]`,
-      `2 MB/s, ${win.start}–${win.end}, daily`,
+      `200 KB/s, ${await clock(win.start)}–${await clock(win.end)}, daily`,
     );
-    await waitForText(STATUS, `A 2 MB/s cap starts at ${win.start}.`);
+    await waitForText(STATUS, `A 200 KB/s cap starts at ${await clock(win.start)}.`);
 
     const saved = await getSchedule();
     expect(saved.speed_entries).toHaveLength(1);
-    expect(saved.speed_entries[0].limit).toBe(2 * 1024 * 1024);
+    expect(saved.speed_entries[0].limit).toBe(200 * 1024);
     expect(saved.queue_windows).toHaveLength(1);
   });
 
@@ -193,5 +200,18 @@ describe("rdm GUI queue window", () => {
       timeoutMsg: "the status line still mentioned the switched-off cap",
     });
     expect((await getSchedule()).speed_entries[0].enabled).toBe(false);
+  });
+
+  it("takes a time typed loosely and tidies it to HH:MM", async () => {
+    await $('[data-testid="new-schedule"]').click();
+    await $(FORM).waitForDisplayed();
+    const start = $('input[aria-label="Start time"]');
+    await retype(start, "930", { enter: false });
+    await waitForText(SUMMARY, `from ${await clock("09:30")} to`);
+    // Leaving the box rewrites it as HH:MM.
+    await $('input[aria-label="Name"]').click();
+    await expect(start).toHaveValue("09:30");
+    await $('[role="dialog"] button=Cancel').click();
+    await waitForGone(FORM);
   });
 });
