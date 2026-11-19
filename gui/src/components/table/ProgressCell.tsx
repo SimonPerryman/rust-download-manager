@@ -5,6 +5,7 @@ import type { DownloadSnapshot } from "../../lib/types";
 import { AlertTriangle } from "../icons/AlertTriangle";
 import { Check } from "../icons/Check";
 import { Lanes } from "../lanes/Lanes";
+import { CommandWarning } from "./CommandWarning";
 
 /** How long a just-finished row shows its lanes merged into one bar before the quiet Done. */
 export const SETTLE_MS = 1_800;
@@ -60,6 +61,7 @@ export function ProgressCell({ d, nextUp }: { d: DownloadSnapshot; nextUp: boole
         {view.tone === "done" && <Check size={14} strokeWidth={2} />}
         {view.tone === "failed" && <AlertTriangle size={14} strokeWidth={2} />}
         {view.text}
+        {d.command_warning && <CommandWarning message={d.command_warning} />}
       </span>
     );
   }

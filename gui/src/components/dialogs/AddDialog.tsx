@@ -13,6 +13,7 @@ import {
 import { formatSpeed } from "../../lib/format";
 import { loadLastDir, saveLastDir } from "../../lib/prefs";
 import { NO_LIMIT, composeRate, exceeds, type RateDraft } from "../../lib/rate";
+import { normalizeTime, timeLabel } from "../../lib/clock";
 import { startFromText, startsLabel } from "../../lib/startAt";
 import { parseTags, tagsError } from "../../lib/tags";
 import type { ParsedList } from "../../lib/types";
@@ -419,13 +420,14 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
                     aria-label="Start at"
                     value={startText}
                     onChange={(e) => setStartText(e.target.value)}
+                    onBlur={() => setStartText((t) => normalizeTime(t) ?? t)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
                         void submit();
                       }
                     }}
-                    placeholder="22:00"
+                    placeholder={timeLabel("22:00")}
                     className="flex h-8 w-full rounded-md border border-line-strong bg-raised px-3 text-sm transition-colors placeholder:text-g400 focus-visible:border-accent focus-visible:outline-hidden"
                   />
                   {startFromText(startText) && (

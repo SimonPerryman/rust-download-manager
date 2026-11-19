@@ -164,12 +164,13 @@ describe("the countdown notice and the command warning", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it("flags a failed command with an icon and words, and the reason as its tooltip", () => {
+  it("flags a failed command with an icon only, the reason as its tooltip and label", () => {
     act(() => root.render(<CommandWarning message="scan.exe exited with code 3" />));
-    expect(host.textContent).toBe("Command failed");
+    expect(host.textContent).toBe("");
     expect(host.querySelector("svg")).not.toBeNull();
-    expect(host.querySelector("[title]")!.getAttribute("title")).toBe(
-      "scan.exe exited with code 3",
-    );
+    const flag = host.querySelector("[title]")!;
+    expect(flag.getAttribute("title")).toBe("Command failed: scan.exe exited with code 3");
+    expect(flag.getAttribute("aria-label")).toBe("Command failed: scan.exe exited with code 3");
+    expect(flag.getAttribute("role")).toBe("img");
   });
 });

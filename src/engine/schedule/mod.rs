@@ -217,6 +217,28 @@ impl Schedule {
         self.open_where(at, |scope| scope.matches(subject))
     }
 
+    /// When the queue next opens for one download that is held now: the first
+    /// moment after `at` an enabled window that applies to it is open. `None`
+    /// if it is open at `at`, or never will be.
+    pub fn next_open_for(&self, at: LocalDateTime, subject: &Subject<'_>) -> Option<LocalDateTime> {
+        if self.queue_open_for(at, subject) {
+            return None;
+        }
+        let mut from = at.effective();
+        for _ in 0..(self.queue_windows.len() * 16 + 16) {
+            from = self
+                .queue_windows
+                .iter()
+                .filter(|r| r.enabled && r.scope.matches(subject))
+                .filter_map(|r| r.window.next_edge(from))
+                .min()?;
+            if self.queue_open_for(from, subject) {
+                return Some(from);
+            }
+        }
+        None
+    }
+
     fn open_where(&self, at: LocalDateTime, applies: impl Fn(&Scope) -> bool) -> bool {
         let mut windows = self
             .queue_windows

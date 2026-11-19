@@ -8,7 +8,6 @@ import { sizeText } from "../../lib/rowView";
 import type { DownloadSnapshot } from "../../lib/types";
 import { useLimitEditor } from "../../lib/useLimitEditor";
 import { Grip } from "../icons/Grip";
-import { CommandWarning } from "./CommandWarning";
 import { MissingFlag } from "./MissingFlag";
 import { ProgressCell } from "./ProgressCell";
 import { RowActions } from "./RowActions";
@@ -71,6 +70,8 @@ export function TableRow({
   const ref = useRef<HTMLTableRowElement>(null);
   const downloading = d.status === "downloading";
   const missing = isMissing(d);
+  // A row a closed window holds says what it waits for instead.
+  const nextUp = queueIndex === 0 && d.window_until === null;
   const fresh = lingering && freshAt != null;
   // Fixed per mount: re-setting animation-delay on a running animation re-times it,
   // so a fresh value every render would run the tint ahead of the clock.
@@ -113,7 +114,7 @@ export function TableRow({
       data-tags={d.tags.join(",")}
       data-batch={d.batch ?? undefined}
       data-selected={details ? "true" : undefined}
-      data-next-up={queueIndex === 0 ? "true" : undefined}
+      data-next-up={nextUp ? "true" : undefined}
       className={`row st-${filterKeyOf(d.status)}${lingering ? " linger" : ""}${missing ? " missing" : ""}${fresh ? " fresh" : ""}${selected ? " selected" : ""}${cursor ? " cursor" : ""}${drag ? ` ${drag}` : ""}`}
       // A negative delay resumes the tint mid-way when the row remounts (a filter change).
       style={fresh ? ({ "--fresh-delay": freshDelay } as React.CSSProperties) : undefined}
@@ -169,7 +170,6 @@ export function TableRow({
               <span className="host">{host(d.url)}</span>
             </span>
           </button>
-          {d.command_warning && <CommandWarning message={d.command_warning} />}
           {d.tags.length > 0 && (
             <span className="row-tags" aria-label={`Tags: ${d.tags.join(", ")}`}>
               {d.tags.map((t) => (
@@ -190,7 +190,7 @@ export function TableRow({
       ) : (
         <>
           <td className="c-prog" title={queueIndex >= 0 ? queuePlace(queueIndex) : undefined}>
-            <ProgressCell d={d} nextUp={queueIndex === 0} />
+            <ProgressCell d={d} nextUp={nextUp} />
           </td>
           <td className="c-speed num">
             <SpeedCell d={d} editor={editor} />

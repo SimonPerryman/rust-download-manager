@@ -4,7 +4,7 @@
 import { isMissing } from "./filters";
 import { formatBytes, formatSpeed } from "./format";
 import { limitText, rateDraft, speedIn } from "./rate";
-import { startState } from "./startAt";
+import { startState, windowState } from "./startAt";
 import type { DownloadSnapshot } from "./types";
 
 /** The Progress cell: a bar with its percentage, or a quiet word for rows that aren't moving. */
@@ -26,7 +26,7 @@ export function progressView(d: DownloadSnapshot): ProgressView {
       if (pct == null) return { kind: "text", text: formatBytes(d.downloaded), tone: "plain" };
       return { kind: "bar", pct, text: `${pct.toFixed(1)}%`, muted: false };
     case "queued":
-      return { kind: "text", text: startState(d) ?? "Queued", tone: "waiting" };
+      return { kind: "text", text: startState(d) ?? windowState(d) ?? "Queued", tone: "waiting" };
     case "paused":
       if (pct == null) return { kind: "text", text: "Paused", tone: "stopped" };
       return { kind: "bar", pct, text: `${Math.floor(pct)}%`, muted: true };

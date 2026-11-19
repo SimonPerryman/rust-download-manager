@@ -79,6 +79,11 @@ export interface DownloadSnapshot {
   /** Its start time passed while rdm was closed, so it waits for the user. */
   start_missed: boolean;
   /**
+   * While it waits for a closed queue window that applies to it, when that window opens
+   * ("YYYY-MM-DDTHH:MM", local); null otherwise.
+   */
+  window_until: string | null;
+  /**
    * The command run after this download failed to start or exited non-zero; the download itself
    * still completed. Never saved.
    */
