@@ -49,6 +49,8 @@ describe("rdm GUI scoped schedule rule", () => {
   });
 
   it("makes a rule for a tag through the form and lists it with its scope", async () => {
+    const open = await clock("22:00");
+    const close = await clock("08:00");
     await $('[data-testid="new-schedule"]').click();
     await $(FORM).waitForDisplayed();
     await $('select[aria-label="Applies to"]').selectByAttribute("value", "tag");
@@ -56,7 +58,7 @@ describe("rdm GUI scoped schedule rule", () => {
     await $('input[aria-label="Name"]').setValue("E2E tagged");
     await waitForText(
       SUMMARY,
-      "Downloads tagged course-2 run from 22:00 to 08:00 every day, and pause at 08:00.",
+      `Downloads tagged course-2 run from ${open} to ${close} every day, and pause at ${close}.`,
     );
     await $('[data-testid="schedule-submit"]').click();
     await waitForGone(FORM);
@@ -64,7 +66,7 @@ describe("rdm GUI scoped schedule rule", () => {
 
     await waitForText(
       `${RULE} [data-testid="rule-summary"]`,
-      "Downloads tagged course-2 run from 22:00 to 08:00 every day, and pause at 08:00.",
+      `Downloads tagged course-2 run from ${open} to ${close} every day, and pause at ${close}.`,
     );
     await waitForText(STATUS, "except those a rule names");
     await expect($(PAUSED)).not.toBeDisplayed();
