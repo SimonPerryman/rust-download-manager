@@ -212,27 +212,33 @@ in the list, paused, to resume when you want.
 
 The last section of Schedules, **When downloads finish**, has two actions.
 Both are global, off by default, and not schedules, so they sit apart from the
-rules, on the same switch column.
+rules. Each is one line: a title, a chip that shows and changes the action, and
+a switch on the same column as the rules' switches.
 
-**Run a command after each download** starts a program of your choosing with
-the finished file. **Edit command** (in the row's ··· menu; switching the row
-on with no command yet opens it too) takes the **Program** and its
-**Arguments**, one per line; `{path}` (the finished file) and `{name}` (its
-name) are filled in. The program is started directly, never through a shell,
-so a name with a space or a `;` arrives as one argument; it runs with your
-rights. If it can't start or exits with an error, the download stays
-completed and its Progress cell shows an amber warning icon beside **Done**
-(hover it for "Command failed" and the reason).
+**After each download** starts a program of your choosing with the finished
+file. Its chip shows the command line (cut with an ellipsis if long; hover for
+the whole line), or "No command". Press the chip, or switch the row on with no
+command yet, to open **Edit command**: the **Program** and its **Arguments**,
+one per line. `{path}` (the finished file) and `{name}` (its name) are filled
+in, and nothing else is: there is no `%VAR%` expansion, because the program is
+started directly and never through a shell, so a name with a space or a `;`
+arrives as one argument. It inherits rdm's own environment and runs with your
+rights. The Program and Arguments are saved as typed in the settings file, so
+don't type secrets there; put them in the script, or in an environment
+variable the program reads itself. If it can't start or exits with an error,
+the download stays completed and its Progress cell shows an amber warning icon
+beside **Done** (hover it for "Command failed" and the reason).
 
-**Shut down when everything is done** puts the computer to sleep, hibernates it
-or shuts it down: pick which in the row's ··· menu. When nothing is left, a
-notice on every page counts down 60 seconds ("Shutting down in 42 s") with
-**Cancel**; cancelling stops that one countdown and leaves the action on.
-Nothing counts as done while a download is running, waiting for a slot, held
-by the download window, or scheduled to start later (a pending **Start at**
-blocks it), nor while a command is still running, so a scan is never cut off.
-The row says which of these it is waiting for. A download that fails counts as
-finished; one you pause doesn't hold it back.
+**After all downloads** puts the computer to sleep, hibernates it or shuts it
+down. Its chip shows which; press it to pick. **Sleep** is low power and wakes
+in seconds; **Hibernate** saves to disk and powers off completely. When
+nothing is left, a notice on every page counts down 60 seconds ("Shutting down
+in 42 s") with **Cancel**; cancelling stops that one countdown and leaves the
+action on. Nothing counts as done while a download is running, waiting for a
+slot, held by the download window, or scheduled to start later (a pending
+**Start at** blocks it), nor while a command is still running, so a scan is
+never cut off. The row says which of these it is waiting for. A download that
+fails counts as finished; one you pause doesn't hold it back.
 
 ## Lanes and details
 

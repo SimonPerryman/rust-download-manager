@@ -1,10 +1,11 @@
-// End-to-end: "When downloads finish" in the Schedules view. Two rows, off by default, on the same
-// switch column as the rules. The power row's menu picks shut down, sleep or hibernate; the
-// command row opens Edit command (a program and one argument per line, with the note that it runs
-// with your rights) when switched on with no command yet. A finished download whose command can't
-// start gets a warning on its row and stays completed. A power action counts down in a notice on
-// every page, and Cancel stops it. The app's power backend is the e2e build's log file (a build
-// that cannot reach the real machine), so nothing here can sleep or shut anything down.
+// End-to-end: "When downloads finish" in the Schedules view. Two one-line rows, off by default, on
+// the same switch column as the rules, each a fixed title and a chip. The power chip picks shut
+// down, sleep or hibernate; the command chip opens Edit command (a program and one argument per
+// line, with the note that it runs with your rights), as does switching the row on with no
+// command yet. A finished download whose command can't start gets a warning on its row and stays
+// completed. A power action counts down in a notice on every page, and Cancel stops it. The app's
+// power backend is the e2e build's log file (a build that cannot reach the real machine), so
+// nothing here can sleep or shut anything down.
 // The actions live in the shared app state, so the spec resets them before and after.
 
 import { existsSync } from "node:fs";
@@ -27,6 +28,9 @@ const SCHEDULES_LINK = '[data-testid="schedules-link"]';
 const VIEW = '[data-testid="schedules-view"]';
 const COMMAND_ROW = '[data-testid="finish-command"]';
 const POWER_ROW = '[data-testid="finish-power"]';
+const COMMAND_CHIP = '[data-testid="finish-command-chip"]';
+const POWER_CHIP = '[data-testid="finish-power-chip"]';
+const POWER_MENU = '[data-testid="finish-power-menu"]';
 const FORM = '[role="dialog"][aria-label="Edit command"]';
 const NOTICE = '[data-testid="power-notice"]';
 const POWER_LOG = process.env.RDM_POWER_LOG!;
@@ -44,6 +48,13 @@ const OFF: Saved = {
 const saved = () => invoke<Saved>("get_post_actions");
 const reset = () => invoke("set_post_actions", { actions: OFF });
 
+/** Reloads the page and comes back to Schedules, to see what a restart would show. */
+async function reopen(): Promise<void> {
+  await browser.refresh();
+  await $(SCHEDULES_LINK).click();
+  await $(VIEW).waitForDisplayed();
+}
+
 describe("rdm GUI when downloads finish", () => {
   const ids: number[] = [];
 
@@ -59,17 +70,47 @@ describe("rdm GUI when downloads finish", () => {
     await selectFilter("all");
   });
 
-  it("lists both actions, off, under When downloads finish", async () => {
-    await waitForText('[data-testid="finish-actions"]', "Run a command after each download");
-    await waitForText('[data-testid="finish-actions"]', "Shut down when everything is done");
+  it("lists both actions, off, with fixed titles and chips that start together", async () => {
+    await waitForText('[data-testid="finish-command-title"]', "After each download");
+    await waitForText('[data-testid="finish-power-title"]', "After all downloads");
+    await waitForText(COMMAND_CHIP, "No command");
+    await waitForText(POWER_CHIP, "Shut down");
     await expect($(`${COMMAND_ROW} [role="switch"]`)).toHaveAttribute("aria-checked", "false");
     await expect($(`${POWER_ROW} [role="switch"]`)).toHaveAttribute("aria-checked", "false");
+    await expect($(`${COMMAND_ROW} [role="switch"]`)).toHaveAttribute(
+      "aria-label",
+      "After each download on",
+    );
+    await expect($(`${POWER_ROW} [role="switch"]`)).toHaveAttribute(
+      "aria-label",
+      "After all downloads on",
+    );
+    expect((await rectOf(COMMAND_CHIP)).x).toBeCloseTo((await rectOf(POWER_CHIP)).x, 0);
   });
 
-  it("picks what the power action does from its menu, and switches it on and off", async () => {
-    await $('[data-testid="finish-power-menu-button"]').click();
-    await $('[data-testid="finish-power-menu"]').$("button=Sleep").click();
-    await waitForText(POWER_ROW, "Sleep when everything is done");
+  it("picks what the power action does from its chip, keeps it across a refresh, and switches it on and off", async () => {
+    await expect($(POWER_CHIP)).toHaveAttribute("aria-haspopup", "menu");
+    await $(POWER_CHIP).click();
+    await expect($(POWER_CHIP)).toHaveAttribute("aria-expanded", "true");
+    await expect($(POWER_MENU).$("button=Sleep")).toHaveAttribute(
+      "title",
+      "Low power; wakes in seconds",
+    );
+    await expect($(POWER_MENU).$("button=Hibernate")).toHaveAttribute(
+      "title",
+      "Saves to disk and powers off completely",
+    );
+    await $(POWER_MENU).$("button=Hibernate").click();
+    await waitForText(POWER_CHIP, "Hibernate");
+    await waitForText('[data-testid="finish-power-title"]', "After all downloads");
+    expect((await saved()).power).toEqual({ enabled: false, action: "hibernate" });
+
+    await reopen();
+    await waitForText(POWER_CHIP, "Hibernate");
+
+    await $(POWER_CHIP).click();
+    await $(POWER_MENU).$("button=Sleep").click();
+    await waitForText(POWER_CHIP, "Sleep");
     expect((await saved()).power).toEqual({ enabled: false, action: "sleep" });
 
     await $(`${POWER_ROW} [role="switch"]`).click();
@@ -79,6 +120,40 @@ describe("rdm GUI when downloads finish", () => {
     await $(`${POWER_ROW} [role="switch"]`).click();
     await expect($(`${POWER_ROW} [role="switch"]`)).toHaveAttribute("aria-checked", "false");
     expect((await saved()).power.enabled).toBe(false);
+  });
+
+  it("lines the finish switches up with a rule's switch, one line each", async () => {
+    const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+    // Switched off, so it holds no download back in the later tests.
+    await invoke("set_schedule", {
+      schedule: {
+        queue_windows: [
+          { enabled: false, window: { start: "01:00", end: "02:00", days }, finish_running: false },
+        ],
+        speed_entries: [],
+      },
+    });
+    try {
+      await reopen();
+      await $('[data-testid="rule-switch"]').waitForDisplayed();
+      const rule = await rectOf('[data-testid="rule-switch"]');
+      expect((await rectOf(`${COMMAND_ROW} [role="switch"]`)).x).toBeCloseTo(rule.x, 0);
+      expect((await rectOf(`${POWER_ROW} [role="switch"]`)).x).toBeCloseTo(rule.x, 0);
+      expect((await rectOf(POWER_ROW)).height).toBeLessThan(48);
+      await expect($(`${POWER_ROW} button[aria-label$="options"]`)).not.toExist();
+      await expect($(`${COMMAND_ROW} button[aria-label$="options"]`)).not.toExist();
+    } finally {
+      await invoke("set_schedule", { schedule: { queue_windows: [], speed_entries: [] } });
+      await reopen();
+    }
+  });
+
+  it("opens Edit command from the chip, and Cancel leaves the row off", async () => {
+    await $(COMMAND_CHIP).click();
+    await $(FORM).waitForDisplayed();
+    await $("button=Cancel").click();
+    await waitForGone(FORM);
+    await expect($(`${COMMAND_ROW} [role="switch"]`)).toHaveAttribute("aria-checked", "false");
   });
 
   it("opens Edit command to switch on a command, which needs a program and says it runs as you", async () => {
@@ -98,12 +173,39 @@ describe("rdm GUI when downloads finish", () => {
     await waitForGone(FORM);
 
     await expect($(`${COMMAND_ROW} [role="switch"]`)).toHaveAttribute("aria-checked", "true");
-    await waitForText(COMMAND_ROW, "rdm-e2e-no-such-program --scan {path}");
+    await waitForText(COMMAND_CHIP, "rdm-e2e-no-such-program --scan {path}");
+    await expect($(COMMAND_CHIP)).toHaveAttribute("title", "rdm-e2e-no-such-program --scan {path}");
     expect((await saved()).command).toEqual({
       enabled: true,
       program: "rdm-e2e-no-such-program",
       args: ["--scan", "{path}"],
     });
+  });
+
+  it("cuts a long command with an ellipsis at the end and keeps the whole line as its tooltip", async () => {
+    const program = `C:\\Tools\\${"scan-".repeat(30)}viewer.exe`;
+    await invoke("set_post_actions", {
+      actions: { ...OFF, command: { enabled: true, program, args: ["{path}"] } },
+    });
+    await reopen();
+    await waitForText(COMMAND_CHIP, "C:\\Tools\\scan-");
+    expect(await $(COMMAND_CHIP).getAttribute("title")).toBe(`${program} {path}`);
+    // The chip stops at about 26rem (416px at the default size) instead of growing with the text.
+    expect((await rectOf(COMMAND_CHIP)).width).toBeLessThanOrEqual(420);
+    const cut = await browser.execute((sel) => {
+      const span = document.querySelector(sel)!.querySelector("span")!;
+      return span.scrollWidth > span.clientWidth;
+    }, COMMAND_CHIP);
+    expect(cut).toBe(true);
+
+    // Back to the failing command the later tests rely on.
+    await invoke("set_post_actions", {
+      actions: {
+        command: { enabled: true, program: "rdm-e2e-no-such-program", args: ["--scan", "{path}"] },
+        power: { enabled: false, action: "sleep" },
+      },
+    });
+    await reopen();
   });
 
   it("counts down once a download is done, on every page, and Cancel stops it", async () => {

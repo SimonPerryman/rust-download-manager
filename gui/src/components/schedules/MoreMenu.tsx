@@ -6,6 +6,8 @@ export type MenuItem = {
   onSelect: () => void;
   /** Marks the current choice of a menu that picks one of several. */
   checked?: boolean;
+  /** Native tooltip. */
+  title?: string;
 };
 
 type Props = {
@@ -14,19 +16,44 @@ type Props = {
   items: MenuItem[];
   buttonTestId: string;
   menuTestId: string;
+  /** Replaces the ··· with this content (a chip); the button then takes `buttonClassName`. */
+  trigger?: React.ReactNode;
+  buttonClassName?: string;
 };
 
-// The ··· button of a row and the menu under it; Escape or a click outside closes it.
-export function MoreMenu({ label, items, buttonTestId, menuTestId }: Props) {
+// The ··· button of a row (or a chip, via `trigger`) and the menu under it. Escape or a click
+// outside closes it; the arrow keys move between items.
+export function MoreMenu({
+  label,
+  items,
+  buttonTestId,
+  menuTestId,
+  trigger,
+  buttonClassName,
+}: Props) {
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    const buttons = menu.current?.querySelectorAll<HTMLElement>("[role^=menuitem]");
+    (menu.current?.querySelector<HTMLElement>("[aria-checked=true]") ?? buttons?.[0])?.focus();
     const onPointer = (e: PointerEvent) => {
       if (!menu.current?.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        button.current?.focus();
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        const all = [...(buttons ?? [])];
+        const at = all.indexOf(document.activeElement as HTMLElement);
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        all[(at + step + all.length) % all.length]?.focus();
+        e.preventDefault();
+      }
+    };
     document.addEventListener("pointerdown", onPointer, true);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -38,21 +65,22 @@ export function MoreMenu({ label, items, buttonTestId, menuTestId }: Props) {
   return (
     <div ref={menu} className="relative">
       <button
+        ref={button}
         type="button"
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
         data-testid={buttonTestId}
         onClick={() => setOpen((o) => !o)}
-        className="icon-btn icon-btn-sm tracking-widest"
+        className={buttonClassName ?? "icon-btn icon-btn-sm tracking-widest"}
       >
-        ···
+        {trigger ?? "···"}
       </button>
       {open && (
         <div
           role="menu"
           data-testid={menuTestId}
-          className="absolute right-0 top-full z-40 mt-1 w-40 rounded-lg bg-raised p-1 text-sm shadow-dialog"
+          className={`absolute top-full z-40 mt-1 w-40 ${trigger ? "left-0" : "right-0"} rounded-lg bg-raised p-1 text-sm shadow-dialog`}
         >
           {items.map((item) => (
             <button
@@ -60,6 +88,7 @@ export function MoreMenu({ label, items, buttonTestId, menuTestId }: Props) {
               type="button"
               role={item.checked === undefined ? "menuitem" : "menuitemradio"}
               aria-checked={item.checked}
+              title={item.title}
               onClick={() => {
                 setOpen(false);
                 item.onSelect();

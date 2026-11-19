@@ -9,11 +9,19 @@ export const POWER_ACTIONS: readonly PowerAction[] = ["shutdown", "sleep", "hibe
 export const powerLabel = (a: PowerAction): string =>
   a === "shutdown" ? "Shut down" : a === "sleep" ? "Sleep" : "Hibernate";
 
-/** The power row's title: "Shut down when everything is done". */
-export const powerTitle = (a: PowerAction): string => `${powerLabel(a)} when everything is done`;
+/** What a power action does, as the tooltip on its choice; null when the name says it. */
+export const powerHint = (a: PowerAction): string | null =>
+  a === "sleep"
+    ? "Low power; wakes in seconds"
+    : a === "hibernate"
+      ? "Saves to disk and powers off completely"
+      : null;
+
+/** The power row's title; the chosen action shows on its chip, not here. */
+export const POWER_TITLE = "After all downloads";
 
 /** The command row's title. */
-export const COMMAND_TITLE = "Run a command after each download";
+export const COMMAND_TITLE = "After each download";
 
 /** The command as typed in a shell would read it, for the row: `scan.exe {path}`. */
 export function commandLine(c: CommandAction): string {
