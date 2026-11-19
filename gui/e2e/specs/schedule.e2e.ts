@@ -211,7 +211,7 @@ describe("rdm GUI queue window", () => {
     // Leaving the box rewrites it as HH:MM.
     await $('input[aria-label="Name"]').click();
     await expect(start).toHaveValue("09:30");
-    await $('[role="dialog"] button=Cancel').click();
+    await $(FORM).$("button=Cancel").click();
     await waitForGone(FORM);
   });
 });
