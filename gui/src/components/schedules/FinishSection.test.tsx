@@ -174,7 +174,8 @@ describe("When downloads finish", () => {
     click(q("finish-command-chip"));
     const textarea = document.querySelector<HTMLTextAreaElement>("textarea")!;
     const program = document.querySelector<HTMLInputElement>("#cmd-program")!;
-    program.focus();
+    act(() => textarea.focus());
+    act(() => program.focus());
     // Select "XX" (the second line) while the Program field has focus last.
     textarea.setSelectionRange(5, 7);
     const name = document.querySelector<HTMLButtonElement>('[data-testid="insert-download_name"]')!;
@@ -198,6 +199,21 @@ describe("When downloads finish", () => {
       ...OFF,
       command: { enabled: false, program: "scan.exe", args: ["--in", "{download_name}"] },
     });
+  });
+
+  it("adds a new last line when the Arguments box was never focused", async () => {
+    const save = render({
+      ...OFF,
+      command: { enabled: false, program: "scan.exe", args: ["--in"] },
+    });
+    click(q("finish-command-chip"));
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-testid="insert-download_path"]')!.click(),
+    );
+    expect(document.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe(
+      "--in\n{download_path}",
+    );
+    expect(save).not.toHaveBeenCalled();
   });
 
   it("saves the program and one argument per line", async () => {

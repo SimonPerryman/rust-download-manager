@@ -30,6 +30,9 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
   const dialog = useRef<HTMLDivElement>(null);
   const first = useRef<HTMLInputElement>(null);
   const argsBox = useRef<HTMLTextAreaElement>(null);
+  // Until the box has had focus its caret sits at the very start, which would glue the variable
+  // onto the first argument; add it as a new last line instead.
+  const argsFocused = useRef(false);
   const problem = commandProblem(program);
 
   useEffect(() => first.current?.focus(), []);
@@ -46,7 +49,10 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
   const insert = (token: string) => {
     const box = argsBox.current;
     if (!box) return;
-    const next = insertAt(args, box.selectionStart, box.selectionEnd, token);
+    const focused = argsFocused.current;
+    const at = focused ? [box.selectionStart, box.selectionEnd] : [args.length, args.length];
+    const lead = !focused && args !== "" && !args.endsWith("\n") ? "\n" : "";
+    const next = insertAt(args, at[0], at[1], lead + token);
     setArgs(next.text);
     // The caret can only be placed once the textarea holds the new value.
     requestAnimationFrame(() => {
@@ -114,6 +120,7 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
               <textarea
                 id="cmd-args"
                 ref={argsBox}
+                onFocus={() => (argsFocused.current = true)}
                 aria-label="Arguments"
                 rows={4}
                 value={args}
