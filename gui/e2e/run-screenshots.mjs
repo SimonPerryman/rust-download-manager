@@ -28,9 +28,13 @@ const wdio = path.join("node_modules", "@wdio", "cli", "bin", "wdio.js");
 for (const spec of specs) {
   const name = path.basename(spec).replace(/\.shots\.ts$/, "");
   console.log(`\n=== screenshots: ${name} ===`);
-  const run = spawnSync(process.execPath, [wdio, "run", "wdio.screenshots.conf.ts", "--spec", spec], {
-    stdio: "inherit",
-    env: { ...process.env, RDM_SHOTS_NAME: name },
-  });
+  const run = spawnSync(
+    process.execPath,
+    [wdio, "run", "wdio.screenshots.conf.ts", "--spec", spec],
+    {
+      stdio: "inherit",
+      env: { ...process.env, RDM_SHOTS_NAME: name },
+    },
+  );
   if (run.status !== 0) process.exit(run.status ?? 1);
 }
