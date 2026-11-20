@@ -10,6 +10,7 @@ use tracing_subscriber::Layer;
 
 use super::{DownloadSnapshot, Entry, Inner, Manager, ManagerState, PUBLISH_INTERVAL};
 use crate::engine::download_log::{capture_filter, LogLayer, LogLine};
+use crate::engine::history::HistoryEvent;
 use crate::engine::lock::lock;
 use crate::engine::Progress;
 
@@ -87,6 +88,24 @@ impl Manager {
     /// survive a restart; detailed (DEBUG) ones don't.
     pub fn download_log(&self, id: u64) -> Vec<LogLine> {
         self.inner.logs.lines(id)
+    }
+
+    /// What schedules, tags and actions did to download `id`, oldest first;
+    /// saved for 90 days, and gone with the download.
+    pub fn download_history(&self, id: u64) -> Vec<HistoryEvent> {
+        self.inner.history.for_download(id)
+    }
+
+    /// Every history event, oldest first.
+    pub fn history(&self) -> Vec<HistoryEvent> {
+        self.inner.history.all()
+    }
+
+    /// What queue window `rule_id` did (it opened, it closed with what
+    /// finished, a scheduled start it held was missed), oldest first, as
+    /// [`QueueWindow::id`](crate::engine::schedule::QueueWindow::id) names it.
+    pub fn rule_history(&self, rule_id: u64) -> Vec<HistoryEvent> {
+        self.inner.history.for_rule(rule_id)
     }
 
     /// A one-shot snapshot of every download, in display order.

@@ -47,6 +47,7 @@ use tokio::task::JoinHandle;
 
 use crate::engine::actions::{ActionsStatus, LifecycleEvent, PowerBackend};
 use crate::engine::download_log::DownloadLogs;
+use crate::engine::history;
 use crate::engine::lock::lock;
 use crate::engine::schedule::{Clock, LocalDateTime, Schedule, StartAt};
 use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Store};
@@ -211,6 +212,9 @@ struct Entry {
     window_pause: bool,
     /// Whether the queue windows that apply to it were open at the last look.
     gate_open: bool,
+    /// The gate state history last recorded, which `schedule` refreshing
+    /// `gate_open` in between cannot hide.
+    gate_noted: bool,
     /// While `gate_open` is false, when it next opens.
     gate_until: Option<LocalDateTime>,
     /// Its start time passed while rdm was closed, so it was not started by
@@ -240,6 +244,7 @@ impl Entry {
             file_missing: false,
             window_pause: false,
             gate_open: true,
+            gate_noted: true,
             gate_until: None,
             missed: false,
             command_warning: None,
@@ -360,6 +365,9 @@ struct ManagerState {
     settings: Settings,
     /// One shared limiter per scope a speed entry names; see `window.rs`.
     scope_limiters: HashMap<crate::engine::schedule::Scope, Arc<RateLimiter>>,
+    /// What finished inside each queue window open now, by rule id; `None`
+    /// until the first look at the clock, which opens no events.
+    window_runs: Option<HashMap<u64, window::RunTotals>>,
     /// The id the next start schedule gets.
     next_group: u64,
     /// What the post-download actions are doing.
@@ -390,6 +398,8 @@ struct Inner {
     global: Arc<RateLimiter>,
     /// Each download's recent log lines, filled by [`Manager::log_layer`].
     logs: Arc<DownloadLogs>,
+    /// What schedules, tags and actions did; see [`Manager::download_history`].
+    history: history::History,
     /// Announces each change of a download's missing flag.
     missing_tx: tokio::sync::broadcast::Sender<MissingChange>,
     /// Folders a check is listing now, so a repeat check skips them.

@@ -14,6 +14,7 @@ import type {
   FoundChoice,
   InstallWhen,
   LocateOutcome,
+  HistoryEvent,
   LogLine,
   ParsedList,
   ActionsStatus,
@@ -148,6 +149,10 @@ export const verifyChecksum = (id: number, checksum: string) =>
   invoke<void>("verify_checksum", { id, checksum });
 /** A download's recent log lines, oldest first (empty for an unknown id). */
 export const downloadLog = (id: number) => invoke<LogLine[]>("download_log", { id });
+/** What schedules, tags and actions did to a download, oldest first. */
+export const downloadHistory = (id: number) => invoke<HistoryEvent[]>("download_history", { id });
+/** What a queue window rule did, oldest first. */
+export const ruleHistory = (ruleId: number) => invoke<HistoryEvent[]>("rule_history", { ruleId });
 /** Remove a download for good; its downloaded file stays on disk (see the engine's `remove`). */
 export const remove = (id: number) => invoke<void>("remove", { id });
 export const pauseAll = () => invoke<void>("pause_all");

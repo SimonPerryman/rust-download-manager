@@ -295,6 +295,14 @@ describe("copy", () => {
     expect(next.queue_windows[1]).toEqual(next.queue_windows[0]);
     expect(next.queue_windows[1]).not.toBe(next.queue_windows[0]);
   });
+
+  it("gives a copy no id, so it starts its own history, and keeps an edited rule's", () => {
+    const original = { ...ruleOf(NEW_WINDOW), id: 7 };
+    const s: Schedule = { queue_windows: [original], speed_entries: [] };
+    expect(withCopy(s, { kind: "window", index: 0 }).queue_windows[1].id).toBeUndefined();
+    expect(ruleOf(NEW_WINDOW, true, 7).id).toBe(7);
+    expect(ruleOf(NEW_WINDOW).id).toBeUndefined();
+  });
 });
 
 describe("speed limit rules", () => {

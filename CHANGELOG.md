@@ -25,6 +25,12 @@ desktop app share one version.
 - `rdm --at <time>` waits until a local time before downloading, and
   `rdm --on-finish <sleep|shutdown>` puts the machine to sleep or shuts it
   down after the run (CLI).
+- History in the desktop app: a download's Log tab shows what a schedule did
+  to it (held, started, paused, a scheduled start missed), when its command
+  ran and when tags were added or removed, among the engine lines with a small
+  type column. A download window's ··· menu has **History**, a list by day of
+  when it opened and closed, with what finished inside it ("14 files,
+  12.3 GB"). Kept for 90 days.
 
 ### Changed
 

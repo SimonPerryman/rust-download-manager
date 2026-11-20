@@ -12,6 +12,7 @@ use super::window::QueueState;
 use super::{Entry, Inner, Manager, ManagerState};
 use crate::engine::actions::{ActionsStatus, NoPower, PowerStatus};
 use crate::engine::download_log::{prune, DownloadLogs, LOG_MAX_AGE, LOG_TOTAL_CAP};
+use crate::engine::history::{History, HistoryEvent, HistoryKind, HISTORY_CAP, HISTORY_MAX_AGE_MS};
 use crate::engine::lock::lock;
 use crate::engine::schedule::{Clock, SystemClock};
 use crate::engine::store::{ChecksumState, Status, Store, StoreData, SCHEMA_VERSION};
@@ -137,7 +138,38 @@ impl Manager {
                 );
             });
         }
-        let settings = data.settings.clamped();
+        let live_ids: HashSet<u64> = order.iter().copied().collect();
+        let now_ms = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis() as u64);
+        let history = History::open(
+            store.history_path(),
+            &live_ids,
+            next_id,
+            now_ms,
+            HISTORY_MAX_AGE_MS,
+            HISTORY_CAP,
+        );
+        for id in &order {
+            if let Some(e) = entries.get(id).filter(|e| e.missed) {
+                let due = e
+                    .record
+                    .start_at
+                    .map(|s| s.0.to_string())
+                    .unwrap_or_default();
+                history.record(HistoryEvent::new(
+                    HistoryKind::Missed,
+                    Some(*id),
+                    None,
+                    format!(
+                        "Scheduled start missed, it was due {}",
+                        due.replace('T', " ")
+                    ),
+                ));
+            }
+        }
+        let mut settings = data.settings.clamped();
+        settings.schedule.assign_ids();
         let queue = QueueState::at(&settings.schedule, clock.now());
         let global = Arc::new(RateLimiter::new(queue.limit.or(settings.global_limit)));
         let next_group = entries
@@ -151,6 +183,7 @@ impl Manager {
             order,
             entries,
             scope_limiters: Default::default(),
+            window_runs: None,
             actions: Default::default(),
             settings,
         };
@@ -167,6 +200,7 @@ impl Manager {
             closed: AtomicBool::new(false),
             global,
             logs,
+            history,
             missing_tx: tokio::sync::broadcast::channel(64).0,
             missing_busy: Mutex::default(),
             find_tx: tokio::sync::broadcast::channel(2048).0,

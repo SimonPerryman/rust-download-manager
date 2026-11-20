@@ -162,7 +162,7 @@ follow the computer's 12 or 24-hour setting ("10:00 PM" or "22:00"). The footer 
 the rule does. **Days** offers Daily, Weekdays, Weekends and Choose days; the
 day buttons appear under Choose days, and with none picked **Add** stays off.
 Each rule has a switch (a switched-off rule keeps its settings) and a ···
-menu with Edit, Duplicate and Delete. With several rules on, the queue is open
+menu with Edit, History (download windows), Duplicate and Delete. With several rules on, the queue is open
 whenever any of them is.
 
 A **speed limit** is a rule of the same shape with a cap: pick **Speed limit**
@@ -195,6 +195,16 @@ names appear as chips; a list of more than two shows the first two and **+N
 more**, with the full list on hover. The status bar's paused note and the top
 line speak for rules that apply to all downloads; with only scoped rules the
 line says so.
+
+### History
+
+**History** in a download window's ··· menu opens a list, grouped by day with
+the newest first, of what the rule did: **Opened** (with how many files were
+waiting), **Closed** (with what finished inside it, such as "14 files,
+12.3 GB"; a window rdm was closed through shows only the part it saw), and
+**Missed** when a start time passed while rdm was closed. The same events show
+per download in its [Log tab](#lanes-and-details). Entries are kept for 90
+days.
 
 ### Start at
 
@@ -308,6 +318,14 @@ fails counts as finished; one you pause doesn't hold it back.
     `HH:MM:SS  text`; it says "Copied" for a moment (and tells a screen
     reader how many lines). **Save…** writes the same text to a file you
     pick, named after the download (`big.iso.log`), and says "Saved".
+
+    Events from outside the download are listed among its lines, marked in a
+    small type column: **Held**, **Started** and **Paused** by a
+    [schedule](#schedules) (with the window's name and when it opens),
+    **Missed** for a start time that passed while rdm was closed,
+    **Command** when the command run after it finished or failed, and **Tag**
+    when a tag was added or removed (one line for each download in a bulk
+    edit). Engine lines leave the column blank.
   - A finished download's lanes are kept only until the app closes, and
     so are its detailed log lines; after a restart the pane shows the
     summary and the Log tab's informational lines, which rdm keeps on disk

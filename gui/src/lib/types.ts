@@ -101,6 +101,32 @@ export interface LogLine {
   message: string;
   /** The event's other fields as space-separated `name=value` pairs. */
   fields: string;
+  /** Set on a history event shown among the lines (see `lib/history.ts`); engine lines have none. */
+  kind?: HistoryKind;
+}
+
+/** What a history event is; mirrors the engine's `HistoryKind` (src/engine/history.rs). */
+export type HistoryKind =
+  | "opened"
+  | "closed"
+  | "held"
+  | "started"
+  | "paused"
+  | "missed"
+  | "command"
+  | "power"
+  | "tag_added"
+  | "tag_removed";
+
+/** Mirrors the engine's `HistoryEvent`: something a schedule, tag change or action did. */
+export interface HistoryEvent {
+  /** Milliseconds since the Unix epoch. */
+  at: number;
+  kind: HistoryKind;
+  download_id?: number;
+  rule_id?: number;
+  /** The event as a sentence, e.g. "14 files, 12.3 GB". */
+  details: string;
 }
 
 /** Mirrors the GUI crate's `UpdateInfo` (gui/src-tauri/src/updater/mod.rs): a newer rdm. */
@@ -282,6 +308,8 @@ export interface Scope {
 
 /** Downloads start only inside the window (`get_schedule`). */
 export interface QueueWindow {
+  /** Names the rule in saved history; the engine gives a new rule one. */
+  id?: number;
   name?: string;
   enabled: boolean;
   window: RuleWindow;
@@ -293,6 +321,7 @@ export interface QueueWindow {
 
 /** Inside its window, `limit` replaces the global speed limit. */
 export interface SpeedEntry {
+  id?: number;
   name?: string;
   enabled: boolean;
   window: RuleWindow;

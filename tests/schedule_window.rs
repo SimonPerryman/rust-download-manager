@@ -32,6 +32,7 @@ fn tod(s: &str) -> TimeOfDay {
 fn queue_window(start: &str, end: &str, days: Days, finish_running: bool) -> Schedule {
     Schedule {
         queue_windows: vec![QueueWindow {
+            id: 0,
             name: None,
             enabled: true,
             window: Window::new(tod(start), tod(end), days).unwrap(),
@@ -279,7 +280,9 @@ async fn the_window_applies_at_launch() {
     manager(dir.path(), &clock).set_schedule(overnight());
 
     let mgr = manager(dir.path(), &clock);
-    assert_eq!(mgr.settings().schedule, overnight(), "rules are saved");
+    let mut saved = overnight();
+    saved.assign_ids();
+    assert_eq!(mgr.settings().schedule, saved, "rules are saved, with ids");
     assert!(!mgr.queue_state().open);
     let gated = server.stats("/gated");
     let id = mgr.add(server.url("/gated"), dir.path(), None, None);
@@ -337,6 +340,7 @@ const MB: u64 = 1024 * 1024;
 fn weekday_cap(limit: u64) -> Schedule {
     Schedule {
         speed_entries: vec![SpeedEntry {
+            id: 0,
             name: None,
             enabled: true,
             window: Window::new(tod("08:00"), tod("18:00"), Days::WEEKDAYS).unwrap(),

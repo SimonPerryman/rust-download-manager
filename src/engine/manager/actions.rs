@@ -13,6 +13,7 @@ use crate::engine::actions::{
     run_command, ActionsStatus, LifecycleEvent, PostActions, PowerAction, PowerBackend,
     PowerStatus, WaitReason, POWER_COUNTDOWN_SECS,
 };
+use crate::engine::history::{HistoryEvent, HistoryKind};
 use crate::engine::lock::lock;
 use crate::engine::schedule::StartAt;
 use crate::engine::store::Status;
@@ -160,7 +161,14 @@ impl Inner {
         let fire = self.actions_eval(&mut lock(&self.state), elapsed);
         let Some(action) = fire else { return };
         let backend = lock(&self.power).clone();
-        if let Err(message) = backend.perform(action) {
+        let result = backend.perform(action);
+        let details = match &result {
+            Ok(()) => format!("Ran {} after the last download", action.name()),
+            Err(message) => format!("Couldn't {}: {message}", action.name()),
+        };
+        self.history
+            .record(HistoryEvent::new(HistoryKind::Power, None, None, details));
+        if let Err(message) = result {
             tracing::warn!("Couldn't {}: {message}", action.name());
             let st = &mut *lock(&self.state);
             st.actions.failure = Some(message);
@@ -213,6 +221,12 @@ impl Inner {
             command
         };
         let inner = self.clone();
+        let program = std::path::Path::new(&command.program)
+            .file_name()
+            .map_or_else(
+                || command.program.clone(),
+                |n| n.to_string_lossy().into_owned(),
+            );
         self.handle.spawn(async move {
             let outcome = tokio::task::spawn_blocking(move || run_command(&command, &path, &name))
                 .await
@@ -220,6 +234,15 @@ impl Inner {
             if inner.closed.load(Ordering::SeqCst) {
                 return;
             }
+            inner.history.record(HistoryEvent::new(
+                HistoryKind::Command,
+                Some(id),
+                None,
+                match &outcome {
+                    Ok(()) => format!("{program} ran"),
+                    Err(message) => format!("{program} failed: {message}"),
+                },
+            ));
             {
                 let st = &mut *lock(&inner.state);
                 st.actions.commands_running = st.actions.commands_running.saturating_sub(1);

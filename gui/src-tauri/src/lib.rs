@@ -17,8 +17,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use rdm::{
-    AddOptions, Checksum, DownloadSnapshot, JsonStore, LogLine, Manager, SameFolderOffer, Settings,
-    Status,
+    AddOptions, Checksum, DownloadSnapshot, HistoryEvent, JsonStore, LogLine, Manager,
+    SameFolderOffer, Settings, Status,
 };
 use tauri::{Emitter, Manager as _, State};
 use tauri_plugin_opener::OpenerExt;
@@ -481,6 +481,18 @@ fn parse_sha256(input: &str) -> Result<Checksum, String> {
 #[tauri::command]
 fn download_log(state: State<'_, AppState>, id: u64) -> Vec<LogLine> {
     state.manager.download_log(id)
+}
+
+/// What schedules, tags and actions did to download `id`, oldest first.
+#[tauri::command]
+fn download_history(state: State<'_, AppState>, id: u64) -> Vec<HistoryEvent> {
+    state.manager.download_history(id)
+}
+
+/// What queue window `rule_id` did, oldest first.
+#[tauri::command]
+fn rule_history(state: State<'_, AppState>, rule_id: u64) -> Vec<HistoryEvent> {
+    state.manager.rule_history(rule_id)
 }
 
 /// Remove a download from the list entirely. A completed download's file and
@@ -1332,6 +1344,8 @@ pub fn run() {
             remove_tags,
             verify_checksum,
             download_log,
+            download_history,
+            rule_history,
             remove,
             pause_all,
             resume_all,

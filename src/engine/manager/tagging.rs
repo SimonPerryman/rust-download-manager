@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 
 use super::{Manager, ManagerState};
+use crate::engine::history::{HistoryEvent, HistoryKind};
 use crate::engine::lock::lock;
 use crate::engine::tags;
 
@@ -53,6 +54,27 @@ impl Manager {
         let changed = updates.len();
         for (id, tags) in updates {
             if let Some(e) = st.entries.get_mut(&id) {
+                let added = difference(&tags, &e.record.tags);
+                let removed = difference(&e.record.tags, &tags);
+                for (kind, names) in [
+                    (HistoryKind::TagAdded, added),
+                    (HistoryKind::TagRemoved, removed),
+                ] {
+                    if !names.is_empty() {
+                        let noun = if names.len() == 1 { "tag" } else { "tags" };
+                        let verb = if kind == HistoryKind::TagAdded {
+                            "Added"
+                        } else {
+                            "Removed"
+                        };
+                        self.inner.history.record(HistoryEvent::new(
+                            kind,
+                            Some(id),
+                            None,
+                            format!("{verb} {noun} {}", names.join(", ")),
+                        ));
+                    }
+                }
                 e.record.tags = tags;
             }
         }
@@ -62,6 +84,14 @@ impl Manager {
         }
         changed
     }
+}
+
+/// The tags in `a` that `b` lacks, ignoring case.
+fn difference(a: &[String], b: &[String]) -> Vec<String> {
+    a.iter()
+        .filter(|t| !tags::contains(b, t))
+        .cloned()
+        .collect()
 }
 
 /// `ids` without repeats, in first-seen order.
