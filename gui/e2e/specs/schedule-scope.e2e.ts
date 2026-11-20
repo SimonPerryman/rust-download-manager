@@ -10,6 +10,7 @@ import {
   engineRows,
   invoke,
   newIds,
+  rectOf,
   removeAll,
   rowById,
   selectFilter,
@@ -53,12 +54,22 @@ describe("rdm GUI scoped schedule rule", () => {
     const close = await clock("08:00");
     await $('[data-testid="new-schedule"]').click();
     await $(FORM).waitForDisplayed();
-    await $('select[aria-label="Applies to"]').selectByAttribute("value", "tag");
-    await $('input[aria-label="Tag"]').setValue("course-2");
+    // Empty rows start collapsed; typing a tag nothing carries is accepted with a note.
+    await $('[data-testid="scope-add-tag"]').click();
+    const tags = $('input[aria-label="Tags"]');
+    await tags.addValue("nobody-1");
+    await tags.addValue("");
+    await tags.addValue("nobody-2");
+    await tags.addValue("");
+    await $('[data-testid="scope-add-host"]').click();
+    const hosts = $('input[aria-label="Hosts"]');
+    await hosts.addValue("cdn.example.com");
+    await hosts.addValue("");
     await $('input[aria-label="Name"]').setValue("E2E tagged");
+    await waitForText(`${FORM} [data-testid="scope-tag"]`, "No downloads have the tag nobody-1");
     await waitForText(
       SUMMARY,
-      `Downloads tagged course-2 run from ${open} to ${close} every day, and pause at ${close}.`,
+      `Downloads tagged nobody-1 or nobody-2, from cdn.example.com run from ${open} to ${close} every day, and pause at ${close}.`,
     );
     await $('[data-testid="schedule-submit"]').click();
     await waitForGone(FORM);
@@ -66,13 +77,47 @@ describe("rdm GUI scoped schedule rule", () => {
 
     await waitForText(
       `${RULE} [data-testid="rule-summary"]`,
-      `Downloads tagged course-2 run from ${open} to ${close} every day, and pause at ${close}.`,
+      `Downloads tagged nobody-1 or nobody-2, from cdn.example.com run from ${open} to ${close} every day, and pause at ${close}.`,
     );
+    await expect($(`${RULE} [data-testid="rule-warning-icon"]`)).toBeDisplayed();
+    await waitForText(`${RULE}`, "No downloads have the tag nobody-1");
+    // The names sit in chips, and the row's sentence stays inside the row.
+    const chip = await rectOf(`${RULE} [data-testid="scope-name"]`);
+    const row = await rectOf(RULE);
+    expect(chip.y).toBeGreaterThanOrEqual(row.y);
+    expect(chip.y + chip.height).toBeLessThanOrEqual(row.y + row.height);
     await waitForText(STATUS, "except those a rule names");
     await expect($(PAUSED)).not.toBeDisplayed();
 
     const saved = await invoke<Saved>("get_schedule");
-    expect(saved.queue_windows[0].scope).toEqual({ kind: "tag", tag: "course-2" });
+    expect(saved.queue_windows[0].scope).toEqual({
+      tags: ["nobody-1", "nobody-2"],
+      hosts: ["cdn.example.com"],
+    });
+  });
+
+  it("loads a rule saved with the old single scope as a list of one", async () => {
+    await invoke("set_schedule", {
+      schedule: {
+        queue_windows: [
+          {
+            name: "Old tag",
+            enabled: true,
+            window: {
+              start: "22:00",
+              end: "08:00",
+              days: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+            },
+            finish_running: false,
+            scope: { kind: "tag", tag: "legacy" },
+          },
+        ],
+        speed_entries: [],
+      },
+    });
+    const saved = await invoke<Saved>("get_schedule");
+    expect(saved.queue_windows[0].scope).toEqual({ tags: ["legacy"] });
+    await clearRules();
   });
 
   it("says Queued until the window opens on a tagged download, and only on that one", async () => {

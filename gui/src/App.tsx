@@ -70,6 +70,7 @@ import { FindReviewPane } from "./components/missing/FindReviewPane";
 import { SameFolderOfferBar } from "./components/missing/SameFolderOfferBar";
 import { PausedForUpdateBar } from "./components/updater/PausedForUpdateBar";
 import { UpdateNotice } from "./components/updater/UpdateNotice";
+import { hostsOf } from "./lib/schedule";
 
 // State wiring only: every download fact comes from the engine's snapshots,
 // and every action is a thin api call.
@@ -404,6 +405,7 @@ export default function App() {
               onError={fail}
               choices={{
                 tags: tags.map((t) => t.tag),
+                hosts: hostsOf(downloads.map((d) => d.url)),
                 batches: batches.map((b) => ({ id: b.id, label: b.label })),
               }}
               upcoming={starts.upcoming}

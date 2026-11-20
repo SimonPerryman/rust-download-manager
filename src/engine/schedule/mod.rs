@@ -13,7 +13,7 @@ mod time;
 
 pub use clock::{Clock, FakeClock, SystemClock};
 pub use days::{Days, DaysName, EmptyDays};
-pub use scope::{Scope, Subject};
+pub use scope::{BatchRef, Scope, Subject};
 pub use time::{Date, LocalDateTime, ParseTimeError, TimeOfDay, Weekday};
 
 use serde::{Deserialize, Serialize};
@@ -252,7 +252,7 @@ impl Schedule {
     /// first enabled all-downloads entry whose window is open, or `None` for
     /// the global limit.
     pub fn speed_limit(&self, at: LocalDateTime) -> Option<u64> {
-        self.scoped_speed_limit(at, &Scope::All)
+        self.scoped_speed_limit(at, &Scope::all())
     }
 
     /// The cap in bytes/s the first enabled entry for exactly `scope` imposes
@@ -351,7 +351,7 @@ mod tests {
             enabled: true,
             window,
             finish_running: false,
-            scope: Scope::All,
+            scope: Scope::all(),
         }
     }
 
@@ -361,7 +361,7 @@ mod tests {
             enabled: true,
             window,
             limit: NonZeroU64::new(limit).unwrap(),
-            scope: Scope::All,
+            scope: Scope::all(),
         }
     }
 
@@ -887,13 +887,13 @@ mod tests {
             "an all-downloads rule writes no scope"
         );
         let loaded: Schedule = serde_json::from_str(&json).unwrap();
-        assert_eq!(loaded.queue_windows[0].scope, Scope::All);
+        assert_eq!(loaded.queue_windows[0].scope, Scope::all());
     }
 
     #[test]
     fn a_scoped_rule_round_trips_and_only_binds_its_downloads() {
         let mut rule = queue(window("22:00", "06:00", Days::DAILY));
-        rule.scope = Scope::Tag { tag: "x".into() };
+        rule.scope = Scope::tag("x");
         let schedule = Schedule {
             queue_windows: vec![rule],
             ..Schedule::default()

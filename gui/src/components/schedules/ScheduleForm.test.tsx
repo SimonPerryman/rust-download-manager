@@ -53,46 +53,92 @@ describe("schedule components", () => {
     expect(onSubmit).toHaveBeenCalledOnce();
   });
 
-  it("points a rule at a tag, with the summary and the saved scope following", () => {
-    const onSubmit = form();
-    const add = q<HTMLButtonElement>("[data-testid=schedule-submit]");
-    pick(q<HTMLSelectElement>("#sched-scope"), "tag");
-    expect(add.disabled).toBe(true);
-    expect(q("[data-testid=schedule-summary]").textContent).toBe("Enter a tag");
-    const input = q<HTMLInputElement>("input[aria-label=Tag]");
+  const typeInto = (el: HTMLInputElement, text: string) =>
     act(() => {
       const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-      set.call(input, "course-2");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
+      set.call(el, text);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(q("[data-testid=schedule-summary]").textContent).toBe(
-      "Downloads tagged course-2 run from 22:00 to 08:00 every day, and pause at 08:00.",
-    );
-    click(add);
-    expect(onSubmit.mock.calls[0][0]).toMatchObject({ scopeKind: "tag", scopeText: "course-2" });
-  });
-
-  it("offers the batches that exist and lists the tags", () => {
+  const key = (el: Element, k: string) =>
+    act(() => {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
+    });
+  const withChoices = (initial = NEW_WINDOW) => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
     act(() =>
       root.render(
         <ScheduleForm
-          initial={NEW_WINDOW}
+          initial={initial}
           editing={false}
-          choices={{ tags: ["a", "b"], batches: [{ id: 3, label: "Course" }] }}
-          onSubmit={vi.fn()}
+          choices={{
+            tags: ["course-2", "course-3", "work"],
+            hosts: ["cdn.example.com"],
+            batches: [{ id: 3, label: "Course" }],
+          }}
+          onSubmit={onSubmit}
           onClose={vi.fn()}
         />,
       ),
     );
-    pick(q<HTMLSelectElement>("#sched-scope"), "batch");
-    const options = [...q("select[aria-label=Batch]").querySelectorAll("option")];
-    expect(options.map((o) => o.textContent)).toEqual(["Pick a batch", "Course"]);
-    pick(q<HTMLSelectElement>("select[aria-label=Batch]"), "3");
-    expect(q("[data-testid=schedule-summary]").textContent).toContain("Downloads in batch Course");
-    pick(q<HTMLSelectElement>("#sched-scope"), "tag");
+    return onSubmit;
+  };
+
+  it("collapses empty scope rows to + Add and opens one on click", () => {
+    form();
+    expect(host.querySelector("input[aria-label=Tags]")).toBeNull();
+    expect(host.querySelectorAll("[data-testid^=scope-add-]").length).toBe(3);
+    click(q("[data-testid=scope-add-tag]"));
+    expect(host.querySelector("input[aria-label=Tags]")).not.toBeNull();
+    expect(host.querySelector("[data-testid=scope-add-tag]")).toBeNull();
+  });
+
+  it("suggests existing tags as you type and accepts a new one, noting it never blocks saving", () => {
+    const onSubmit = withChoices();
+    click(q("[data-testid=scope-add-tag]"));
+    const input = q<HTMLInputElement>("input[aria-label=Tags]");
+    typeInto(input, "course");
     expect(
-      [...host.querySelectorAll("#sched-tags option")].map((o) => o.getAttribute("value")),
-    ).toEqual(["a", "b"]);
+      [...host.querySelectorAll("[data-testid=scope-option]")].map((o) => o.textContent),
+    ).toEqual(["course-2", "course-3", 'Add "course"']);
+    click(host.querySelectorAll("[data-testid=scope-option]")[0]);
+    typeInto(q<HTMLInputElement>("input[aria-label=Tags]"), "course-4");
+    key(q("input[aria-label=Tags]"), "Enter");
+    expect(
+      [...host.querySelectorAll("[data-testid=scope-chip]")].map((c) =>
+        c.getAttribute("data-name"),
+      ),
+    ).toEqual(["course-2", "course-4"]);
+    expect(q("[data-testid=scope-warning]").textContent).toBe("No downloads have the tag course-4");
+    expect(q("[data-testid=schedule-summary]").textContent).toBe(
+      "Downloads tagged course-2 or course-4 run from 22:00 to 08:00 every day, and pause at 08:00.",
+    );
+    click(q("[data-testid=schedule-submit]"));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ scopeTags: ["course-2", "course-4"] });
+  });
+
+  it("removes a chip, and takes several hosts and a batch from its list only", () => {
+    const onSubmit = withChoices({ ...NEW_WINDOW, scopeTags: ["work"] });
+    click(q("[aria-label='Remove work']"));
+    expect(host.querySelector("[data-testid=scope-chip]")).toBeNull();
+    click(q("[data-testid=scope-add-host]"));
+    const hostBox = q<HTMLInputElement>("input[aria-label=Hosts]");
+    typeInto(hostBox, "Other.org");
+    key(hostBox, "Enter");
+    typeInto(q<HTMLInputElement>("input[aria-label=Hosts]"), "cdn");
+    click(q("[data-testid=scope-option]"));
+    click(q("[data-testid=scope-add-batch]"));
+    const batchBox = q<HTMLInputElement>("input[aria-label=Batches]");
+    typeInto(batchBox, "nope");
+    key(batchBox, "Enter");
+    expect(host.querySelector("[data-testid=scope-batch] [data-testid=scope-chip]")).toBeNull();
+    typeInto(q<HTMLInputElement>("input[aria-label=Batches]"), "cou");
+    click(q("[data-testid=scope-option]"));
+    click(q("[data-testid=schedule-submit]"));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      scopeTags: [],
+      scopeHosts: ["other.org", "cdn.example.com"],
+      scopeBatches: [{ id: 3, label: "Course" }],
+    });
   });
 
   it("changes the sentence when running downloads are left to finish", () => {
@@ -245,6 +291,30 @@ describe("schedule components", () => {
     click(chips[3]);
     expect(q("select[aria-label=Days] option[value=choose]").textContent).toBe("Mon, Tue and Thu");
     expect(q("[data-testid=schedule-summary]").textContent).toContain("on Mon, Tue and Thu");
+  });
+
+  it("shows a rule's names as chips, +N more on hover, and warns when nothing matches", () => {
+    const rule = ruleOf({ ...NEW_WINDOW, scopeTags: ["a", "b", "c"], scopeHosts: ["gone.org"] });
+    act(() =>
+      root.render(
+        <ul>
+          <RuleRow
+            rule={rule}
+            choices={{ tags: ["a", "b", "c"], hosts: [], batches: [] }}
+            onToggle={vi.fn()}
+            onEdit={vi.fn()}
+            onDuplicate={vi.fn()}
+            onDelete={vi.fn()}
+          />
+        </ul>,
+      ),
+    );
+    expect(
+      [...host.querySelectorAll("[data-testid=scope-name]")].map((n) => n.textContent),
+    ).toEqual(["a", "b", "gone.org"]);
+    expect(q("[data-testid=scope-more]").getAttribute("title")).toBe("a, b, c");
+    expect(q("[data-testid=rule-warning]").textContent).toBe("No downloads are from gone.org");
+    expect(host.querySelector("[data-testid=rule-warning-icon]")).not.toBeNull();
   });
 
   it("switches a rule with its switch and keeps the switch readable when it is off", () => {

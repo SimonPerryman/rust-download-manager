@@ -23,8 +23,18 @@ export type RuleKind = "window" | "speed";
 /** Either kind of rule as saved. */
 export type Rule = QueueWindow | SpeedEntry;
 
-/** What a rule applies to, as the form's select names it. */
-export type ScopeKind = Scope["kind"];
+/** A batch a rule names. */
+export interface BatchChoice {
+  id: number;
+  label: string;
+}
+
+/** What a rule can be pointed at: the tags, hosts and batches the downloads have now. */
+export interface ScopeChoices {
+  tags: string[];
+  hosts: string[];
+  batches: BatchChoice[];
+}
 
 /** The form's fields for either kind of rule. */
 export interface RuleDraft {
@@ -38,10 +48,10 @@ export interface RuleDraft {
   /** Speed limit only: the amount as typed, in `limitUnit`. */
   limit: string;
   limitUnit: RateUnit;
-  /** What it applies to; `scopeText` holds the tag or host as typed, `scopeBatch` the batch. */
-  scopeKind: ScopeKind;
-  scopeText: string;
-  scopeBatch: { id: number; label: string } | null;
+  /** What it applies to: any of these tags, hosts and batches; all three empty is everything. */
+  scopeTags: string[];
+  scopeHosts: string[];
+  scopeBatches: BatchChoice[];
 }
 
 const EVERY_DAY: Weekday[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
@@ -55,9 +65,9 @@ export const NEW_WINDOW: RuleDraft = {
   finishRunning: false,
   limit: "5",
   limitUnit: "M",
-  scopeKind: "all",
-  scopeText: "",
-  scopeBatch: null,
+  scopeTags: [],
+  scopeHosts: [],
+  scopeBatches: [],
 };
 
 /** What the form shows when the Type is switched to Speed limit. */
@@ -98,59 +108,115 @@ export const limitLabel = (bytes: number): string => limitText(bytes);
 /** Whether a rule is a speed entry (the only kind with a limit). */
 export const isSpeed = (r: Rule): r is SpeedEntry => "limit" in r;
 
-/** The scope a draft's scope fields make; null while they are incomplete. */
-export function scopeOfDraft(d: RuleDraft): Scope | null {
-  const text = d.scopeText.trim();
-  switch (d.scopeKind) {
-    case "all":
-      return { kind: "all" };
-    case "tag":
-      return text ? { kind: "tag", tag: text } : null;
-    case "host":
-      return text ? { kind: "host", host: text.toLowerCase() } : null;
-    case "batch":
-      return d.scopeBatch
-        ? { kind: "batch", id: d.scopeBatch.id, label: d.scopeBatch.label }
-        : null;
+/** Names trimmed, empties dropped, repeats (ignoring case) kept once. */
+export function uniqueNames(names: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const n of names.map((x) => x.trim())) {
+    if (n && !seen.has(n.toLowerCase())) {
+      seen.add(n.toLowerCase());
+      out.push(n);
+    }
   }
+  return out;
 }
 
-type ScopeFields = Pick<RuleDraft, "scopeKind" | "scopeText" | "scopeBatch">;
+/** The scope a draft's scope fields make; empty lists are left out. */
+export function scopeOfDraft(d: RuleDraft): Scope {
+  const tags = uniqueNames(d.scopeTags);
+  const hosts = uniqueNames(d.scopeHosts.map((h) => h.toLowerCase()));
+  return {
+    ...(tags.length ? { tags } : {}),
+    ...(hosts.length ? { hosts } : {}),
+    ...(d.scopeBatches.length
+      ? { batches: d.scopeBatches.map((b) => ({ id: b.id, label: b.label })) }
+      : {}),
+  };
+}
+
+/** Whether a scope names nothing, which is every download. */
+export const scopeIsAll = (s: Scope | null | undefined): boolean =>
+  !s || !(s.tags?.length || s.hosts?.length || s.batches?.length);
+
+type ScopeFields = Pick<RuleDraft, "scopeTags" | "scopeHosts" | "scopeBatches">;
 
 /** The scope fields of a saved scope. */
 function scopeFields(s: Scope | undefined): ScopeFields {
-  switch (s?.kind) {
-    case "tag":
-      return { scopeKind: "tag", scopeText: s.tag, scopeBatch: null };
-    case "host":
-      return { scopeKind: "host", scopeText: s.host, scopeBatch: null };
-    case "batch":
-      return {
-        scopeKind: "batch",
-        scopeText: "",
-        scopeBatch: { id: s.id, label: s.label ?? `Batch ${s.id}` },
-      };
-    default:
-      return { scopeKind: "all", scopeText: "", scopeBatch: null };
-  }
+  return {
+    scopeTags: [...(s?.tags ?? [])],
+    scopeHosts: [...(s?.hosts ?? [])],
+    scopeBatches: (s?.batches ?? []).map((b) => ({ id: b.id, label: b.label ?? `Batch ${b.id}` })),
+  };
 }
 
-/** The scope as said after "Downloads": "tagged course-2", "from example.com", "in batch Course". */
-export function scopeTail(s: Scope | null | undefined): string {
-  switch (s?.kind) {
-    case "tag":
-      return `tagged ${s.tag}`;
-    case "host":
-      return `from ${s.host}`;
-    case "batch":
-      return `in batch ${s.label ?? s.id}`;
-    default:
-      return "";
+/** A piece of a sentence: plain text, a name shown as a chip, or "+N more" with the full list. */
+export type Part = string | { chip: string } | { more: number; title: string };
+
+/** A sentence's parts as plain text. */
+export const partsText = (parts: readonly Part[]): string =>
+  parts.map((p) => (typeof p === "string" ? p : "chip" in p ? p.chip : `+${p.more} more`)).join("");
+
+/** Names as chips: "a", "a or b", and from three on the first two and "+N more". */
+function nameParts(names: readonly string[]): Part[] {
+  if (names.length <= 2)
+    return names.flatMap((n, i): Part[] => (i ? [" or ", { chip: n }] : [{ chip: n }]));
+  return [
+    { chip: names[0] },
+    ", ",
+    { chip: names[1] },
+    " ",
+    { more: names.length - 2, title: names.join(", ") },
+  ];
+}
+
+/** The scope as said after "Downloads": "tagged course-2 or course-3, from example.com". */
+export function scopeParts(s: Scope | null | undefined): Part[] {
+  const segments: Part[][] = [];
+  if (s?.tags?.length) segments.push(["tagged ", ...nameParts(s.tags)]);
+  if (s?.batches?.length) {
+    const labels = s.batches.map((b) => b.label ?? String(b.id));
+    segments.push([labels.length === 1 ? "in batch " : "in batches ", ...nameParts(labels)]);
   }
+  if (s?.hosts?.length) segments.push(["from ", ...nameParts(s.hosts)]);
+  return segments.flatMap((seg, i): Part[] => (i ? [", ", ...seg] : seg));
+}
+
+/** One scope name that no download matches now. */
+export interface ScopeWarning {
+  kind: "tag" | "host" | "batch";
+  text: string;
+}
+
+/** The names in a scope that no download has, as the notes that say so. */
+export function scopeWarnings(s: Scope | null | undefined, c: ScopeChoices): ScopeWarning[] {
+  const has = (list: readonly string[], name: string) =>
+    list.some((x) => x.toLowerCase() === name.trim().toLowerCase());
+  const out: ScopeWarning[] = [];
+  for (const t of s?.tags ?? [])
+    if (!has(c.tags, t)) out.push({ kind: "tag", text: `No downloads have the tag ${t}` });
+  for (const b of s?.batches ?? [])
+    if (!c.batches.some((x) => x.id === b.id))
+      out.push({ kind: "batch", text: `No downloads are in batch ${b.label ?? b.id}` });
+  for (const h of s?.hosts ?? [])
+    if (!has(c.hosts, h)) out.push({ kind: "host", text: `No downloads are from ${h}` });
+  return out;
+}
+
+/** The distinct hosts (no port, lower case) of some URLs, sorted. */
+export function hostsOf(urls: readonly string[]): string[] {
+  const hosts = new Set<string>();
+  for (const u of urls) {
+    try {
+      hosts.add(new URL(u).hostname.toLowerCase());
+    } catch {
+      // not a URL
+    }
+  }
+  return [...hosts].sort();
 }
 
 /** A rule's scope when it isn't all downloads; otherwise the key is left out. */
-const scoped = (s: Scope | null): { scope?: Scope } => (s && s.kind !== "all" ? { scope: s } : {});
+const scoped = (s: Scope): { scope?: Scope } => (scopeIsAll(s) ? {} : { scope: s });
 
 /** The draft of an existing rule, for Edit. */
 export function draftOf(rule: Rule): RuleDraft {
@@ -176,9 +242,6 @@ export function draftProblem(typed: RuleDraft): string | null {
   if (d.start === d.end) return "A window can't start and end at the same time";
   if (d.kind === "speed" && limitBytes(d.limit, d.limitUnit) === null)
     return "Enter a speed above 0";
-  if (scopeOfDraft(d) === null) {
-    return d.scopeKind === "batch" ? "Pick a batch" : `Enter a ${d.scopeKind}`;
-  }
   return null;
 }
 
@@ -233,37 +296,53 @@ export function ruleName(r: Rule): string {
   return autoName(r.window.start, r.window.end, r.window.days);
 }
 
-/** The plain-sentence summary of a draft. */
-export function summary(
-  d: Pick<RuleDraft, "start" | "end" | "days" | "finishRunning"> &
-    Partial<Pick<RuleDraft, "kind" | "limit" | "limitUnit">> & { scope?: Scope | null },
-): string {
+type SummaryFields = Pick<RuleDraft, "start" | "end" | "days" | "finishRunning"> &
+  Partial<Pick<RuleDraft, "kind" | "limit" | "limitUnit">> & { scope?: Scope | null };
+
+/** The plain-sentence summary of a rule, in parts so the names can be shown as chips. */
+export function summaryParts(d: SummaryFields): Part[] {
   const when = `from ${timeLabel(d.start)} to ${timeLabel(d.end)} ${daysPhrase(d.days)}`;
-  const tail = scopeTail(d.scope);
-  const who = (lead: string) => (tail ? `${lead} ${tail}` : lead);
+  const tail = scopeParts(d.scope);
+  const who = (lead: string): Part[] => (tail.length ? [`${lead} `, ...tail] : [lead]);
   if (d.kind === "speed") {
     const bytes = limitBytes(d.limit ?? "", d.limitUnit);
-    return `${who("Downloads")} are limited to ${bytes === null ? "a set speed" : limitLabel(bytes)} ${when}.`;
+    return [
+      ...who("Downloads"),
+      ` are limited to ${bytes === null ? "a set speed" : limitLabel(bytes)} ${when}.`,
+    ];
   }
   return d.finishRunning
-    ? `${who("New downloads")} start ${when}. Running ones finish.`
-    : `${who("Downloads")} run ${when}, and pause at ${timeLabel(d.end)}.`;
+    ? [...who("New downloads"), ` start ${when}. Running ones finish.`]
+    : [...who("Downloads"), ` run ${when}, and pause at ${timeLabel(d.end)}.`];
 }
 
-/** A draft's summary: its own fields, scope included. */
-export const draftSummary = (typed: RuleDraft): string => {
+/** The plain-sentence summary of a rule. */
+export const summary = (d: SummaryFields): string => partsText(summaryParts(d));
+
+/** A draft's summary parts: its own fields, scope included. */
+export const draftSummaryParts = (typed: RuleDraft): Part[] => {
   const d = withTimes(typed);
-  return summary({ ...d, scope: scopeOfDraft(d) });
+  return summaryParts({ ...d, scope: scopeOfDraft(d) });
 };
 
-/** A rule's row text: a window's sentence, or "5 MB/s, 08:00–18:00, weekdays". */
-export function ruleSummary(r: Rule): string {
-  if (!isSpeed(r)) return summary({ ...r.window, finishRunning: r.finish_running, scope: r.scope });
+/** A draft's summary: its own fields, scope included. */
+export const draftSummary = (typed: RuleDraft): string => partsText(draftSummaryParts(typed));
+
+/** A rule's row sentence: a window's, or "5 MB/s, 08:00–18:00, weekdays". */
+export function ruleSummaryParts(r: Rule): Part[] {
+  if (!isSpeed(r))
+    return summaryParts({ ...r.window, finishRunning: r.finish_running, scope: r.scope });
   const kind = daysKind(r.window.days);
   const days = kind === "daily" ? "daily" : daysName(r.window.days).toLowerCase();
-  const tail = scopeTail(r.scope);
-  return `${limitLabel(r.limit)}, ${timeLabel(r.window.start)}–${timeLabel(r.window.end)}, ${kind === "chosen" ? daysName(r.window.days) : days}${tail ? `, ${tail}` : ""}`;
+  const tail = scopeParts(r.scope);
+  return [
+    `${limitLabel(r.limit)}, ${timeLabel(r.window.start)}–${timeLabel(r.window.end)}, ${kind === "chosen" ? daysName(r.window.days) : days}`,
+    ...(tail.length ? [", ", ...tail] : []),
+  ];
 }
+
+/** A rule's row text as plain text. */
+export const ruleSummary = (r: Rule): string => partsText(ruleSummaryParts(r));
 
 /** Where a rule sits in the rule set. */
 export interface RuleRef {
@@ -341,7 +420,7 @@ export function statusLine(s: Schedule, q: QueueState | null, now?: Date): strin
   if (s.queue_windows.length === 0 && s.speed_entries.length === 0) {
     return "No schedules. Downloads run any time.";
   }
-  const general = (r: Rule) => r.enabled && (r.scope?.kind ?? "all") === "all";
+  const general = (r: Rule) => r.enabled && scopeIsAll(r.scope);
   const windows = s.queue_windows.some(general);
   const speeds = s.speed_entries.some(general);
   const anyOn = [...s.queue_windows, ...s.speed_entries].some((r) => r.enabled);

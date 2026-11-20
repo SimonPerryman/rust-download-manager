@@ -269,12 +269,16 @@ export interface RuleWindow {
   days: Weekday[];
 }
 
-/** The downloads a rule applies to; a rule saved without one applies to all. */
-export type Scope =
-  | { kind: "all" }
-  | { kind: "tag"; tag: string }
-  | { kind: "host"; host: string }
-  | { kind: "batch"; id: number; label?: string };
+/**
+ * The downloads a rule applies to: any of the tags, any of the hosts and any of the batches,
+ * every named kind holding at once. A rule saved without one (or with empty lists) applies to
+ * all.
+ */
+export interface Scope {
+  tags?: string[];
+  hosts?: string[];
+  batches?: { id: number; label?: string }[];
+}
 
 /** Downloads start only inside the window (`get_schedule`). */
 export interface QueueWindow {
