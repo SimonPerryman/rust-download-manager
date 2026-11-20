@@ -313,6 +313,12 @@ pub trait Store: Send + Sync {
     fn logs_dir(&self) -> Option<PathBuf> {
         None
     }
+
+    /// The file for the history of what schedules, tags and actions did, if
+    /// this store has a place for it; `None` keeps history in memory only.
+    fn history_path(&self) -> Option<PathBuf> {
+        None
+    }
 }
 
 /// A [`Store`] backed by a single JSON file.
@@ -336,6 +342,11 @@ impl Store for JsonStore {
     /// The `logs` folder beside the document.
     fn logs_dir(&self) -> Option<PathBuf> {
         Some(self.path.parent()?.join("logs"))
+    }
+
+    /// `history.jsonl` beside the document.
+    fn history_path(&self) -> Option<PathBuf> {
+        Some(self.path.parent()?.join("history.jsonl"))
     }
 
     fn load(&self) -> Result<StoreData> {

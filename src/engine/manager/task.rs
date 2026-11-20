@@ -62,6 +62,7 @@ impl Inner {
         e.live = Live::default();
         e.record.active_ms = e.active_ms();
         e.started = None;
+        let finished_bytes = result.as_ref().ok().map(|summary| summary.bytes);
         let stop_keeping = std::mem::take(&mut e.stop_keeping);
         let window_pause = std::mem::take(&mut e.window_pause);
         e.command_warning = None;
@@ -115,6 +116,9 @@ impl Inner {
                 e.record.error = Some(crate::engine::error_detail(&other));
                 e.record.finished_at = now_secs();
             }
+        }
+        if let Some(bytes) = finished_bytes {
+            super::window::count_finished(st, id, bytes);
         }
         let ended = st.entries.get(&id).map(|e| e.record.status);
         let finished = st

@@ -16,13 +16,23 @@ type Props = {
   choices?: ScopeChoices;
   onToggle: (on: boolean) => void;
   onEdit: () => void;
+  /** Opens what the rule did; absent for a rule that keeps no history (speed limits). */
+  onHistory?: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
 };
 
 // One rule: its name and sentence, a switch, and a ··· menu. A switched-off rule fades its
 // text, not its switch, and keeps its settings.
-export function RuleRow({ rule, choices, onToggle, onEdit, onDuplicate, onDelete }: Props) {
+export function RuleRow({
+  rule,
+  choices,
+  onToggle,
+  onEdit,
+  onHistory,
+  onDuplicate,
+  onDelete,
+}: Props) {
   const name = ruleName(rule);
   const warnings = choices ? scopeWarnings(rule.scope, choices) : [];
 
@@ -64,6 +74,7 @@ export function RuleRow({ rule, choices, onToggle, onEdit, onDuplicate, onDelete
         menuTestId="rule-menu"
         items={[
           { label: "Edit", onSelect: onEdit },
+          ...(onHistory ? [{ label: "History", onSelect: onHistory }] : []),
           { label: "Duplicate", onSelect: onDuplicate },
           { label: "Delete", onSelect: onDelete },
         ]}

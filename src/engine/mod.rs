@@ -23,6 +23,7 @@ mod download_log;
 mod fault;
 pub mod filename;
 mod finish;
+mod history;
 mod http;
 mod human;
 pub mod integrity;
@@ -51,6 +52,7 @@ pub use batch::{
 };
 pub use control::{Control, Flow};
 pub use download_log::{LogLevel, LogLine, LOG_LINES};
+pub use history::{HistoryEvent, HistoryKind};
 pub(crate) use http::{status_error, throttle_wait};
 pub use integrity::{Algo, Checksum};
 pub use limit::{parse_rate, RateLimiter};

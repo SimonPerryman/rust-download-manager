@@ -338,6 +338,26 @@ grows past 1000 lines is cut back to its last 200. If a log can't be written
 or read, the download carries on, and one warning says the log won't survive a
 restart.
 
+## History on disk
+
+What schedules, tags and the finish actions did is recorded by the engine in
+`history.jsonl` beside `state.json`, one JSON event per line: the time, a kind
+(window opened or closed, held, started, paused, missed, command, power, tag
+added or removed), the download and the rule it concerns when there is one,
+and a sentence. A queue window gets its own id when it is first saved, so its
+events stay with it through edits (a copy is a new rule). The closing event
+carries what finished while the window was open ("14 files, 12.3 GB"),
+counted from downloads that complete inside it; the first look after start
+only learns which windows are open, and records nothing.
+
+Events are appended as they happen. At start, events older than 90 days and
+ones for downloads no longer in the list are dropped, then the oldest until
+the file takes at most 20 MB; the file is cut the same way if it grows past
+that while rdm runs. Removing a download deletes its events. The Log tab and a
+rule's History read the events from the engine; the frontend records nothing.
+If the file can't be written, the events are still kept in memory for the
+session.
+
 ## When something goes wrong
 
 - **A bug in a download:** if a download's task panics (a bug in rdm), only

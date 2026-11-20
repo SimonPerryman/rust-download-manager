@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use super::commands::requeue;
 use super::{Inner, Manager, ManagerState};
+use crate::engine::history::{HistoryEvent, HistoryKind};
 use crate::engine::lock::lock;
 use crate::engine::schedule::StartAt;
 use crate::engine::store::Status;
@@ -111,6 +112,18 @@ impl Inner {
             .collect();
         if due.is_empty() {
             return false;
+        }
+        let now = self.clock.now();
+        for (at, _, _, id) in st.held_in(&due) {
+            self.history.record(HistoryEvent::new(
+                HistoryKind::Started,
+                Some(id),
+                None,
+                format!(
+                    "Scheduled start reached, set for {}",
+                    super::window::when_text(at.0, now)
+                ),
+            ));
         }
         st.release(&due);
         true

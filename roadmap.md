@@ -198,24 +198,17 @@ ramping follow-ups shipped in M10; ramp window tuning was dropped (below). These
 1. **Typed scope entry**: `tag:`, `batch:` and `host:` tokens in one box,
    with suggestions as you type. It sits over the scope rows in the
    schedule form, shows what it understood and never saves by itself.
-2. **Schedule history**: a saved log of what schedules did (a window
-   opening or closing, how many downloads it paused or resumed, a scheduled
-   start firing or being missed, a power action running or cancelled) and,
-   per run, what it downloaded ("Mon 22:00 to 08:00: 14 files, 12.3 GB"), as
-   a History section in Schedules. Open: how long entries are kept, and
-   whether the per-run totals come from what the engine already stores per
-   download or need new fields.
-3. **`--at` and Ctrl-C**: nothing handles Ctrl-C while `--at` waits, so the
+2. **`--at` and Ctrl-C**: nothing handles Ctrl-C while `--at` waits, so the
    exit code is whatever the operating system gives a killed process. Add a
    handler with a documented exit code.
-4. **README screenshots run in isolation**: `pnpm screenshots` runs every
+3. **README screenshots run in isolation**: `pnpm screenshots` runs every
    spec in one session on one data folder, so the batch spec's downloads
    show up in the main-view shots. Give each spec its own folder, or run
    them one at a time.
-5. **Sidebar growth**: the Folders and Tags lists can grow without limit;
+4. **Sidebar growth**: the Folders and Tags lists can grow without limit;
    options are collapsible sections that remember their state, a Show more
    cap, or a scroll area per section.
-6. **Wait for the command**: a per-command switch, "Wait for it to finish
+5. **Wait for the command**: a per-command switch, "Wait for it to finish
    before sleeping", on by default. Today the power action waits for any
    started command to exit, so a program that stays open (a viewer, an editor)
    holds Sleep until it is closed.

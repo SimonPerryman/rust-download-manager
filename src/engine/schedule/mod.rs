@@ -113,6 +113,9 @@ impl Window {
 /// Downloads start only inside the window.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueueWindow {
+    /// Names the rule in saved history; 0 until the manager gives it one.
+    #[serde(default)]
+    pub id: u64,
     /// What the user called it; the UI names it from its times when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -133,6 +136,9 @@ pub struct QueueWindow {
 /// Inside its window, `limit` replaces the global speed limit.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpeedEntry {
+    /// Names the rule in saved history; 0 until the manager gives it one.
+    #[serde(default)]
+    pub id: u64,
     /// What the user called it; the UI names it from its limit when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -192,7 +198,38 @@ pub struct Schedule {
     pub speed_entries: Vec<SpeedEntry>,
 }
 
+impl QueueWindow {
+    /// What history calls the rule: its name, else its times.
+    pub fn label(&self) -> String {
+        match self.name.as_deref().map(str::trim) {
+            Some(name) if !name.is_empty() => name.to_string(),
+            _ => format!("{} to {}", self.window.start(), self.window.end()),
+        }
+    }
+}
+
 impl Schedule {
+    /// Give every rule without an id (0), or repeating an earlier rule's
+    /// (a copy), a new one, so each rule keeps one name for its history.
+    pub fn assign_ids(&mut self) {
+        let mut seen = std::collections::HashSet::new();
+        let ids = self
+            .queue_windows
+            .iter_mut()
+            .map(|r| &mut r.id)
+            .chain(self.speed_entries.iter_mut().map(|r| &mut r.id));
+        let mut missing = Vec::new();
+        for id in ids {
+            if *id == 0 || !seen.insert(*id) {
+                missing.push(id);
+            }
+        }
+        let first = seen.iter().copied().max().unwrap_or(0) + 1;
+        for (id, new) in missing.into_iter().zip(first..) {
+            *id = new;
+        }
+    }
+
     /// Whether there are no rules at all.
     pub fn is_empty(&self) -> bool {
         self.queue_windows.is_empty() && self.speed_entries.is_empty()
@@ -347,6 +384,7 @@ mod tests {
 
     fn queue(window: Window) -> QueueWindow {
         QueueWindow {
+            id: 0,
             name: None,
             enabled: true,
             window,
@@ -357,6 +395,7 @@ mod tests {
 
     fn speed(window: Window, limit: u64) -> SpeedEntry {
         SpeedEntry {
+            id: 0,
             name: None,
             enabled: true,
             window,
@@ -920,5 +959,37 @@ mod tests {
         assert!(!schedule.queue_open_for(noon, &mine));
         assert!(schedule.queue_open_for(noon, &other));
         assert_eq!(schedule.next_queue_change(noon), None);
+    }
+
+    #[test]
+    fn ids_are_given_once_and_a_copy_gets_its_own() {
+        let w = || window("22:00", "06:00", Days::DAILY);
+        let mut schedule = Schedule {
+            queue_windows: vec![queue(w()), queue(w())],
+            speed_entries: vec![speed(w(), 1000)],
+        };
+        schedule.assign_ids();
+        let ids: Vec<u64> = vec![
+            schedule.queue_windows[0].id,
+            schedule.queue_windows[1].id,
+            schedule.speed_entries[0].id,
+        ];
+        assert_eq!(ids, [1, 2, 3]);
+
+        // Saved again, ids stay; a duplicated rule repeats one and is renumbered.
+        schedule
+            .queue_windows
+            .push(schedule.queue_windows[0].clone());
+        schedule.assign_ids();
+        assert_eq!(schedule.queue_windows[0].id, 1);
+        assert_eq!(schedule.queue_windows[2].id, 4);
+    }
+
+    #[test]
+    fn a_rule_is_labelled_by_name_or_times() {
+        let mut rule = queue(window("22:00", "06:00", Days::DAILY));
+        assert_eq!(rule.label(), "22:00 to 06:00");
+        rule.name = Some("  Night ".into());
+        assert_eq!(rule.label(), "Night");
     }
 }

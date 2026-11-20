@@ -65,7 +65,8 @@ export function sameLog(a: readonly LogLine[], b: readonly LogLine[]): boolean {
         l.at === b[i].at &&
         l.level === b[i].level &&
         l.message === b[i].message &&
-        l.fields === b[i].fields,
+        l.fields === b[i].fields &&
+        l.kind === b[i].kind,
     )
   );
 }

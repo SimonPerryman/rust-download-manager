@@ -26,6 +26,7 @@ fn window(start: &str, end: &str) -> Window {
 
 fn queue_rule(scope: Scope) -> QueueWindow {
     QueueWindow {
+        id: 0,
         name: None,
         enabled: true,
         window: window("22:00", "06:00"),
@@ -36,6 +37,7 @@ fn queue_rule(scope: Scope) -> QueueWindow {
 
 fn speed_rule(scope: Scope, limit: u64) -> SpeedEntry {
     SpeedEntry {
+        id: 0,
         name: None,
         enabled: true,
         window: window("08:00", "18:00"),
@@ -225,7 +227,9 @@ async fn a_rule_for_a_tag_nothing_carries_matches_nothing_and_is_kept() {
     mgr.set_schedule(schedule.clone());
     let id = mgr.add(server.url("/gated"), dir.path(), None, None);
     assert_eq!(status(&mgr, id), Status::Downloading);
-    assert_eq!(mgr.settings().schedule, schedule);
+    let mut saved = schedule;
+    saved.assign_ids();
+    assert_eq!(mgr.settings().schedule, saved);
     server.gate().release_all();
 }
 

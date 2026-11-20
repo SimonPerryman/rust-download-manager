@@ -1,8 +1,10 @@
 import { useState } from "react";
 import {
   draftOf,
+  isSpeed,
   NEW_WINDOW,
   ruleFromDraft,
+  ruleName,
   rulesOf,
   statusLine,
   withCopy,
@@ -16,6 +18,7 @@ import type { ActionsStatus, PostActions, QueueState, Schedule } from "../../lib
 import type { StartGroup } from "../../lib/startAt";
 import { FinishSection } from "./FinishSection";
 import { MissedNotice } from "./MissedNotice";
+import { RuleHistoryDialog } from "./RuleHistoryDialog";
 import { RuleRow } from "./RuleRow";
 import { StartGroupRow } from "./StartGroupRow";
 import { ScheduleForm } from "./ScheduleForm";
@@ -61,6 +64,8 @@ export function SchedulesView({
 }: Props) {
   // A form open for a new rule (null) or for the rule at that place.
   const [form, setForm] = useState<{ at: RuleRef | null } | null>(null);
+  // The rule whose history is open.
+  const [history, setHistory] = useState<{ id: number; name: string } | null>(null);
   if (!schedule) return <section className="min-h-0 flex-1 px-6 py-5" />;
 
   const change = (next: Schedule) => save(next).catch(onError);
@@ -69,7 +74,7 @@ export function SchedulesView({
   const editing = at && rules.find((r) => r.kind === at.kind && r.index === at.index);
 
   const submit = async (draft: RuleDraft) => {
-    const rule = ruleFromDraft(draft, editing?.rule.enabled ?? true);
+    const rule = ruleFromDraft(draft, editing?.rule.enabled ?? true, editing?.rule.id);
     await save(withRule(schedule, rule, editing ? editing.index : undefined));
     setForm(null);
   };
@@ -128,6 +133,11 @@ export function SchedulesView({
               choices={choices}
               onToggle={(on) => change(withRule(schedule, { ...r.rule, enabled: on }, r.index))}
               onEdit={() => setForm({ at: r })}
+              onHistory={
+                r.rule.id && !isSpeed(r.rule)
+                  ? () => setHistory({ id: r.rule.id!, name: ruleName(r.rule) })
+                  : undefined
+              }
               onDuplicate={() => change(withCopy(schedule, r))}
               onDelete={() => change(withoutRule(schedule, r))}
             />
@@ -141,6 +151,14 @@ export function SchedulesView({
           status={finish.status}
           save={finish.save}
           onError={onError}
+        />
+      )}
+
+      {history && (
+        <RuleHistoryDialog
+          ruleId={history.id}
+          name={history.name}
+          onClose={() => setHistory(null)}
         />
       )}
 

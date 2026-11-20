@@ -4,7 +4,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LogLine } from "../../lib/types";
 
-const api = vi.hoisted(() => ({ downloadLog: vi.fn(), saveTextFile: vi.fn() }));
+const api = vi.hoisted(() => ({
+  downloadLog: vi.fn(),
+  downloadHistory: vi.fn(),
+  saveTextFile: vi.fn(),
+}));
 vi.mock("../../lib/api", () => api);
 
 const { LogTab } = await import("./LogTab");
@@ -37,6 +41,7 @@ describe("LogTab", () => {
   beforeEach(async () => {
     localStorage.removeItem(LOG_DETAILED_KEY);
     api.downloadLog.mockReset().mockResolvedValue(LINES);
+    api.downloadHistory.mockReset().mockResolvedValue([]);
     api.saveTextFile.mockReset().mockResolvedValue("/tmp/ubuntu.iso.log");
     writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
@@ -55,6 +60,32 @@ describe("LogTab", () => {
     expect(host.querySelectorAll("li")).toHaveLength(2);
     expect(button("log-simple").getAttribute("aria-pressed")).toBe("true");
     expect(button("log-detailed").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("keeps two columns until a history event shows, then adds the type column", async () => {
+    expect(host.querySelector("[data-typed]")).toBeNull();
+    api.downloadHistory.mockResolvedValue([
+      { at: Date.UTC(2026, 10, 10, 9, 0, 0, 500), kind: "held", details: '"Night" is closed' },
+      {
+        at: Date.UTC(2026, 10, 10, 9, 0, 2, 500),
+        kind: "tag_added",
+        details: "Added tag course-2",
+      },
+    ]);
+    act(() => root.unmount());
+    root = createRoot(host);
+    await act(async () => root.render(<LogTab id={1} name="ubuntu.iso" />));
+
+    const rows = [...host.querySelectorAll("li")].map((li) => li.textContent);
+    expect(host.querySelector("[data-typed]")).not.toBeNull();
+    // Simple view: the held event, Started, Completed (the tag event lands after the hidden
+    // detail line at :02 and before Completed); engine lines have a blank type.
+    expect(rows).toHaveLength(4);
+    expect(rows[0]).toContain("Held");
+    expect(rows[0]).toContain('"Night" is closed');
+    expect(rows[2]).toContain("Tag");
+    expect(rows[1]).not.toContain("Held");
+    expect(host.querySelectorAll('[data-testid="log-type"]')).toHaveLength(2);
   });
 
   it("switches to the detailed lines and remembers it", async () => {

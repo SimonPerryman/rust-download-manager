@@ -9,8 +9,10 @@ use std::time::Duration;
 use serde::Serialize;
 
 use super::{Entry, Inner, Manager, ManagerState};
+use crate::engine::history::{HistoryEvent, HistoryKind};
+use crate::engine::human;
 use crate::engine::lock::lock;
-use crate::engine::schedule::{LocalDateTime, Schedule, Scope, Subject};
+use crate::engine::schedule::{LocalDateTime, QueueWindow, Schedule, Scope, Subject};
 use crate::engine::store::Status;
 use crate::engine::RateLimiter;
 
@@ -71,17 +73,21 @@ impl Inner {
             self.global.set_rate(rate);
         }
         sync_scope_limiters(st, now);
+        self.track_windows(st, now);
         let mut opened = false;
         let mut gate_moved = false;
         let schedule = st.settings.schedule.clone();
-        for e in st.entries.values_mut() {
+        for (&id, e) in st.entries.iter_mut() {
             let (was_open, was_until) = (e.gate_open, e.gate_until);
             let open = e.refresh_gate(&schedule, now);
             opened |= open && !was_open;
             gate_moved |= was_until != e.gate_until;
+            let was_paused = e.window_pause;
             if !open {
                 pause_for_window(&schedule, e);
             }
+            let noted = std::mem::replace(&mut e.gate_noted, open);
+            self.note_gate(&schedule, id, e, (noted, open, was_paused), now);
         }
         if opened {
             self.schedule(st);
@@ -94,6 +100,103 @@ impl Inner {
             *current = state;
             changed
         });
+    }
+
+    /// Record each queue window that opened or closed since the last look.
+    /// The first look only learns which are open.
+    fn track_windows(&self, st: &mut ManagerState, now: LocalDateTime) {
+        let seeded = st.window_runs.is_some();
+        let mut runs = st.window_runs.take().unwrap_or_default();
+        let mut live = std::collections::HashSet::new();
+        for r in st
+            .settings
+            .schedule
+            .queue_windows
+            .iter()
+            .filter(|r| r.enabled)
+        {
+            live.insert(r.id);
+            let is_open = r.window.contains(now);
+            match (is_open, runs.contains_key(&r.id)) {
+                (true, false) => {
+                    runs.insert(r.id, RunTotals::default());
+                    if seeded {
+                        let waiting = st
+                            .entries
+                            .values()
+                            .filter(|e| {
+                                e.task.is_none()
+                                    && e.record.status == Status::Queued
+                                    && e.record.start_at.is_none()
+                                    && r.scope.matches(&subject(e))
+                            })
+                            .count();
+                        let text = if waiting == 0 {
+                            String::new()
+                        } else {
+                            format!("{} waiting", human::count(waiting as u32, "file", "files"))
+                        };
+                        self.history.record(HistoryEvent::new(
+                            HistoryKind::Opened,
+                            None,
+                            Some(r.id),
+                            text,
+                        ));
+                    }
+                }
+                (false, true) => {
+                    let totals = runs.remove(&r.id).unwrap_or_default();
+                    self.history.record(HistoryEvent::new(
+                        HistoryKind::Closed,
+                        None,
+                        Some(r.id),
+                        totals.text(),
+                    ));
+                }
+                _ => {}
+            }
+        }
+        runs.retain(|id, _| live.contains(id));
+        st.window_runs = Some(runs);
+    }
+
+    /// Record what a window did to one download: held it, let it start, or
+    /// paused it. `gate` is its gate before and after, and whether a pause
+    /// was already asked for.
+    fn note_gate(
+        &self,
+        schedule: &Schedule,
+        id: u64,
+        e: &Entry,
+        (was_open, open, was_paused): (bool, bool, bool),
+        now: LocalDateTime,
+    ) {
+        let waiting = e.task.is_none() && e.record.status == Status::Queued && !e.is_held();
+        let (kind, rule) = if e.window_pause && !was_paused {
+            (HistoryKind::Paused, applicable(schedule, e, now, false))
+        } else if was_open && !open && waiting {
+            (HistoryKind::Held, applicable(schedule, e, now, false))
+        } else if !was_open && open && waiting {
+            (HistoryKind::Started, applicable(schedule, e, now, true))
+        } else {
+            return;
+        };
+        let details = match (rule, kind) {
+            (Some(r), HistoryKind::Started) => format!("\"{}\" opened", r.label()),
+            (Some(r), _) => {
+                let until = e
+                    .gate_until
+                    .map_or(String::new(), |u| format!(" until {}", when_text(u, now)));
+                format!("\"{}\" is closed{until}", r.label())
+            }
+            (None, _) => "No window holds it now".to_string(),
+        };
+        self.history.record(HistoryEvent::new(
+            kind,
+            Some(id),
+            rule.map(|r| r.id),
+            details,
+        ));
     }
 
     /// Look at the clock every [`POLL`] until the Manager is dropped.
@@ -148,6 +251,66 @@ impl Manager {
     /// clock.
     pub fn check_schedule(&self) {
         self.inner.apply_window(&mut lock(&self.inner.state));
+    }
+}
+
+/// What finished inside one open queue window.
+#[derive(Debug, Default)]
+pub(super) struct RunTotals {
+    files: u32,
+    bytes: u64,
+}
+
+impl RunTotals {
+    fn text(&self) -> String {
+        if self.files == 0 {
+            "No files finished".to_string()
+        } else {
+            format!(
+                "{}, {}",
+                human::count(self.files, "file", "files"),
+                human::bytes(self.bytes)
+            )
+        }
+    }
+}
+
+/// Add a finished download of `bytes` to the totals of every open queue
+/// window that covers it.
+pub(super) fn count_finished(st: &mut ManagerState, id: u64, bytes: u64) {
+    let (Some(runs), Some(e)) = (st.window_runs.as_mut(), st.entries.get(&id)) else {
+        return;
+    };
+    let s = subject(e);
+    for r in &st.settings.schedule.queue_windows {
+        if let Some(totals) = runs.get_mut(&r.id).filter(|_| r.scope.matches(&s)) {
+            totals.files += 1;
+            totals.bytes += bytes;
+        }
+    }
+}
+
+/// The first enabled window covering `e` that is open (or closed) at `now`.
+fn applicable<'a>(
+    schedule: &'a Schedule,
+    e: &Entry,
+    now: LocalDateTime,
+    open: bool,
+) -> Option<&'a QueueWindow> {
+    let s = subject(e);
+    schedule
+        .queue_windows
+        .iter()
+        .filter(|r| r.enabled && r.scope.matches(&s))
+        .find(|r| r.window.contains(now) == open)
+}
+
+/// `at` as a time, with its weekday if it isn't today: `22:00`, `Wed 22:00`.
+pub(super) fn when_text(at: LocalDateTime, now: LocalDateTime) -> String {
+    if at.date() == now.date() {
+        at.time().to_string()
+    } else {
+        format!("{} {}", at.weekday().short(), at.time())
     }
 }
 

@@ -9,6 +9,7 @@ import {
   visibleLines,
 } from "../../lib/log";
 import * as api from "../../lib/api";
+import { kindLabel } from "../../lib/history";
 import { loadLogDetailed, saveLogDetailed } from "../../lib/prefs";
 import type { LogLevel } from "../../lib/types";
 import { useCopied } from "../../lib/useCopied";
@@ -31,6 +32,8 @@ export function LogTab({ id, name }: { id: number; name: string }) {
   const list = useRef<HTMLOListElement>(null);
   const stick = useRef(true);
   const hasList = shown.length > 0;
+  // History events fill a small type column; without any, the lines keep two columns.
+  const typed = shown.some((l) => l.kind);
   // How many lines the last Copy put on the clipboard, while it says so.
   const [copied, markCopied] = useCopied<number>();
   // Whether Save… just wrote the file, and why the last save failed.
@@ -147,10 +150,22 @@ export function LogTab({ id, name }: { id: number; name: string }) {
       )}
       {view === "list" ? (
         // Focusable so the keyboard can scroll it: it holds no controls.
-        <ol ref={list} className="log" data-testid="log" aria-label="Log lines" tabIndex={0}>
+        <ol
+          ref={list}
+          className="log"
+          data-typed={typed || undefined}
+          data-testid="log"
+          aria-label="Log lines"
+          tabIndex={0}
+        >
           {shown.map((l, i) => (
-            <li key={i} data-level={l.level}>
+            <li key={i} data-level={l.level} data-kind={l.kind}>
               <time dateTime={new Date(l.at).toISOString()}>{logTime(l.at)}</time>
+              {typed && (
+                <span className="log-type" data-testid={l.kind ? "log-type" : undefined}>
+                  {l.kind ? kindLabel(l.kind) : ""}
+                </span>
+              )}
               <span>
                 {LEVEL_WORD[l.level] && <span className="sr-only">{LEVEL_WORD[l.level]}</span>}
                 {logText(l)}

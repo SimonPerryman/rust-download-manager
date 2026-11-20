@@ -246,9 +246,10 @@ export function draftProblem(typed: RuleDraft): string | null {
 }
 
 /** The window rule a draft makes; `enabled` carries over when editing. */
-export function ruleOf(d: RuleDraft, enabled = true): QueueWindow {
+export function ruleOf(d: RuleDraft, enabled = true, id?: number): QueueWindow {
   const name = d.name.trim();
   return {
+    ...(id ? { id } : {}),
     ...(name ? { name } : {}),
     enabled,
     window: { start: d.start, end: d.end, days: d.days },
@@ -258,9 +259,10 @@ export function ruleOf(d: RuleDraft, enabled = true): QueueWindow {
 }
 
 /** The speed entry a draft makes (it must have passed `draftProblem`). */
-export function speedOf(d: RuleDraft, enabled = true): SpeedEntry {
+export function speedOf(d: RuleDraft, enabled = true, id?: number): SpeedEntry {
   const name = d.name.trim();
   return {
+    ...(id ? { id } : {}),
     ...(name ? { name } : {}),
     enabled,
     window: { start: d.start, end: d.end, days: d.days },
@@ -270,8 +272,8 @@ export function speedOf(d: RuleDraft, enabled = true): SpeedEntry {
 }
 
 /** Whichever rule a draft makes, by its kind. */
-export const ruleFromDraft = (d: RuleDraft, enabled = true): Rule =>
-  d.kind === "speed" ? speedOf(d, enabled) : ruleOf(d, enabled);
+export const ruleFromDraft = (d: RuleDraft, enabled = true, id?: number): Rule =>
+  d.kind === "speed" ? speedOf(d, enabled, id) : ruleOf(d, enabled, id);
 
 /** The name shown when none was given. */
 export function autoName(start: string, end: string, days: readonly Weekday[]): string {
@@ -378,7 +380,8 @@ export const withoutRule = (s: Schedule, { kind, index }: RuleRef): Schedule => 
 /** The rule set with a copy of the rule at `ref` right after it. */
 export function withCopy(s: Schedule, { kind, index }: RuleRef): Schedule {
   const rules: Rule[] = [...s[listOf(kind)]];
-  rules.splice(index + 1, 0, structuredClone(rules[index]));
+  // The copy is a new rule, so it starts a history of its own.
+  rules.splice(index + 1, 0, { ...structuredClone(rules[index]), id: undefined });
   return { ...s, [listOf(kind)]: rules };
 }
 

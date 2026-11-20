@@ -28,6 +28,19 @@ describe("downloadLog", () => {
   });
 });
 
+describe("history", () => {
+  beforeEach(() => invoke.mockReset().mockResolvedValue([]));
+
+  it("asks for a download's events and a rule's by id", async () => {
+    await api.downloadHistory(5);
+    await api.ruleHistory(2);
+    expect(invoke.mock.calls).toEqual([
+      ["download_history", { id: 5 }],
+      ["rule_history", { ruleId: 2 }],
+    ]);
+  });
+});
+
 describe("archive and tags", () => {
   beforeEach(() => invoke.mockReset().mockResolvedValue(0));
 

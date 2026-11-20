@@ -59,6 +59,7 @@ impl Manager {
         let st = &mut *lock(&self.inner.state);
         change(&mut st.settings);
         st.settings = std::mem::take(&mut st.settings).clamped();
+        st.settings.schedule.assign_ids();
         self.inner.apply_window(st);
         self.inner.schedule(st);
         let _ = self.inner.actions_eval(st, 0);

@@ -17,7 +17,7 @@ use rdm::engine::actions::{
 use rdm::engine::schedule::{
     Days, FakeClock, LocalDateTime, QueueWindow, Schedule, StartAt, TimeOfDay, Window,
 };
-use rdm::{AddOptions, DownloadSnapshot, JsonStore, Manager, Status, Store};
+use rdm::{AddOptions, DownloadSnapshot, HistoryKind, JsonStore, Manager, Status, Store};
 
 const T: Duration = Duration::from_secs(10);
 
@@ -210,6 +210,14 @@ async fn a_power_action_counts_down_then_fires_once() {
 
     r.mgr.advance_actions_clock(1);
     assert_eq!(r.power.done(), [PowerAction::Sleep]);
+    let power: Vec<_> = r
+        .mgr
+        .history()
+        .into_iter()
+        .filter(|e| e.kind == HistoryKind::Power)
+        .collect();
+    assert_eq!(power.len(), 1);
+    assert_eq!(power[0].details, "Ran sleep after the last download");
     assert_eq!(r.mgr.actions_status().power, PowerStatus::Ready);
     r.mgr.advance_actions_clock(120);
     assert_eq!(r.power.done().len(), 1, "once per time everything is done");
@@ -280,6 +288,7 @@ async fn it_is_dropped_while_the_queue_window_holds_a_download() {
     let time = |h: &str| h.parse::<TimeOfDay>().unwrap();
     r.mgr.set_schedule(Schedule {
         queue_windows: vec![QueueWindow {
+            id: 0,
             name: None,
             enabled: true,
             window: Window::new(time("08:00"), time("18:00"), Days::DAILY).unwrap(),
@@ -405,6 +414,14 @@ async fn the_command_gets_the_path_and_name_as_whole_arguments() {
     let seen = std::fs::read_to_string(&out).unwrap();
     assert_eq!(seen, format!("a;b c.bin\n{}", path.display()));
     assert_eq!(snap(&r.mgr, id).command_warning, None);
+    wait_for("the history line", || {
+        !r.mgr.download_history(id).is_empty()
+    })
+    .await;
+    let ran = r.mgr.download_history(id);
+    assert_eq!(ran.len(), 1);
+    assert_eq!(ran[0].kind, HistoryKind::Command);
+    assert!(ran[0].details.ends_with(" ran"), "{}", ran[0].details);
 }
 
 #[tokio::test]
@@ -419,6 +436,13 @@ async fn a_failing_command_warns_without_failing_the_download() {
     assert_eq!(done.status, Status::Completed);
     assert!(done.error.is_none());
     assert!(done.command_warning.unwrap().contains("exited with code 3"));
+    wait_for("the history line", || {
+        !r.mgr.download_history(id).is_empty()
+    })
+    .await;
+    assert!(r.mgr.download_history(id)[0]
+        .details
+        .contains("exited with code 3"));
 }
 
 #[tokio::test]
