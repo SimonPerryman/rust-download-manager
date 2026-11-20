@@ -74,11 +74,11 @@ describe("When downloads finish", () => {
     click(chip);
     expect(chip.getAttribute("aria-expanded")).toBe("true");
     const items = [...host.querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
-    expect(items.map((i) => i.textContent)).toEqual(["Shut down", "Sleep", "Hibernate"]);
-    expect(items.map((i) => i.getAttribute("aria-checked"))).toEqual(["true", "false", "false"]);
+    expect(items.map((i) => i.textContent)).toEqual(["Sleep", "Shut down", "Hibernate"]);
+    expect(items.map((i) => i.getAttribute("aria-checked"))).toEqual(["false", "true", "false"]);
     expect(items.map((i) => i.getAttribute("title"))).toEqual([
-      null,
       "Low power; wakes in seconds",
+      null,
       "Saves to disk and powers off completely",
     ]);
     click(items[2]);
@@ -89,11 +89,11 @@ describe("When downloads finish", () => {
     render(OFF);
     click(q("finish-power-chip"));
     const items = [...host.querySelectorAll<HTMLElement>('[role="menuitemradio"]')];
-    expect(document.activeElement).toBe(items[0]);
+    expect(document.activeElement).toBe(items[1]);
     act(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
     });
-    expect(document.activeElement).toBe(items[1]);
+    expect(document.activeElement).toBe(items[2]);
     act(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });

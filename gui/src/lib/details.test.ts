@@ -65,6 +65,12 @@ describe("statePhrase", () => {
     );
     expect(statePhrase(snap({ status: "downloading", downloaded: 2048 }))).toBe("2.00 KB so far");
     expect(statePhrase(snap({ status: "queued" }))).toBe("Queued for a free slot");
+    expect(
+      statePhrase(
+        snap({ status: "queued", window_until: "2026-03-09T22:00" }),
+        new Date(2026, 2, 9, 21),
+      ),
+    ).toBe("Queued until 22:00");
     expect(statePhrase(snap({ status: "paused" }))).toBe("Paused");
     expect(statePhrase(snap({ status: "completed" }))).toBe("Completed");
     // The missing banner says the rest.

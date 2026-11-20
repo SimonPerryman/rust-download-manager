@@ -108,9 +108,9 @@ kept, so Retry failed and a restart keep it. Leave a field empty for no limit.
 
 Downloads beyond the concurrency limit ([Settings](#settings); see
 [how the queue works](how-it-works.md#the-queue-and-speed-limits)) wait, and
-the first queued one says **Next up**. A download held by a closed
-[queue window](#schedules) says what it waits for instead: **Queued until
-22:00**, with the weekday when that isn't today. A window scoped to a tag,
+the first one that can start says **Next up**. A download held by a closed
+[queue window](#schedules) says what it waits for instead, in the row and in the details pane: **Queued
+until 22:00**, with the weekday when that isn't today. A window scoped to a tag,
 host or batch marks only the downloads it matches. To reorder, drag a queued row by its
 handle, press Alt+↑/Alt+↓, or use **Start next**, **Move up** and **Move
 down** from its menu or the details pane.

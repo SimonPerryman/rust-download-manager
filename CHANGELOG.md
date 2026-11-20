@@ -26,6 +26,19 @@ desktop app share one version.
   `rdm --on-finish <sleep|shutdown>` puts the machine to sleep or shuts it
   down after the run (CLI).
 
+### Changed
+
+- A download held by a closed queue window says **Queued until 22:00** (with
+  the weekday when that isn't today) in its row and in the details pane, and
+  never **Next up**; the first waiting file that can start says it instead.
+- Schedule speed limits take KB/s as well as MB/s, and a time field accepts
+  `930`, `0930` and `9:30`.
+- A failed After each download command shows an icon beside **Done** (hover
+  for the reason) instead of a badge that crowded the file name, and the edit
+  command form shows an Arguments example (one per line).
+- Drop-down lists are readable in dark mode.
+- The After all downloads menu lists Sleep first.
+
 ## 0.5.0 - 2026-11-16
 
 ### Added

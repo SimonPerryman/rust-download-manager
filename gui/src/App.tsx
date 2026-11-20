@@ -16,7 +16,7 @@ import { knownUrls } from "./lib/batch";
 import { focusIsFree } from "./lib/focus";
 import { EMPTY_WORK } from "./lib/laneWork";
 import { selectionActions } from "./lib/menu";
-import { queueOrder, stepIndex } from "./lib/queue";
+import { nextUpId, queueOrder, stepIndex } from "./lib/queue";
 import { pauseAllMode, totalSpeed } from "./lib/rowView";
 import { inOldFolder, missingIds, reviewRows, searchingMany, searchingOne } from "./lib/find";
 import { locateFolderFor, locateOne } from "./lib/locate";
@@ -119,6 +119,7 @@ export default function App() {
   const selection = useSelection(visibleIds);
   const sel = selection.selection;
   const queue = useMemo(() => queueOrder(downloads), [downloads]);
+  const nextUp = useMemo(() => nextUpId(downloads), [downloads]);
   // Keyed on the URLs themselves so the Add preview doesn't re-parse on every tick.
   const urlKey = JSON.stringify(downloads.map((d) => [d.url, d.archived]));
   const existingUrls = useMemo(
@@ -546,6 +547,7 @@ export default function App() {
               tableRef={tableRef}
               selection={sel}
               queue={queue}
+              nextUpId={nextUp}
               queueView={view.kind === "status" && view.status === "waiting"}
               onSelect={onSelect}
               onMenu={openMenu}

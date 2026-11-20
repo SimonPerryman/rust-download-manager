@@ -40,6 +40,8 @@ type Props = {
   selection: Selection;
   /** The waiting order, first to start first. */
   queue: readonly number[];
+  /** The waiting row that starts first, if any. */
+  nextUpId: number | null;
   /** The Queued view: every waiting row shows its drag handle. */
   queueView: boolean;
   onSelect: (id: number, mods: Modifiers) => void;
@@ -75,6 +77,7 @@ export function DownloadTable({
   tableRef,
   selection,
   queue,
+  nextUpId,
   queueView,
   onSelect,
   onMenu,
@@ -165,6 +168,7 @@ export function DownloadTable({
                   selected={selection.selected.has(d.id)}
                   cursor={selection.cursor === d.id}
                   queueIndex={d.status === "queued" ? queue.indexOf(d.id) : -1}
+                  nextUp={d.id === nextUpId}
                   drag={dragClass(d.id)}
                   details={detailsId === d.id}
                   onSelect={onSelect}

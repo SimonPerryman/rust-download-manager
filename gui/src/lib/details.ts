@@ -3,6 +3,7 @@
 
 import { formatBytes, formatSpeed, MONTHS } from "./format";
 import { precisePercent } from "./rowView";
+import { windowState } from "./startAt";
 import type { DownloadSnapshot } from "./types";
 
 /** How long a download ran, e.g. "under 1 s", "48 s", "2 min 14 s", "1 h 5 min". */
@@ -34,7 +35,7 @@ export function summaryParts(d: DownloadSnapshot): { size: string; rest: string 
 }
 
 /** The short state next to the pane's title, e.g. "42.1% of 5.80 GB". */
-export function statePhrase(d: DownloadSnapshot): string {
+export function statePhrase(d: DownloadSnapshot, now?: Date): string {
   switch (d.status) {
     case "downloading": {
       const pct = precisePercent(d);
@@ -42,7 +43,7 @@ export function statePhrase(d: DownloadSnapshot): string {
       return `${pct.toFixed(1)}% of ${formatBytes(d.total)}`;
     }
     case "queued":
-      return "Queued for a free slot";
+      return windowState(d, now) ?? "Queued for a free slot";
     case "paused":
       return "Paused";
     case "completed":
