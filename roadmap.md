@@ -198,14 +198,10 @@ ramping follow-ups shipped in M10; ramp window tuning was dropped (below). These
 1. **Typed scope entry**: `tag:`, `batch:` and `host:` tokens in one box,
    with suggestions as you type. It sits over the scope rows in the
    schedule form, shows what it understood and never saves by itself.
-2. **README screenshots run in isolation**: `pnpm screenshots` runs every
-   spec in one session on one data folder, so the batch spec's downloads
-   show up in the main-view shots. Give each spec its own folder, or run
-   them one at a time.
-3. **Sidebar growth**: the Folders and Tags lists can grow without limit;
+2. **Sidebar growth**: the Folders and Tags lists can grow without limit;
    options are collapsible sections that remember their state, a Show more
    cap, or a scroll area per section.
-4. **Wait for the command**: a per-command switch, "Wait for it to finish
+3. **Wait for the command**: a per-command switch, "Wait for it to finish
    before sleeping", on by default. Today the power action waits for any
    started command to exit, so a program that stays open (a viewer, an editor)
    holds Sleep until it is closed.
