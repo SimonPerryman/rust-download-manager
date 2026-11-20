@@ -92,12 +92,10 @@ describe("rdm GUI when downloads finish", () => {
     await expect($(POWER_CHIP)).toHaveAttribute("aria-haspopup", "menu");
     await $(POWER_CHIP).click();
     await expect($(POWER_CHIP)).toHaveAttribute("aria-expanded", "true");
-    const choices = await $(POWER_MENU).$$("button");
-    expect(await Promise.all(choices.map((c) => c.getText()))).toEqual([
-      "Sleep",
-      "Shut down",
-      "Hibernate",
-    ]);
+    const labels = await $(POWER_MENU)
+      .$$("button")
+      .map((c) => c.getText());
+    expect(labels).toEqual(["Sleep", "Shut down", "Hibernate"]);
     await expect($(POWER_MENU).$("button=Sleep")).toHaveAttribute(
       "title",
       "Low power; wakes in seconds",
