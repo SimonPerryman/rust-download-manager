@@ -36,7 +36,7 @@ describe("schedules screenshot", () => {
             enabled: true,
             window: { start: "01:00", end: "06:00", days: ALL_DAYS },
             finish_running: true,
-            scope: { kind: "tag", tag: "work" },
+            scope: { tags: ["work"] },
           },
         ],
         speed_entries: [

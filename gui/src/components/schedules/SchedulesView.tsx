@@ -10,6 +10,7 @@ import {
   withRule,
   type RuleDraft,
   type RuleRef,
+  type ScopeChoices,
 } from "../../lib/schedule";
 import type { ActionsStatus, PostActions, QueueState, Schedule } from "../../lib/types";
 import type { StartGroup } from "../../lib/startAt";
@@ -17,7 +18,7 @@ import { FinishSection } from "./FinishSection";
 import { MissedNotice } from "./MissedNotice";
 import { RuleRow } from "./RuleRow";
 import { StartGroupRow } from "./StartGroupRow";
-import { ScheduleForm, type ScopeChoices } from "./ScheduleForm";
+import { ScheduleForm } from "./ScheduleForm";
 
 type Props = {
   schedule: Schedule | null;
@@ -124,6 +125,7 @@ export function SchedulesView({
             <RuleRow
               key={`${r.kind}${r.index}`}
               rule={r.rule}
+              choices={choices}
               onToggle={(on) => change(withRule(schedule, { ...r.rule, enabled: on }, r.index))}
               onEdit={() => setForm({ at: r })}
               onDuplicate={() => change(withCopy(schedule, r))}

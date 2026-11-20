@@ -52,7 +52,7 @@ fn queue_only(rule: QueueWindow) -> Schedule {
 }
 
 fn tag(t: &str) -> Scope {
-    Scope::Tag { tag: t.into() }
+    Scope::tag(t)
 }
 
 fn manager(dir: &std::path::Path, clock: &Arc<FakeClock>) -> Manager {
@@ -162,9 +162,7 @@ async fn a_host_window_holds_downloads_from_that_host() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(on(12, 0)));
     let mgr = manager(dir.path(), &clock);
-    mgr.set_schedule(queue_only(queue_rule(Scope::Host {
-        host: "127.0.0.1".into(),
-    })));
+    mgr.set_schedule(queue_only(queue_rule(Scope::host("127.0.0.1"))));
     let id = mgr.add(server.url("/gated"), dir.path(), None, None);
     assert_eq!(
         status(&mgr, id),
@@ -172,9 +170,7 @@ async fn a_host_window_holds_downloads_from_that_host() {
         "the fixture's host is held"
     );
 
-    mgr.set_schedule(queue_only(queue_rule(Scope::Host {
-        host: "other.example".into(),
-    })));
+    mgr.set_schedule(queue_only(queue_rule(Scope::host("other.example"))));
     assert_eq!(
         status(&mgr, id),
         Status::Downloading,
@@ -190,7 +186,7 @@ async fn a_batch_window_holds_that_batch_only() {
     let clock = Arc::new(FakeClock::new(on(12, 0)));
     let mgr = manager(dir.path(), &clock);
     // A batch takes its first download's id, and ids start at 1.
-    mgr.set_schedule(queue_only(queue_rule(Scope::Batch { id: 1, label: None })));
+    mgr.set_schedule(queue_only(queue_rule(Scope::batch(1))));
     let spec = BatchSpec {
         label: "Course".into(),
         folder: false,
@@ -283,13 +279,41 @@ async fn a_tag_speed_entry_caps_only_tagged_downloads_and_follows_its_window() {
 }
 
 #[tokio::test]
+async fn a_scope_of_several_names_caps_any_of_them_and_shares_one_limiter() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(on(9, 0)));
+    let mgr = manager(dir.path(), &clock);
+    let scope = Scope {
+        tags: vec!["slow".into(), "Also".into()],
+        hosts: vec!["127.0.0.1".into()],
+        ..Scope::default()
+    };
+    mgr.set_schedule(Schedule {
+        speed_entries: vec![speed_rule(scope, MB)],
+        ..Schedule::default()
+    });
+    let a = mgr
+        .add_with(server.url("/gated?a=1"), dir.path(), tagged("slow"))
+        .unwrap();
+    let b = mgr
+        .add_with(server.url("/gated?a=2"), dir.path(), tagged("also"))
+        .unwrap();
+    let c = mgr.add(server.url("/gated?a=3"), dir.path(), None, None);
+    assert_eq!(mgr.running_speed_cap(a), Some(MB));
+    assert_eq!(mgr.running_speed_cap(b), Some(MB));
+    assert_eq!(mgr.running_speed_cap(c), None, "no tag, so not in scope");
+    server.gate().release_all();
+}
+
+#[tokio::test]
 async fn an_all_downloads_entry_still_replaces_the_global_limit_beside_a_scoped_one() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(on(9, 0)));
     let mgr = manager(dir.path(), &clock);
     mgr.set_global_limit(Some(2 * MB));
     mgr.set_schedule(Schedule {
-        speed_entries: vec![speed_rule(tag("x"), MB), speed_rule(Scope::All, 5 * MB)],
+        speed_entries: vec![speed_rule(tag("x"), MB), speed_rule(Scope::all(), 5 * MB)],
         ..Schedule::default()
     });
     assert_eq!(mgr.effective_global_limit(), Some(5 * MB));

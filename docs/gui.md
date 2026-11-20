@@ -176,16 +176,25 @@ weekdays", and the line at the top adds the cap in force or the next one
 ("A 5 MB/s cap applies until 18:00."). The type of an existing rule can't be
 changed; make a new one.
 
-**Applies to** points a rule at all downloads (the default), a tag, a host or a
-batch. For a tag, type it or pick one from the list; a host is the name in the
-download's address, such as `cdn.example.com`, matched exactly and ignoring
-case; a batch is picked from the batches you have. A download window for a tag
+**Applies to** points a rule at all downloads (the default) or at some of
+them, with a row each for **Tags**, **Batches** and **Hosts**. An empty row
+shows **+ Add**; click it to type. Tags and hosts suggest the ones your
+downloads have as you type, and also take a new name, so a rule can be set up
+before its tag or site exists; press Enter or comma to add it. Batches are
+picked from the ones you have. A host is the name in the download's address,
+such as `cdn.example.com`, matched exactly and ignoring case. Several names in
+one row mean any of them; the rows together mean all of them ("tagged
+course-2 or course-3, from cdn.example.com"). A download window for a tag
 holds and pauses only downloads carrying it, so "this tag only overnight"
-works. A speed limit for a tag, host or batch caps those downloads together,
-on top of the global limit, and the slower cap wins. A rule whose tag or batch
-nothing carries any more is kept and applies to nothing. The status bar's
-paused note and the top line speak for rules that apply to all downloads;
-with only scoped rules the line says so.
+works. A speed limit for a scope caps those downloads together, on top of the
+global limit, and the slower cap wins. A name no download has yet shows an
+amber note under its row ("No downloads have the tag course-4") and a warning
+icon on the rule's row; it never stops the rule saving, and the rule is kept
+and applies to nothing until a download matches. In a rule's sentence the
+names appear as chips; a list of more than two shows the first two and **+N
+more**, with the full list on hover. The status bar's paused note and the top
+line speak for rules that apply to all downloads; with only scoped rules the
+line says so.
 
 ### Start at
 

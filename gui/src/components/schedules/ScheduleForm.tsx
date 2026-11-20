@@ -5,12 +5,14 @@ import { RATE_UNITS, sanitizeAmount, type RateUnit } from "../../lib/rate";
 import {
   draftAutoName,
   draftProblem,
-  draftSummary,
+  draftSummaryParts,
   NEW_SPEED,
   NEW_WINDOW,
   type RuleDraft,
   type RuleKind,
-  type ScopeKind,
+  scopeOfDraft,
+  scopeWarnings,
+  type ScopeChoices,
   withTimes,
 } from "../../lib/schedule";
 import type { Weekday } from "../../lib/types";
@@ -18,6 +20,8 @@ import { ChevronDown } from "../icons/ChevronDown";
 import { X } from "../icons/X";
 import { trapTab } from "../dialogs/trapTab";
 import { Field, FIELD } from "./FormField";
+import { ScopeField } from "./ScopeField";
+import { Sentence } from "./Sentence";
 import { Switch } from "./Switch";
 
 type Props = {
@@ -32,13 +36,7 @@ type Props = {
   onClose: () => void;
 };
 
-/** The tags and batches a rule's Applies to can offer. */
-export interface ScopeChoices {
-  tags: string[];
-  batches: { id: number; label: string }[];
-}
-
-const NO_CHOICES: ScopeChoices = { tags: [], batches: [] };
+const NO_CHOICES: ScopeChoices = { tags: [], hosts: [], batches: [] };
 
 type Choice = "daily" | "weekdays" | "weekends" | "choose";
 
@@ -109,13 +107,9 @@ export function ScheduleForm({ initial, editing, choices = NO_CHOICES, onSubmit,
     setChoosing(false);
   };
 
-  const pickScope = (kind: ScopeKind) => set({ scopeKind: kind, scopeText: "", scopeBatch: null });
-
-  // A batch the rule names stays pickable after its downloads are gone.
-  const batches =
-    draft.scopeBatch && !choices.batches.some((b) => b.id === draft.scopeBatch?.id)
-      ? [draft.scopeBatch, ...choices.batches]
-      : choices.batches;
+  const warnings = scopeWarnings(scopeOfDraft(draft), choices);
+  // Batches without downloads are no longer offered.
+  const batches = choices.batches;
 
   const pickChoice = (c: Choice) => {
     if (c === "choose") {
@@ -191,58 +185,42 @@ export function ScheduleForm({ initial, editing, choices = NO_CHOICES, onSubmit,
               />
             </Field>
 
-            <Field label="Applies to" htmlFor="sched-scope">
-              <div className="grid grid-cols-[10rem_1fr] items-center gap-2">
-                <SelectField
-                  id="sched-scope"
-                  aria-label="Applies to"
-                  value={draft.scopeKind}
-                  onChange={(e) => pickScope(e.target.value as ScopeKind)}
-                >
-                  <option value="all">All downloads</option>
-                  <option value="tag">A tag</option>
-                  <option value="host">A host</option>
-                  <option value="batch">A batch</option>
-                </SelectField>
-                {(draft.scopeKind === "tag" || draft.scopeKind === "host") && (
-                  <>
-                    <input
-                      type="text"
-                      aria-label={draft.scopeKind === "tag" ? "Tag" : "Host"}
-                      list={draft.scopeKind === "tag" ? "sched-tags" : undefined}
-                      value={draft.scopeText}
-                      onChange={(e) => set({ scopeText: e.target.value })}
-                      onKeyDown={(e) => e.key === "Enter" && void submit()}
-                      placeholder={draft.scopeKind === "tag" ? "course-2" : "example.com"}
-                      className={FIELD}
-                    />
-                    {draft.scopeKind === "tag" && (
-                      <datalist id="sched-tags">
-                        {choices.tags.map((t) => (
-                          <option key={t} value={t} />
-                        ))}
-                      </datalist>
-                    )}
-                  </>
-                )}
-                {draft.scopeKind === "batch" && (
-                  <SelectField
-                    aria-label="Batch"
-                    value={draft.scopeBatch?.id ?? ""}
-                    onChange={(e) =>
-                      set({
-                        scopeBatch: batches.find((b) => b.id === Number(e.target.value)) ?? null,
-                      })
-                    }
-                  >
-                    <option value="">{batches.length === 0 ? "No batches" : "Pick a batch"}</option>
-                    {batches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.label}
-                      </option>
-                    ))}
-                  </SelectField>
-                )}
+            <Field label="Applies to">
+              <div className="space-y-1.5">
+                <ScopeField
+                  title="Tags"
+                  noun="tag"
+                  chosen={draft.scopeTags.map((t) => ({ key: t, label: t }))}
+                  options={choices.tags.map((t) => ({ key: t, label: t }))}
+                  allowNew
+                  onChange={(items) => set({ scopeTags: items.map((i) => i.label) })}
+                  warnings={warnings.filter((w) => w.kind === "tag").map((w) => w.text)}
+                  onSubmit={() => void submit()}
+                />
+                <ScopeField
+                  title="Batches"
+                  noun="batch"
+                  chosen={draft.scopeBatches.map((b) => ({ key: String(b.id), label: b.label }))}
+                  options={batches.map((b) => ({ key: String(b.id), label: b.label }))}
+                  allowNew={false}
+                  onChange={(items) =>
+                    set({
+                      scopeBatches: items.map((i) => ({ id: Number(i.key), label: i.label })),
+                    })
+                  }
+                  warnings={warnings.filter((w) => w.kind === "batch").map((w) => w.text)}
+                  onSubmit={() => void submit()}
+                />
+                <ScopeField
+                  title="Hosts"
+                  noun="host"
+                  chosen={draft.scopeHosts.map((h) => ({ key: h, label: h }))}
+                  options={choices.hosts.map((h) => ({ key: h, label: h }))}
+                  allowNew
+                  onChange={(items) => set({ scopeHosts: items.map((i) => i.label.toLowerCase()) })}
+                  warnings={warnings.filter((w) => w.kind === "host").map((w) => w.text)}
+                  onSubmit={() => void submit()}
+                />
               </div>
             </Field>
 
@@ -360,7 +338,7 @@ export function ScheduleForm({ initial, editing, choices = NO_CHOICES, onSubmit,
               data-testid="schedule-summary"
               className={`min-w-0 flex-1 text-sm ${problem ? "text-danger-ink" : "text-g600"}`}
             >
-              {problem ?? draftSummary(draft)}
+              {problem ?? <Sentence parts={draftSummaryParts(draft)} />}
             </p>
             <button type="button" onClick={onClose} disabled={busy} className="btn btn-ghost">
               Cancel
