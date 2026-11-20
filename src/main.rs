@@ -145,7 +145,7 @@ struct Cli {
     /// Wait until this local time, then download: `HH:MM` is the next such
     /// time (tomorrow's if it has passed today), or give a full
     /// `YYYY-MM-DDTHH:MM`. rdm must stay running; Ctrl-C while waiting
-    /// cancels. Without it the download starts at once.
+    /// cancels (exit 130). Without it the download starts at once.
     #[arg(long = "at", value_name = "TIME", value_parser = parse_at)]
     at: Option<String>,
 
@@ -183,7 +183,8 @@ fn parse_at(s: &str) -> Result<String, String> {
 /// Wait for `--at`, polling the clock. The `RDM_TEST_NOW` environment
 /// variable (`YYYY-MM-DDTHH:MM`) swaps the system clock for one that starts
 /// there and moves a minute per poll, so tests don't wait in real time.
-async fn wait_for_start(text: &str) {
+/// Returns `false` if `cancel` resolved first (Ctrl-C), so nothing starts.
+async fn wait_for_start(text: &str, cancel: impl std::future::Future<Output = ()>) -> bool {
     let test_now = std::env::var("RDM_TEST_NOW")
         .ok()
         .and_then(|v| v.parse::<LocalDateTime>().ok());
@@ -198,14 +199,20 @@ async fn wait_for_start(text: &str) {
         "Waiting until {} to start",
         at.0.to_string().replace('T', " ")
     );
-    while !at.is_due(clock.now()) {
-        match &fake {
-            Some(fake) => {
-                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-                fake.advance(1);
+    let wait = async {
+        while !at.is_due(clock.now()) {
+            match &fake {
+                Some(fake) => {
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                    fake.advance(1);
+                }
+                None => tokio::time::sleep(std::time::Duration::from_secs(1)).await,
             }
-            None => tokio::time::sleep(std::time::Duration::from_secs(1)).await,
         }
+    };
+    tokio::select! {
+        () = wait => true,
+        () = cancel => false,
     }
 }
 
@@ -265,7 +272,13 @@ async fn main() -> anyhow::Result<ExitCode> {
         usage_error("-o and --checksum take a single link, not a batch");
     }
     if let Some(at) = &cli.at {
-        wait_for_start(at).await;
+        let ctrl_c = async {
+            let _ = tokio::signal::ctrl_c().await;
+        };
+        if !wait_for_start(at, ctrl_c).await {
+            println!("Cancelled");
+            return Ok(ExitCode::from(INTERRUPTED));
+        }
     }
     if is_batch {
         return run_batch(cli).await;
@@ -619,5 +632,24 @@ impl Write for BarWriter {
 
     fn flush(&mut self) -> io::Result<()> {
         io::stderr().flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn cancel_ends_the_at_wait_without_starting() {
+        let started = wait_for_start("2099-01-01T00:00", std::future::ready(())).await;
+        assert!(!started);
+    }
+
+    #[tokio::test]
+    async fn at_wait_ends_normally_when_not_cancelled() {
+        std::env::set_var("RDM_TEST_NOW", "2026-03-09T01:29");
+        let started = wait_for_start("2026-03-09T01:30", std::future::pending()).await;
+        std::env::remove_var("RDM_TEST_NOW");
+        assert!(started);
     }
 }

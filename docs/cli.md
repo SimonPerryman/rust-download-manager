@@ -90,7 +90,7 @@ rdm --at 2026-12-01T22:00 -i urls.txt --on-finish shutdown
 ```
 
 `--at` waits in the foreground, so rdm has to stay running until the time
-comes; Ctrl-C while waiting just ends rdm, with nothing downloaded. A
+comes; Ctrl-C while waiting prints `Cancelled`, downloads nothing and exits `130`. A
 time that isn't `HH:MM` or `YYYY-MM-DDTHH:MM`, or an action other than
 `sleep` or `shutdown`, is a usage error (exit `2`).
 
@@ -153,7 +153,7 @@ To discard a partial download instead, delete its `<file>.part` and
 | `1` | The download failed; for a batch, at least one file failed. Also when `--on-finish` is refused by the machine. |
 | `2` | Invalid arguments (printed with the usage). |
 | `101` | rdm hit a bug (a panic); see [Troubleshooting](#troubleshooting-and-bug-reports). |
-| `130` | Paused by Ctrl-C; run the same command again to resume. Also Ctrl-C during the `--on-finish` countdown. |
+| `130` | Paused by Ctrl-C; run the same command again to resume. Also Ctrl-C while `--at` waits (nothing was started) or during the `--on-finish` countdown. |
 
 ## Output and logging
 
