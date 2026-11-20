@@ -707,6 +707,43 @@ async fn cli_ctrl_c_pauses_then_rerun_resumes() {
     assert_eq!(std::fs::read(&out).unwrap(), common::payload());
 }
 
+/// Ctrl-C while `--at` waits cancels: nothing is downloaded and rdm exits
+/// 130. Unix-only for the same reason as above; the wait's cancellation is
+/// also unit-tested in `src/main.rs` for every platform.
+#[cfg(unix)]
+#[tokio::test]
+async fn ctrl_c_during_at_wait_exits_130_without_downloading() {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("never.bin");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rdm"))
+        .args(["--at", "2099-01-01T00:00", "-o"])
+        .arg(&out)
+        .arg(server.url("/file"))
+        .stdout(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("spawn rdm");
+    let pid = child.id().expect("child pid").to_string();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let first = lines.next_line().await.unwrap().unwrap_or_default();
+    assert!(first.starts_with("Waiting until"), "{first}");
+
+    let sent = Command::new("kill")
+        .args(["-INT", &pid])
+        .status()
+        .await
+        .expect("run kill");
+    assert!(sent.success());
+    let status = child.wait().await.expect("wait for rdm");
+
+    assert_eq!(status.code(), Some(130));
+    assert!(!out.exists() && !state::part_path(&out).exists());
+}
+
 /// A failed download reports its error once (the CLI's own message), not again
 /// as an engine ERROR log line.
 #[tokio::test]
