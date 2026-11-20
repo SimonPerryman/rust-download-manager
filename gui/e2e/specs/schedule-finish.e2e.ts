@@ -211,8 +211,11 @@ describe("rdm GUI when downloads finish", () => {
       "title",
       "Just the file's name. Example: report.zip",
     );
-    expect(await browser.execute(() => document.activeElement?.getAttribute("aria-label"))).toBe(
-      "Arguments",
+    // Focus returns on the next animation frame, which a slow runner can reach after this line.
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Arguments"),
+      { timeoutMsg: "focus never returned to Arguments" },
     );
     await $('[data-testid="command-submit"]').click();
     await waitForGone(FORM);
