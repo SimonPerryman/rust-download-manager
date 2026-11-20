@@ -235,6 +235,24 @@ export async function clock(hhmm: string): Promise<string> {
   return `${h % 12 === 0 ? 12 : h % 12}:${hhmm.slice(3, 5)} ${h < 12 ? "AM" : "PM"}`;
 }
 
+/**
+ * The next "HH:MM" as the app words a moment, by the webview's own clock: `clock(hhmm)` when that
+ * time is still ahead today, else with its weekday ("Sat 12:00 AM"), the way `whenLabel` and
+ * `wording` in the app do. Use it wherever the whole label is asserted; `clock()` alone is right
+ * only for a time already known to be today or typed back verbatim.
+ */
+export async function clockWhen(hhmm: string): Promise<string> {
+  const day = await browser.execute((t) => {
+    const now = new Date();
+    const [h, m] = t.split(":").map(Number);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m);
+    if (today.getTime() >= now.getTime()) return "";
+    return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][(now.getDay() + 1) % 7];
+  }, hhmm);
+  const time = await clock(hhmm);
+  return day === "" ? time : `${day} ${time}`;
+}
+
 /** Calls a backend command directly, without touching the page (so focus stays put). */
 export async function invoke<T = unknown>(
   cmd: string,
