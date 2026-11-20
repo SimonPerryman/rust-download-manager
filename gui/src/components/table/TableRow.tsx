@@ -34,6 +34,8 @@ type Props = {
   cursor: boolean;
   /** Place in the waiting queue (0 starts next), or -1 when not waiting. */
   queueIndex: number;
+  /** The waiting row that starts first. */
+  nextUp: boolean;
   /** How a queue drag draws this row, if one is under way. */
   drag: "dragging" | "drop-before" | "drop-after" | null;
   onSelect: (id: number, mods: Modifiers) => void;
@@ -59,6 +61,7 @@ export function TableRow({
   selected,
   cursor,
   queueIndex,
+  nextUp,
   drag,
   details,
   onSelect,
@@ -71,7 +74,6 @@ export function TableRow({
   const downloading = d.status === "downloading";
   const missing = isMissing(d);
   // A row a closed window holds says what it waits for instead.
-  const nextUp = queueIndex === 0 && d.window_until === null;
   const fresh = lingering && freshAt != null;
   // Fixed per mount: re-setting animation-delay on a running animation re-times it,
   // so a fresh value every render would run the tint ahead of the clock.

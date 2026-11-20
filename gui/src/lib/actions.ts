@@ -3,7 +3,7 @@
 import { wording } from "./startAt";
 import type { CommandAction, PowerAction, PowerStatus, WaitReason } from "./types";
 
-export const POWER_ACTIONS: readonly PowerAction[] = ["shutdown", "sleep", "hibernate"];
+export const POWER_ACTIONS: readonly PowerAction[] = ["sleep", "shutdown", "hibernate"];
 
 /** The action as a menu choice. */
 export const powerLabel = (a: PowerAction): string =>

@@ -9,6 +9,12 @@ export function queueOrder(ds: readonly DownloadSnapshot[]): number[] {
   return ds.filter((d) => d.status === "queued" && d.start_at === null).map((d) => d.id);
 }
 
+/** The waiting row that starts first: skips rows a closed window holds, which say what they wait for. */
+export function nextUpId(ds: readonly DownloadSnapshot[]): number | null {
+  const d = ds.find((x) => x.status === "queued" && x.start_at === null && x.window_until === null);
+  return d ? d.id : null;
+}
+
 /** The index Alt+↑ (`delta` -1) or Alt+↓ (+1) moves `id` to, or null when it can't move. */
 export function stepIndex(queue: readonly number[], id: number, delta: number): number | null {
   const i = queue.indexOf(id);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropIndex, nearestDrop, queueOrder, stepIndex } from "./queue";
+import { dropIndex, nearestDrop, nextUpId, queueOrder, stepIndex } from "./queue";
 import { snap } from "./testSnapshot";
 
 describe("queueOrder", () => {
@@ -60,5 +60,23 @@ describe("nearestDrop", () => {
   });
   it("is null with no other row", () => {
     expect(nearestDrop([rows[0]], 1, 10)).toBeNull();
+  });
+});
+
+describe("nextUpId", () => {
+  it("skips a first waiting row a closed window holds", () => {
+    const ds = [
+      snap({ id: 1, status: "queued", window_until: "2099-01-01T22:00" }),
+      snap({ id: 2, status: "queued" }),
+      snap({ id: 3, status: "queued" }),
+    ];
+    expect(nextUpId(ds)).toBe(2);
+  });
+
+  it("is null when nothing can start", () => {
+    expect(
+      nextUpId([snap({ id: 1, status: "queued", window_until: "2099-01-01T22:00" })]),
+    ).toBeNull();
+    expect(nextUpId([snap({ id: 1, status: "downloading" })])).toBeNull();
   });
 });
