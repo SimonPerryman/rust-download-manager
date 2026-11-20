@@ -195,33 +195,40 @@ ramping follow-ups shipped in M10; ramp window tuning was dropped (below). These
 
 ### From scheduling, in priority order
 
-1. **Scope: pick, don't type, and warn when a rule matches nothing**
-   ([[milestone-13-scheduling]]): a rule's tag becomes a select of existing
-   tags, like batch is today, and the host field suggests the hosts of
-   current downloads. A rule whose tag, batch or host matches no download
+1. **Scope box: type or pick, and warn when a rule matches nothing**
+   ([[milestone-13-scheduling]]): a rule's tag is a box you can type in. It
+   suggests the tags that exist and still accepts a new one, so a rule can be
+   set up before any download has the tag. The host field suggests the hosts
+   of current downloads. A rule whose tag, batch or host matches no download
    shows an amber warning icon and, under its sentence, the reason as
    visible text ("No downloads have the tag course-2"); the same line shows
-   in the form under the host field. It warns and never blocks saving, since
-   a host rule for a site not yet used is fine. The tag, batch or host name
-   in a rule's sentence uses the tag chip style.
+   in the form under the field. It warns and never blocks saving. The tag,
+   batch or host name in a rule's sentence uses the tag chip style. This
+   also replaces the oversized tag suggestion list.
 2. **Several scopes on one rule**: a rule can name several tags, batches
    and hosts. Any of them within a kind, all kinds together ("tagged
-   course-2 or course-3, from cdn.example.com"). A "Limit to…" menu adds a
-   Tags, Batches or Hosts row, each a multi-select of chips; long lists in
-   a rule's sentence shorten to "+2 more" with the full list on hover. The
-   saved scope becomes three lists, and an old single scope loads as a list
-   of one. The shared speed limiter keys on the combined scope.
-3. **Typed scope entry**: `tag:`, `batch:` and `host:` tokens in one box,
-   with suggestions as you type. It sits over the form from item 2, shows
-   what it understood and never saves by itself, like the free-text entry
-   that M13 left out.
-4. **Schedule history**: a saved log of what schedules did (a window
-   opening or closing, how many downloads it paused or resumed, a scheduled
-   start firing or being missed, a power action running or cancelled) and,
-   per run, what it downloaded ("Mon 22:00 to 08:00: 14 files, 12.3 GB"), as
-   a History section in Schedules. Open: how long entries are kept, and
-   whether the per-run totals come from what the engine already stores per
-   download or need new fields.
+   course-2 or course-3, from cdn.example.com"). The form has a row per
+   kind (Tags, Batches, Hosts), each a typing box that adds chips; an empty
+   row collapses to a "+ Add" link. Long lists in a rule's sentence shorten
+   to "+2 more" with the full list on hover. The saved scope becomes three
+   lists, and an old single scope loads as a list of one. The shared speed
+   limiter keys on the combined scope. Typed `tag:` / `host:` tokens in one
+   box stay a possible shortcut for later.
+3. **History**: one event store (a `history.jsonl` file beside the other
+   saved data, entries kept 90 days, 20 MB in total) recording a window
+   opening or closing, a download held, started or paused by a schedule, a
+   scheduled start missed, a command or power action running, and a tag
+   added or removed. Each event has a time, a kind, an optional download and
+   an optional rule, and a few details. Two views read it. The Log tab's
+   lines gain a small type column and show the download's events alongside
+   the engine lines, with no new controls. A rule's `···` menu gets History,
+   a dialog grouped by day (a closing window carries its totals, such as
+   "14 files, 12.3 GB"). A bulk tag edit logs one event per download; a
+   removed download's events go with its log.
+4. **Small scheduling fixes**: Sleep first in the power menu; the details
+   pane says when a download is waiting for a schedule window, not "Queued
+   for a free slot"; when the first waiting row is held by a window and the
+   second can start, the second says "Next up".
 5. **`--at` and Ctrl-C**: nothing handles Ctrl-C while `--at` waits, so the
    exit code is whatever the operating system gives a killed process. Add a
    handler with a documented exit code.
@@ -236,6 +243,11 @@ ramping follow-ups shipped in M10; ramp window tuning was dropped (below). These
    before sleeping", on by default. Today the power action waits for any
    started command to exit, so a program that stays open (a viewer, an editor)
    holds Sleep until it is closed.
+9. **Blue main buttons in dark mode**: the solid blue is the brightest thing
+   on screen. An app-wide change (softer solid, or a tinted fill), so its own
+   piece of work.
+10. **Copy and Save as icons** (Log tab): the two text buttons in the Log
+    tab's bar would read better as icon buttons with tooltips.
 
 ## Candidate crates
 
