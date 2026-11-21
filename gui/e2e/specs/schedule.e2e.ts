@@ -8,7 +8,15 @@
 // The rules live in the shared app state, so the spec empties them before and after.
 
 import { $, $$, browser, expect } from "@wdio/globals";
-import { clock, clockWhen, invoke, retype, selectFilter, waitForGone, waitForText } from "../helpers";
+import {
+  clock,
+  clockWhen,
+  invoke,
+  retype,
+  selectFilter,
+  waitForGone,
+  waitForText,
+} from "../helpers";
 
 const SCHEDULES_LINK = '[data-testid="schedules-link"]';
 const VIEW = '[data-testid="schedules-view"]';
