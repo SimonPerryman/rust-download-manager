@@ -7,6 +7,7 @@ import { $, $$, browser, expect } from "@wdio/globals";
 import {
   baseUrl,
   clock,
+  clockWhen,
   engineRows,
   invoke,
   newIds,
@@ -158,7 +159,7 @@ describe("rdm GUI scoped schedule rule", () => {
 
     await selectFilter("all");
     await rowById(held).waitForExist();
-    await waitForText(`tr[data-id="${held}"]`, `Queued until ${await clock(at(hours + 2))}`);
+    await waitForText(`tr[data-id="${held}"]`, `Queued until ${await clockWhen(at(hours + 2))}`);
     await expect(rowById(held)).not.toHaveAttribute("data-next-up");
     await waitForStatus(free, "completed");
     const freeText = await browser.execute(

@@ -20,6 +20,7 @@ import {
   waitForStatus,
   waitForText,
   clock,
+  clockWhen,
   newIds,
   ADD_DIALOG,
 } from "../helpers";
@@ -72,7 +73,7 @@ describe("rdm GUI start time", () => {
     ids.push(...(await newIds(before, 1)));
     const id = ids[0];
     await rowById(id).waitForExist();
-    await waitForText(`tr[data-id="${id}"]`, `Scheduled for ${await clock(time)}`);
+    await waitForText(`tr[data-id="${id}"]`, `Scheduled for ${await clockWhen(time)}`);
 
     // Held for two hours: a link this small would be done by now if it were in the queue.
     await browser.pause(1500);

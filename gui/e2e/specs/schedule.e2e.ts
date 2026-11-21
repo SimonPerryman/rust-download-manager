@@ -8,7 +8,15 @@
 // The rules live in the shared app state, so the spec empties them before and after.
 
 import { $, $$, browser, expect } from "@wdio/globals";
-import { clock, invoke, retype, selectFilter, waitForGone, waitForText } from "../helpers";
+import {
+  clock,
+  clockWhen,
+  invoke,
+  retype,
+  selectFilter,
+  waitForGone,
+  waitForText,
+} from "../helpers";
 
 const SCHEDULES_LINK = '[data-testid="schedules-link"]';
 const VIEW = '[data-testid="schedules-view"]';
@@ -184,7 +192,7 @@ describe("rdm GUI queue window", () => {
       `${RULE}:nth-child(2) [data-testid="rule-summary"]`,
       `200 KB/s, ${await clock(win.start)}–${await clock(win.end)}, daily`,
     );
-    await waitForText(STATUS, `A 200 KB/s cap starts at ${await clock(win.start)}.`);
+    await waitForText(STATUS, `A 200 KB/s cap starts at ${await clockWhen(win.start)}.`);
 
     const saved = await getSchedule();
     expect(saved.speed_entries).toHaveLength(1);
