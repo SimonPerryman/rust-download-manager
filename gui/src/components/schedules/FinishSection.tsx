@@ -119,10 +119,10 @@ export function FinishSection({ actions, status, save, onError }: Props) {
         <CommandForm
           initial={command}
           onClose={() => setForm(null)}
-          onSubmit={async (program, args) => {
+          onSubmit={async (program, args, wait_for_exit) => {
             await save({
               ...actions,
-              command: { enabled: form.enable || command.enabled, program, args },
+              command: { enabled: form.enable || command.enabled, program, args, wait_for_exit },
             });
             setForm(null);
           }}

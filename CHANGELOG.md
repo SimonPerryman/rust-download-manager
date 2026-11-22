@@ -22,6 +22,9 @@ desktop app share one version.
   Each is one line with a fixed title (**After each download**, **After all
   downloads**) and a chip: press it to edit the command, or to pick Sleep,
   Hibernate or Shut down.
+- **Wait for it to finish before sleeping**, a switch on the command (on by
+  default): switch it off for a program that stays open, such as a viewer, so
+  it doesn't hold Sleep until it is closed.
 - `rdm --at <time>` waits until a local time before downloading, and
   `rdm --on-finish <sleep|shutdown>` puts the machine to sleep or shuts it
   down after the run (CLI).

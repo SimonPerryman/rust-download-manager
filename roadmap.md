@@ -201,10 +201,6 @@ ramping follow-ups shipped in M10; ramp window tuning was dropped (below). These
 2. **Sidebar growth**: the Folders and Tags lists can grow without limit;
    options are collapsible sections that remember their state, a Show more
    cap, or a scroll area per section.
-3. **Wait for the command**: a per-command switch, "Wait for it to finish
-   before sleeping", on by default. Today the power action waits for any
-   started command to exit, so a program that stays open (a viewer, an editor)
-   holds Sleep until it is closed.
 
 ## Candidate crates
 

@@ -226,7 +226,8 @@ fake one), and saved with the settings. The CLI has only the one-off forms
   download (memory only) and doesn't touch its status. *Power action* arms
   when the queue empties and counts 60 seconds, checked every second, but
   only while nothing is running, waiting, held by the queue window or
-  scheduled for later and no command is running; anything that shows up
+  scheduled for later and no command it waits for is running (a command
+  saved with `wait_for_exit` off, default on, never holds it); anything that shows up
   during the countdown drops it, and Cancel ends it. A power action goes
   through a backend trait: the GUI and CLI install the real one, a Manager
   nobody gave one refuses, and tests use a fake. Both actions are saved with

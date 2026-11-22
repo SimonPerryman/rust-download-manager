@@ -150,6 +150,7 @@ fn probe_command(out: &Path, code: i32, gate: Option<&Path>) -> CommandAction {
             "{download_name}".into(),
             "{download_path}".into(),
         ],
+        wait_for_exit: true,
     }
 }
 
@@ -373,6 +374,36 @@ async fn it_waits_for_a_running_command_to_exit() {
 }
 
 #[tokio::test]
+async fn it_does_not_wait_for_a_command_that_is_set_not_to_be_waited_for() {
+    let r = rig().await;
+    let gate = r.dir.path().join("release");
+    let out = r.dir.path().join("out.txt");
+    let mut command = probe_command(&out, 0, Some(&gate));
+    command.wait_for_exit = false;
+    r.mgr
+        .set_post_actions(with_command(command, Some(PowerAction::Hibernate)));
+    let id = r.mgr.add(r.server.url("/file"), r.dir.path(), None, None);
+    wait_status(&r.mgr, id, Status::Completed).await;
+
+    // The command is still held at its gate, yet the countdown runs.
+    wait_power(&r.mgr, countdown(60, PowerAction::Hibernate)).await;
+    assert!(!gate.exists());
+    r.mgr.advance_actions_clock(60);
+    assert_eq!(r.power.done(), [PowerAction::Hibernate]);
+    std::fs::write(&gate, "").unwrap();
+    wait_for("the command's output", || out.exists()).await;
+}
+
+#[test]
+fn a_saved_command_without_the_switch_loads_as_waiting() {
+    let old: PostActions =
+        serde_json::from_str(r#"{"command":{"enabled":true,"program":"scan","args":[]}}"#).unwrap();
+    assert!(old.command.wait_for_exit);
+    let off: PostActions = serde_json::from_str(r#"{"command":{"wait_for_exit":false}}"#).unwrap();
+    assert!(!off.command.wait_for_exit);
+}
+
+#[tokio::test]
 async fn a_backend_that_refuses_is_reported() {
     let r = rig().await;
     // What every Manager has until a frontend installs a real backend.
@@ -457,6 +488,7 @@ async fn a_command_that_cannot_start_warns_too() {
             .to_string_lossy()
             .into_owned(),
         args: vec!["{download_path}".into()],
+        wait_for_exit: true,
     };
     r.mgr.set_post_actions(with_command(missing, None));
     let id = r.mgr.add(r.server.url("/file"), r.dir.path(), None, None);
@@ -486,6 +518,7 @@ async fn actions_are_saved_with_settings_and_old_files_load_unchanged() {
             enabled: true,
             program: "scan".into(),
             args: vec!["--file".into(), "{download_path}".into()],
+            wait_for_exit: false,
         },
         Some(PowerAction::Sleep),
     );

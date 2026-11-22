@@ -71,7 +71,7 @@ impl std::str::FromStr for PowerAction {
 }
 
 /// Run a command after each download. Saved with the settings.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CommandAction {
     /// Off unless switched on.
@@ -81,6 +81,20 @@ pub struct CommandAction {
     /// One argument per entry; `{download_path}` and `{download_name}` in each are filled in
     /// with the finished file's path and name.
     pub args: Vec<String>,
+    /// Hold the power action until the command exits. Off lets a program that
+    /// stays open (a viewer, an editor) leave the power action alone.
+    pub wait_for_exit: bool,
+}
+
+impl Default for CommandAction {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            program: String::new(),
+            args: Vec::new(),
+            wait_for_exit: true,
+        }
+    }
 }
 
 /// Power the machine down when everything is done. Saved with the settings.
