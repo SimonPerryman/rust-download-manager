@@ -2,13 +2,18 @@
 // apart from the e2e suite (whose specs glob doesn't match it). Drives the
 // real built app against the fixture server and saves PNGs to
 // docs/screenshots/. App state and downloads live under a short, neutral dir
-// (target/screenshots by default) because folder names show in the sidebar.
+// (target/screenshots/<spec> by default) because folder names show in the sidebar.
 
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { baseConfig, repoRoot, startFixture, startTauriDriver, stopAll } from "./launch";
 
-const shotsRoot = process.env.RDM_SHOTS_ROOT ?? path.join(repoRoot, "target", "screenshots");
+// One folder per spec: run-screenshots.mjs runs each spec on its own and names it here, so
+// downloads from one spec never show in another's shots.
+const shotsRoot = path.join(
+  process.env.RDM_SHOTS_ROOT ?? path.join(repoRoot, "target", "screenshots"),
+  process.env.RDM_SHOTS_NAME ?? "adhoc",
+);
 
 // The largest file the session serves; the fixture holds this many bytes in memory.
 const SEG_LEN = 100 * 1000 * 1000;
