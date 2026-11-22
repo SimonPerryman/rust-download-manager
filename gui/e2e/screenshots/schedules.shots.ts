@@ -55,16 +55,17 @@ describe("schedules screenshot", () => {
         power: { enabled: false, action: "shutdown" },
       },
     });
-    for (const [name, startAt] of [
-      ["ubuntu.iso", "22:00"],
-      ["backup.zip", "03:00"],
-    ]) {
+    // One download carries the "work" tag, so the tag rule above matches something.
+    for (const [name, startAt, tags] of [
+      ["ubuntu.iso", "22:00", ["work"]],
+      ["backup.zip", "03:00", null],
+    ] as const) {
       await invoke("add_download", {
         url: `${baseUrl}/seg/${10 * 1000 * 1000}/${name}`,
         dir: null,
         checksum: null,
         limit: null,
-        tags: null,
+        tags,
         startAt,
       });
     }
