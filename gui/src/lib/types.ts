@@ -361,6 +361,8 @@ export interface CommandAction {
   program: string;
   /** One argument per entry. */
   args: string[];
+  /** Hold the power action until the command exits. */
+  wait_for_exit: boolean;
 }
 
 /** Both actions that run when downloads finish; global and off by default. */

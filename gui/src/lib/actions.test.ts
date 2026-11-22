@@ -16,10 +16,15 @@ import {
 
 describe("the command row", () => {
   it("reads as the program and its arguments", () => {
-    expect(commandLine({ enabled: true, program: "scan.exe", args: ["{download_path}"] })).toBe(
-      "scan.exe {download_path}",
-    );
-    expect(commandLine({ enabled: false, program: "", args: [] })).toBe("");
+    expect(
+      commandLine({
+        enabled: true,
+        program: "scan.exe",
+        args: ["{download_path}"],
+        wait_for_exit: true,
+      }),
+    ).toBe("scan.exe {download_path}");
+    expect(commandLine({ enabled: false, program: "", args: [], wait_for_exit: true })).toBe("");
   });
 
   it("keeps one argument per line, spaces and all, and drops blank lines", () => {

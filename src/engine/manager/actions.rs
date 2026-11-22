@@ -216,11 +216,14 @@ impl Inner {
             if !command.enabled || command.program.is_empty() {
                 return;
             }
-            st.actions.commands_running += 1;
-            let _ = self.actions_eval(st, 0);
+            if command.wait_for_exit {
+                st.actions.commands_running += 1;
+                let _ = self.actions_eval(st, 0);
+            }
             command
         };
         let inner = self.clone();
+        let waited = command.wait_for_exit;
         let program = std::path::Path::new(&command.program)
             .file_name()
             .map_or_else(
@@ -245,7 +248,9 @@ impl Inner {
             ));
             {
                 let st = &mut *lock(&inner.state);
-                st.actions.commands_running = st.actions.commands_running.saturating_sub(1);
+                if waited {
+                    st.actions.commands_running = st.actions.commands_running.saturating_sub(1);
+                }
                 if let (Err(message), Some(e)) = (outcome, st.entries.get_mut(&id)) {
                     tracing::warn!("The command for download {id}: {message}");
                     e.command_warning = Some(message);

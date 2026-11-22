@@ -10,11 +10,12 @@ import type { CommandAction } from "../../lib/types";
 import { trapTab } from "../dialogs/trapTab";
 import { X } from "../icons/X";
 import { Field, FIELD } from "./FormField";
+import { Switch } from "./Switch";
 
 type Props = {
   initial: CommandAction;
   /** Saves the command; rejects with why it was refused. */
-  onSubmit: (program: string, args: string[]) => Promise<void>;
+  onSubmit: (program: string, args: string[], waitForExit: boolean) => Promise<void>;
   onClose: () => void;
 };
 
@@ -23,6 +24,7 @@ type Props = {
 export function CommandForm({ initial, onSubmit, onClose }: Props) {
   const [program, setProgram] = useState(initial.program);
   const [args, setArgs] = useState(argsText(initial.args));
+  const [waitForExit, setWaitForExit] = useState(initial.wait_for_exit);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // An untouched empty field isn't an error yet.
@@ -67,7 +69,7 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await onSubmit(program.trim(), argsFromText(args));
+      await onSubmit(program.trim(), argsFromText(args), waitForExit);
     } catch (e) {
       setBusy(false);
       setError(String(e));
@@ -150,6 +152,16 @@ export function CommandForm({ initial, onSubmit, onClose }: Props) {
                 ))}
               </div>
             </Field>
+
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm">Wait for it to finish before sleeping</span>
+              <Switch
+                checked={waitForExit}
+                label="Wait for it to finish before sleeping"
+                testId="command-wait"
+                onChange={setWaitForExit}
+              />
+            </div>
 
             <p data-testid="command-rights" className="text-xs text-g600">
               Runs with your rights.

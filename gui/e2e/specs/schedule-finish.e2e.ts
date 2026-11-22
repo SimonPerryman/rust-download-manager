@@ -32,16 +32,17 @@ const COMMAND_CHIP = '[data-testid="finish-command-chip"]';
 const POWER_CHIP = '[data-testid="finish-power-chip"]';
 const POWER_MENU = '[data-testid="finish-power-menu"]';
 const FORM = '[role="dialog"][aria-label="Edit command"]';
+const WAIT_SWITCH = `${FORM} [data-testid="command-wait"]`;
 const NOTICE = '[data-testid="power-notice"]';
 const POWER_LOG = process.env.RDM_POWER_LOG!;
 
 interface Saved {
-  command: { enabled: boolean; program: string; args: string[] };
+  command: { enabled: boolean; program: string; args: string[]; wait_for_exit: boolean };
   power: { enabled: boolean; action: string };
 }
 
 const OFF: Saved = {
-  command: { enabled: false, program: "", args: [] },
+  command: { enabled: false, program: "", args: [], wait_for_exit: true },
   power: { enabled: false, action: "shutdown" },
 };
 
@@ -186,6 +187,7 @@ describe("rdm GUI when downloads finish", () => {
       enabled: true,
       program: "rdm-e2e-no-such-program",
       args: ["--scan", "{download_path}"],
+      wait_for_exit: true,
     });
     // The variable is its own token on the chip, with its explanation.
     const tokens = await browser.execute(
@@ -231,6 +233,7 @@ describe("rdm GUI when downloads finish", () => {
           enabled: true,
           program: "rdm-e2e-no-such-program",
           args: ["--scan", "{download_path}"],
+          wait_for_exit: true,
         },
         power: { enabled: false, action: "sleep" },
       },
@@ -238,10 +241,38 @@ describe("rdm GUI when downloads finish", () => {
     await reopen();
   });
 
+  it("saves Wait for it to finish before sleeping off, and shows it again when the form reopens", async () => {
+    await $(COMMAND_CHIP).click();
+    await $(FORM).waitForDisplayed();
+    await waitForText(FORM, "Wait for it to finish before sleeping");
+    const wait = $(WAIT_SWITCH);
+    await expect(wait).toHaveAttribute("aria-checked", "true");
+    await wait.click();
+    await expect(wait).toHaveAttribute("aria-checked", "false");
+    await $('[data-testid="command-submit"]').click();
+    await waitForGone(FORM);
+    expect((await saved()).command.wait_for_exit).toBe(false);
+
+    await $(COMMAND_CHIP).click();
+    await $(FORM).waitForDisplayed();
+    await expect($(WAIT_SWITCH)).toHaveAttribute("aria-checked", "false");
+    await $("button=Cancel").click();
+    await waitForGone(FORM);
+
+    // On again, as the later tests expect.
+    await invoke("set_post_actions", {
+      actions: { ...(await saved()), command: { ...(await saved()).command, wait_for_exit: true } },
+    });
+    await reopen();
+  });
+
   it("cuts a long command with an ellipsis at the end and keeps the whole line as its tooltip", async () => {
     const program = `C:\\Tools\\${"scan-".repeat(30)}viewer.exe`;
     await invoke("set_post_actions", {
-      actions: { ...OFF, command: { enabled: true, program, args: ["{download_path}"] } },
+      actions: {
+        ...OFF,
+        command: { enabled: true, program, args: ["{download_path}"], wait_for_exit: true },
+      },
     });
     await reopen();
     await waitForText(COMMAND_CHIP, "C:\\Tools\\scan-");
@@ -261,6 +292,7 @@ describe("rdm GUI when downloads finish", () => {
           enabled: true,
           program: "rdm-e2e-no-such-program",
           args: ["--scan", "{download_path}"],
+          wait_for_exit: true,
         },
         power: { enabled: false, action: "sleep" },
       },

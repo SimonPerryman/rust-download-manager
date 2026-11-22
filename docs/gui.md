@@ -248,6 +248,9 @@ don't type secrets there; put them in the script, or in an environment
 variable the program reads itself. If it can't start or exits with an error,
 the download stays completed and its Progress cell shows an amber warning icon
 beside **Done** (hover it for "Command failed" and the reason).
+**Wait for it to finish before sleeping** (on by default) is a switch in the
+same form; switch it off for a program that stays open, such as a viewer or an
+editor, so it doesn't hold the power action until it is closed.
 
 **After all downloads** puts the computer to sleep, hibernates it or shuts it
 down. Its chip shows which; press it to pick. **Sleep** is low power and wakes
@@ -256,8 +259,8 @@ nothing is left, a notice on every page counts down 60 seconds ("Shutting down
 in 42 s") with **Cancel**; cancelling stops that one countdown and leaves the
 action on. Nothing counts as done while a download is running, waiting for a
 slot, held by the download window, or scheduled to start later (a pending
-**Start at** blocks it), nor while a command is still running, so a scan is
-never cut off. The row says which of these it is waiting for. A download that
+**Start at** blocks it), nor while a command is still running (unless its **Wait for it to
+finish before sleeping** switch is off), so a scan is never cut off. The row says which of these it is waiting for. A download that
 fails counts as finished; one you pause doesn't hold it back.
 
 ## Lanes and details

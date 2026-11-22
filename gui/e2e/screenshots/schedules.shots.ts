@@ -51,7 +51,12 @@ describe("schedules screenshot", () => {
     });
     await invoke("set_post_actions", {
       actions: {
-        command: { enabled: true, program: "scan.exe", args: ["--report", "{download_path}"] },
+        command: {
+          enabled: true,
+          program: "scan.exe",
+          args: ["--report", "{download_path}"],
+          wait_for_exit: true,
+        },
         power: { enabled: false, action: "shutdown" },
       },
     });

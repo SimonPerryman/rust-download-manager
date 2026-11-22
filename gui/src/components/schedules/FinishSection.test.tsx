@@ -10,7 +10,7 @@ import { PowerNotice } from "./PowerNotice";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const OFF: PostActions = {
-  command: { enabled: false, program: "", args: [] },
+  command: { enabled: false, program: "", args: [], wait_for_exit: true },
   power: { enabled: false, action: "shutdown" },
 };
 
@@ -158,7 +158,15 @@ describe("When downloads finish", () => {
   });
 
   it("shows each variable on the chip as a token with its own tooltip", () => {
-    render({ ...OFF, command: { enabled: true, program: "scan.exe", args: ["{download_path}"] } });
+    render({
+      ...OFF,
+      command: {
+        enabled: true,
+        program: "scan.exe",
+        args: ["{download_path}"],
+        wait_for_exit: true,
+      },
+    });
     const tokens = q("finish-command-chip").querySelectorAll("span[title]");
     expect(tokens).toHaveLength(1);
     expect(tokens[0].textContent).toBe("{download_path}");
@@ -169,7 +177,7 @@ describe("When downloads finish", () => {
   it("inserts a variable at the caret, over a selection, and puts focus back", async () => {
     const save = render({
       ...OFF,
-      command: { enabled: false, program: "scan.exe", args: ["--in", "XX"] },
+      command: { enabled: false, program: "scan.exe", args: ["--in", "XX"], wait_for_exit: true },
     });
     click(q("finish-command-chip"));
     const textarea = document.querySelector<HTMLTextAreaElement>("textarea")!;
@@ -197,14 +205,19 @@ describe("When downloads finish", () => {
     );
     expect(save).toHaveBeenCalledWith({
       ...OFF,
-      command: { enabled: false, program: "scan.exe", args: ["--in", "{download_name}"] },
+      command: {
+        enabled: false,
+        program: "scan.exe",
+        args: ["--in", "{download_name}"],
+        wait_for_exit: true,
+      },
     });
   });
 
   it("adds a new last line when the Arguments box was never focused", async () => {
     const save = render({
       ...OFF,
-      command: { enabled: false, program: "scan.exe", args: ["--in"] },
+      command: { enabled: false, program: "scan.exe", args: ["--in"], wait_for_exit: true },
     });
     click(q("finish-command-chip"));
     await act(async () =>
@@ -219,7 +232,12 @@ describe("When downloads finish", () => {
   it("saves the program and one argument per line", async () => {
     const save = render({
       ...OFF,
-      command: { enabled: false, program: "scan.exe", args: ["{download_path}"] },
+      command: {
+        enabled: false,
+        program: "scan.exe",
+        args: ["{download_path}"],
+        wait_for_exit: true,
+      },
     });
     expect(q("finish-command-chip").textContent).toBe("scan.exe {download_path}");
     expect(q("finish-command-chip").getAttribute("title")).toBe("scan.exe {download_path}");
@@ -240,7 +258,28 @@ describe("When downloads finish", () => {
         enabled: false,
         program: "scan.exe",
         args: ["--name", "{download_name} a;b", "{download_path}"],
+        wait_for_exit: true,
       },
+    });
+  });
+
+  it("offers Wait for it to finish before sleeping, on unless saved off, and saves the choice", async () => {
+    const save = render({
+      ...OFF,
+      command: { enabled: true, program: "viewer.exe", args: [], wait_for_exit: true },
+    });
+    click(q("finish-command-chip"));
+    const wait = document.querySelector<HTMLButtonElement>('[data-testid="command-wait"]')!;
+    expect(wait.getAttribute("aria-label")).toBe("Wait for it to finish before sleeping");
+    expect(wait.getAttribute("aria-checked")).toBe("true");
+    act(() => wait.click());
+    expect(wait.getAttribute("aria-checked")).toBe("false");
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-testid="command-submit"]')!.click(),
+    );
+    expect(save).toHaveBeenCalledWith({
+      ...OFF,
+      command: { enabled: true, program: "viewer.exe", args: [], wait_for_exit: false },
     });
   });
 });
