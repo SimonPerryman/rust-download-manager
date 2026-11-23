@@ -89,6 +89,8 @@ describe("rdm GUI history", () => {
   });
 
   it("opens a rule's history from its menu and closes it with Escape", async () => {
+    // The rule was saved behind the app's back, so reload to make the view read it.
+    await browser.refresh();
     await $(SCHEDULES_LINK).click();
     await $(VIEW).waitForDisplayed();
     await $('[data-testid="rule-menu-button"]').click();
