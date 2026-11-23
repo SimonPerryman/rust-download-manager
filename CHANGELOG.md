@@ -5,7 +5,7 @@ listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en
 and rdm uses [Semantic Versioning](https://semver.org/). The CLI and the
 desktop app share one version.
 
-## Unreleased
+## 0.6.0 - 2026-11-23
 
 ### Added
 
@@ -15,7 +15,7 @@ desktop app share one version.
   speed limits that replace the global limit at set times, and a **Start at**
   time for downloads. A start time that passed while rdm was closed is shown
   as missed, with Start all, Reschedule and Dismiss. A window or speed limit
-  can apply to all downloads, a tag, a host or a batch.
+  can apply to all downloads, or to several tags, hosts and batches at once.
 - **When downloads finish** actions: run a program after each download (never
   through a shell, with `{download_path}` and `{download_name}` filled in), and sleep, hibernate
   or shut down when everything is done, after a 60 second countdown with Cancel.
@@ -27,7 +27,7 @@ desktop app share one version.
   it doesn't hold Sleep until it is closed.
 - `rdm --at <time>` waits until a local time before downloading, and
   `rdm --on-finish <sleep|shutdown>` puts the machine to sleep or shuts it
-  down after the run (CLI).
+  down after the run (CLI). Ctrl-C while `--at` waits cancels and exits 130.
 - History in the desktop app: a download's Log tab shows what a schedule did
   to it (held, started, paused, a scheduled start missed), when its command
   ran and when tags were added or removed, among the engine lines with a small
