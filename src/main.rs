@@ -17,6 +17,9 @@ use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
+mod json_events;
+
+use json_events::{emit, Event, ProgressThrottle};
 use rdm::engine::actions::{backend_from_env, PowerAction, POWER_COUNTDOWN_SECS};
 use rdm::engine::schedule::{Clock, FakeClock, LocalDateTime, StartAt, SystemClock};
 use rdm::{
@@ -77,7 +80,10 @@ Examples:
   rdm --at 01:30 https://example.com/big.iso
 
   # put the machine to sleep a minute after everything has downloaded
-  rdm --on-finish sleep -i urls.txt"
+  rdm --on-finish sleep -i urls.txt
+
+  # follow a download from a script: one JSON event per line on stdout
+  rdm --json https://example.com/a.zip | jq -c 'select(.event == \"done\")'"
 )]
 struct Cli {
     /// URL(s) to download. Several links download as a batch.
@@ -160,10 +166,74 @@ struct Cli {
     )]
     on_finish: Option<PowerAction>,
 
+    /// Print one JSON object per line on stdout instead of the progress bar
+    /// and messages: `progress`, `done`, `error`, `paused` events (and for a
+    /// batch `skipped` and a final `summary`), each with a `schema` number and
+    /// the link's `url`. The last line is the result. Messages and logs go to
+    /// stderr. Exit codes are unchanged. Schema in `docs/cli.md`; unstable
+    /// while `schema` is 1.
+    #[arg(long = "json")]
+    json: bool,
+
+    /// Print nothing but errors: no progress bar, no "Downloaded" lines, no
+    /// summary. With `--json`, drops the `progress` events and keeps the
+    /// results. Exit codes are unchanged.
+    #[arg(short = 'q', long = "quiet", conflicts_with = "verbose")]
+    quiet: bool,
+
     /// Also log informational engine events (download start, fallbacks) to
     /// stderr; `RUST_LOG` overrides the level.
     #[arg(short = 'v', long = "verbose")]
     verbose: bool,
+}
+
+/// Where the CLI's own text goes. In `--json` mode stdout carries only events,
+/// so text moves to stderr; `--quiet` drops what isn't an error.
+#[derive(Clone, Copy, Default)]
+struct Out {
+    json: bool,
+    quiet: bool,
+}
+
+impl Out {
+    /// A line about the download's outcome: shown only in plain, non-quiet
+    /// mode (`--json` has its event instead).
+    fn result(self, text: impl std::fmt::Display) {
+        if !self.json && !self.quiet {
+            println!("{text}");
+        }
+    }
+
+    /// Information for a person: stdout, or stderr with `--json`; not with `--quiet`.
+    fn notice(self, text: impl std::fmt::Display) {
+        if self.quiet {
+            return;
+        }
+        self.important(text);
+    }
+
+    /// Like [`Out::notice`] but kept with `--quiet` (a pending shutdown).
+    fn important(self, text: impl std::fmt::Display) {
+        if self.json {
+            eprintln!("{text}");
+        } else {
+            println!("{text}");
+        }
+    }
+
+    /// Whether `progress` events are wanted.
+    fn progress_events(self) -> bool {
+        self.json && !self.quiet
+    }
+
+    /// A progress bar, or a hidden one when the output is JSON or quiet.
+    fn bar(self) -> ProgressBar {
+        if self.json || self.quiet {
+            ProgressBar::hidden()
+        } else {
+            ProgressBar::new(0)
+        }
+    }
 }
 
 /// clap value parser: `sha256:<hex>` → [`Checksum`].
@@ -184,7 +254,11 @@ fn parse_at(s: &str) -> Result<String, String> {
 /// variable (`YYYY-MM-DDTHH:MM`) swaps the system clock for one that starts
 /// there and moves a minute per poll, so tests don't wait in real time.
 /// Returns `false` if `cancel` resolved first (Ctrl-C), so nothing starts.
-async fn wait_for_start(text: &str, cancel: impl std::future::Future<Output = ()>) -> bool {
+async fn wait_for_start(
+    text: &str,
+    out: Out,
+    cancel: impl std::future::Future<Output = ()>,
+) -> bool {
     let test_now = std::env::var("RDM_TEST_NOW")
         .ok()
         .and_then(|v| v.parse::<LocalDateTime>().ok());
@@ -195,10 +269,10 @@ async fn wait_for_start(text: &str, cancel: impl std::future::Future<Output = ()
         None => &system,
     };
     let at = StartAt::parse(text, clock.now()).expect("checked when the arguments were read");
-    println!(
+    out.notice(format!(
         "Waiting until {} to start",
         at.0.to_string().replace('T', " ")
-    );
+    ));
     let wait = async {
         while !at.is_due(clock.now()) {
             match &fake {
@@ -221,7 +295,7 @@ async fn wait_for_start(text: &str, cancel: impl std::future::Future<Output = ()
 /// what would have been done, and `RDM_TEST_POWER_COUNTDOWN` the seconds, so
 /// tests neither wait nor power anything down. Returns the exit code to end
 /// with.
-async fn power_after(action: Option<PowerAction>) -> ExitCode {
+async fn power_after(action: Option<PowerAction>, out: Out) -> ExitCode {
     let Some(action) = action else {
         return ExitCode::SUCCESS;
     };
@@ -229,14 +303,14 @@ async fn power_after(action: Option<PowerAction>) -> ExitCode {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(POWER_COUNTDOWN_SECS);
-    println!(
+    out.important(format!(
         "Everything is done. {} in {secs} s (Ctrl-C to cancel)",
         action.name()
-    );
+    ));
     tokio::select! {
         () = tokio::time::sleep(std::time::Duration::from_secs(secs)) => {}
         _ = tokio::signal::ctrl_c() => {
-            println!("Cancelled");
+            out.important("Cancelled");
             return ExitCode::from(INTERRUPTED);
         }
     }
@@ -266,6 +340,10 @@ fn parse_proxy(s: &str) -> Proxy {
 async fn main() -> anyhow::Result<ExitCode> {
     install_panic_hook();
     let cli = Cli::parse();
+    let out = Out {
+        json: cli.json,
+        quiet: cli.quiet,
+    };
 
     let is_batch = cli.input.is_some() || cli.urls.len() > 1 || is_range_link(&cli.urls[0]);
     if is_batch && (cli.output.is_some() || cli.checksum.is_some()) {
@@ -275,15 +353,19 @@ async fn main() -> anyhow::Result<ExitCode> {
         let ctrl_c = async {
             let _ = tokio::signal::ctrl_c().await;
         };
-        if !wait_for_start(at, ctrl_c).await {
-            println!("Cancelled");
+        if !wait_for_start(at, out, ctrl_c).await {
+            out.notice("Cancelled");
+            if out.json {
+                emit(&Event::Cancelled);
+            }
             return Ok(ExitCode::from(INTERRUPTED));
         }
     }
     if is_batch {
-        return run_batch(cli).await;
+        return run_batch(cli, out).await;
     }
     let on_finish = cli.on_finish;
+    let checksum_algo = cli.checksum.as_ref().map(|c| c.algo.name());
     let url = cli.urls.into_iter().next().expect("clap requires a URL");
 
     let mut req = match cli.output {
@@ -303,14 +385,14 @@ async fn main() -> anyhow::Result<ExitCode> {
     // When the target is known up front (explicit -o), note whether a prior
     // partial exists so we can tell the user we're resuming. The engine does
     // the actual resume off the `.part` + sidecar; this is only a message.
-    if let Some(out) = &req.out {
-        let sidecar = state::sidecar_path(out);
-        if sidecar.exists() && state::downloaded_bytes(out).is_some() {
-            println!("Resuming {}", out.display());
+    if let Some(target) = &req.out {
+        let sidecar = state::sidecar_path(target);
+        if sidecar.exists() && state::downloaded_bytes(target).is_some() {
+            out.notice(format!("Resuming {}", target.display()));
         }
     }
 
-    let bar = ProgressBar::new(0);
+    let bar = out.bar();
     bar.set_style(
         ProgressStyle::with_template(
             "{bar:40.cyan/blue} {bytes}/{total_bytes} ({binary_bytes_per_sec}, eta {eta}) {msg}",
@@ -325,7 +407,12 @@ async fn main() -> anyhow::Result<ExitCode> {
     let control = Control::new().with_limiters([limiter]);
     pause_on_ctrl_c(control.clone(), bar.clone());
 
+    let shown_url = redact_url(&req.url);
+    let mut throttle = ProgressThrottle::new();
     let result = download(&req, &control, |p| {
+        if out.progress_events() && throttle.allow(std::time::Instant::now()) {
+            emit(&Event::progress(&shown_url, &p));
+        }
         if let Some(total) = p.total {
             bar.set_length(total);
         }
@@ -341,20 +428,40 @@ async fn main() -> anyhow::Result<ExitCode> {
 
     match result {
         Ok(summary) => {
-            println!("{}", done_message(&summary, req.checksum.as_ref()));
-            Ok(power_after(on_finish).await)
+            out.result(done_message(&summary, req.checksum.as_ref()));
+            if out.json {
+                emit(&Event::done(&shown_url, &summary, checksum_algo));
+            }
+            Ok(power_after(on_finish, out).await)
         }
         Err(Error::Paused) => {
             eprintln!("{PAUSED_MESSAGE}");
+            if out.json {
+                emit(&Event::Paused { url: &shown_url });
+            }
             Ok(ExitCode::from(INTERRUPTED))
         }
         // A bug caught inside the engine (the hook has already asked for a
         // report): the same exit code as a panic that ends `main`.
         Err(e @ Error::Internal(_)) => {
-            eprintln!("Error: failed to download {}: {e}", redact_url(&req.url));
+            eprintln!("Error: failed to download {shown_url}: {e}");
+            emit_error(out, &shown_url, &e);
             Ok(ExitCode::from(BUG))
         }
-        Err(e) => Err(e).with_context(|| format!("failed to download {}", redact_url(&req.url))),
+        Err(e) => {
+            emit_error(out, &shown_url, &e);
+            Err(e).with_context(|| format!("failed to download {shown_url}"))
+        }
+    }
+}
+
+/// The `error` event for a failed download, in `--json` mode.
+fn emit_error(out: Out, url: &str, e: &Error) {
+    if out.json {
+        emit(&Event::Error {
+            url,
+            message: &redact_urls_in(&e.to_string()),
+        });
     }
 }
 
@@ -434,14 +541,17 @@ enum Item {
 
 /// Download many links, at most `-j` at once, one line per link and a
 /// summary. A failed link never stops the others.
-async fn run_batch(cli: Cli) -> anyhow::Result<ExitCode> {
+async fn run_batch(cli: Cli, out: Out) -> anyhow::Result<ExitCode> {
     let list = batch_list(&cli)?;
     for s in list.skipped.iter().filter(|s| s.reason.is_range_problem()) {
-        eprintln!(
-            "Skipped {}: {}",
-            redact_urls_in(&s.line),
-            s.reason.message(s.count)
-        );
+        let (line, reason) = (redact_urls_in(&s.line), s.reason.message(s.count));
+        eprintln!("Skipped {line}: {reason}");
+        if out.json {
+            emit(&Event::Skipped {
+                line: &line,
+                reason: &reason,
+            });
+        }
     }
     if list.links.is_empty() {
         usage_error("no links to download");
@@ -482,18 +592,26 @@ async fn run_batch(cli: Cli) -> anyhow::Result<ExitCode> {
             } else if no_proxy {
                 req = req.with_proxy(ProxyMode::None);
             }
-            match download(&req, &control, |_| {}).await {
+            let shown = redact_url(&url);
+            let mut throttle = ProgressThrottle::new();
+            let result = download(&req, &control, |p| {
+                if out.progress_events() && throttle.allow(std::time::Instant::now()) {
+                    emit(&Event::progress(&shown, &p));
+                }
+            })
+            .await;
+            match result {
                 Ok(summary) => {
-                    println!("{}", done_message(&summary, None));
+                    out.result(done_message(&summary, None));
+                    if out.json {
+                        emit(&Event::done(&shown, &summary, None));
+                    }
                     Item::Done
                 }
                 Err(Error::Paused) => Item::Stopped,
                 Err(e) => {
-                    eprintln!(
-                        "Failed {}: {}",
-                        redact_url(&url),
-                        redact_urls_in(&e.to_string())
-                    );
+                    eprintln!("Failed {shown}: {}", redact_urls_in(&e.to_string()));
+                    emit_error(out, &shown, &e);
                     Item::Failed
                 }
             }
@@ -512,7 +630,15 @@ async fn run_batch(cli: Cli) -> anyhow::Result<ExitCode> {
     if !list.skipped.is_empty() {
         summary.push_str(&format!(", {} skipped lines", list.skipped.len()));
     }
-    println!("{summary}");
+    out.result(summary);
+    if out.json {
+        emit(&Event::Summary {
+            done,
+            failed,
+            not_finished: stopped,
+            skipped: list.skipped.len(),
+        });
+    }
 
     if stopped > 0 {
         eprintln!("{PAUSED_MESSAGE}");
@@ -521,7 +647,7 @@ async fn run_batch(cli: Cli) -> anyhow::Result<ExitCode> {
     if failed > 0 {
         return Ok(ExitCode::FAILURE);
     }
-    Ok(power_after(cli.on_finish).await)
+    Ok(power_after(cli.on_finish, out).await)
 }
 
 /// Log a panic (a bug in rdm) as an ERROR event, let the default hook print
@@ -641,14 +767,16 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_ends_the_at_wait_without_starting() {
-        let started = wait_for_start("2099-01-01T00:00", std::future::ready(())).await;
+        let started =
+            wait_for_start("2099-01-01T00:00", Out::default(), std::future::ready(())).await;
         assert!(!started);
     }
 
     #[tokio::test]
     async fn at_wait_ends_normally_when_not_cancelled() {
         std::env::set_var("RDM_TEST_NOW", "2026-03-09T01:29");
-        let started = wait_for_start("2026-03-09T01:30", std::future::pending()).await;
+        let started =
+            wait_for_start("2026-03-09T01:30", Out::default(), std::future::pending()).await;
         std::env::remove_var("RDM_TEST_NOW");
         assert!(started);
     }

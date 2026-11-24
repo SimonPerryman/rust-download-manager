@@ -23,6 +23,8 @@ rdm [OPTIONS] -i <FILE>
 | `--on-finish <sleep\|shutdown>` | After every download has finished, wait 60 seconds (Ctrl-C cancels), then put the machine to `sleep` or `shutdown`. Not after a failure or a Ctrl-C. See [Scheduling](#scheduling). |
 | `--proxy <url>` | Download through this proxy instead of the system's: `http://`, `https://`, `socks5://` or `socks5h://` (host names resolved by the proxy), with an optional `user:pass@`, e.g. `socks5h://127.0.0.1:1080`. See [Proxies](#proxies). |
 | `--no-proxy` | Connect directly, ignoring the system's proxy. Can't be combined with `--proxy`. |
+| `--json` | Print one JSON object per line on stdout instead of the progress bar and messages, so a script can follow the download. See [Machine-readable output](#machine-readable-output). |
+| `-q, --quiet` | Print nothing but errors: no progress bar, no `Downloaded` lines, no batch summary. With `--json`, drops the `progress` events and keeps the results. Can't be combined with `-v`. |
 | `-v, --verbose` | Also log informational engine events (how the download started, lanes added, resumes, the checksum result, where it was saved and a summary) to stderr. |
 | `-h, --help` / `-V, --version` | Print help or the version. |
 
@@ -165,6 +167,75 @@ each, such as `Started · 4.00 MB · resumable · 4 pieces, up to 4 lanes` and
 `RUST_LOG` (e.g. `RUST_LOG=debug`) overrides the log level; `debug` adds each
 request's byte range and the server's answer. With `-v`, the first line names
 the version and the OS, e.g. `rdm 0.2.0 · Ubuntu 24.04 LTS (Linux 6.8.0) x86_64`.
+
+## Machine-readable output
+
+`--json` replaces the progress bar and the `Downloaded …` lines with
+[JSON Lines](https://jsonlines.org/): one JSON object per line on stdout,
+flushed as it happens, so a script or agent can follow a download as it
+streams.
+
+```sh
+rdm --json https://example.com/a.zip | jq -c 'select(.event == "done")'
+```
+
+The schema is **unstable while `schema` is `1`**: field names may still
+change in a release. Once it is declared stable, a change that removes or
+renames a field will bump `schema`; new fields and new event names can be
+added without a bump, so ignore what you don't know.
+
+Every line has `schema` (the version) and `event`. `url` is the link as the
+progress shows it, with any login and secret query values redacted. Sizes
+are bytes, speeds bytes per second, times seconds; a value that isn't known
+(no `Content-Length`, no speed yet) is `null`.
+
+| `event` | When | Fields |
+|---|---|---|
+| `progress` | While downloading, at most every 250 ms per link, the first one at once. | `url`, `downloaded`, `total`, `bytes_per_sec`, `eta_secs`, `connections` |
+| `done` | The file is saved (and its checksum matched, if given). | `url`, `path`, `bytes`, `status`, `checksum_verified` |
+| `error` | The download failed. | `url`, `message` |
+| `paused` | Ctrl-C paused it; run the same command to resume. | `url` |
+| `skipped` | (Batch.) A list line that was refused, such as a bad `[a-b]` range. | `line`, `reason` |
+| `cancelled` | Ctrl-C ended the wait for `--at`; nothing started. | none |
+| `summary` | (Batch.) Everything is over. | `done`, `failed`, `not_finished`, `skipped` |
+
+`downloaded` counts bytes on disk, so a resumed download's first `progress`
+starts from what was kept. It never goes down within a download.
+`connections` is how many are open now, including ones still connecting.
+`checksum_verified` is the algorithm (`"sha256"`) when `--checksum` was
+given, else `null`; a mismatch is an `error`, never a `done`. `status` is the
+last HTTP status (206 for a download over several connections).
+
+Example, one link:
+
+```
+{"schema":1,"event":"progress","url":"https://example.com/a.zip","downloaded":65536,"total":4194304,"bytes_per_sec":0,"eta_secs":null,"connections":1}
+{"schema":1,"event":"progress","url":"https://example.com/a.zip","downloaded":2097152,"total":4194304,"bytes_per_sec":3145728,"eta_secs":1,"connections":3}
+{"schema":1,"event":"done","url":"https://example.com/a.zip","path":"/home/me/a.zip","bytes":4194304,"status":206,"checksum_verified":null}
+```
+
+**The last line is the result.** For one link it is `done`, `error`,
+`paused` or (during `--at`) `cancelled`. For a batch it is `summary`; before
+it, each link has its own `done`/`error` (or `paused` if Ctrl-C stopped it)
+and `progress` lines, interleaved, told apart by `url`. A link that failed
+never hides the others. Two exceptions: after `--on-finish`'s countdown is
+cancelled the last line is still the `done`/`summary`, with exit code `130`;
+and a failure before any link starts (an unreadable `-i` file, bad
+arguments) prints only to stderr, with its usual exit code.
+
+**Exit codes don't change** with `--json` or `--quiet`: read them from the
+process as always (the table above), and the events say which link and why.
+
+**Where text goes.** With `--json`, stdout holds only events. The messages
+that would have been on stdout (`Waiting until …`, `Resuming …`, the
+`--on-finish` countdown) go to stderr instead, along with warnings, logs
+(`-v`, `RUST_LOG`) and the `Error: failed to download …` line, which is
+still printed for a person. `--quiet` drops the `Waiting`/`Resuming`
+messages, but a pending `--on-finish` shutdown is still announced.
+
+`--at` just delays the first event: nothing is printed to stdout while rdm
+waits. Resume, `--checksum` and several connections need no special handling:
+they show up as `downloaded`, `checksum_verified` and `connections`.
 
 ## Troubleshooting and bug reports
 
