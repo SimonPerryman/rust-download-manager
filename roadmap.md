@@ -57,11 +57,9 @@ order.
 
 Pick from the top; each is described in the backlog below.
 
-1. **Scheduling & automation**: start/stop at a time, bandwidth schedules,
-   post-download actions.
-2. **Protocols beyond HTTP**: FTP/SFTP, BitTorrent, metalink/mirror failover.
-3. **Content-aware / media**: HLS and DASH manifests, muxed to one file.
-4. **Browser integration**: native-messaging host and extension.
+1. **Protocols beyond HTTP**: FTP/SFTP, BitTorrent, metalink/mirror failover.
+2. **Content-aware / media**: HLS and DASH manifests, muxed to one file.
+3. **Browser integration**: native-messaging host and extension.
 
 Deferred: **Code signing** (cut from M6). Sign the Windows binaries and
 installers and sign and notarise the macOS app, so SmartScreen and
@@ -74,13 +72,16 @@ users.
 
 Shipped from this list: Mark-of-the-Web on Windows, and the smarter-connections
 work ([[milestone-10-smarter-connections]]: re-probe after a settle, shedding
-on a sustained drop, slow-setup warm-up, one wait for rate-limited hosts), and
-missing and moved files ([[milestone-11-missing-and-moved-files]]).
+on a sustained drop, slow-setup warm-up, one wait for rate-limited hosts),
+missing and moved files ([[milestone-11-missing-and-moved-files]]), batch
+downloads ([[milestone-12-batch-downloads]]), and scheduling and automation
+([[milestone-13-scheduling]]: queue window, speed schedule, start-at and
+`--at`, run a command or power action when downloads finish).
 
 ## Backlog (not yet scheduled — parked on purpose)
 
-The first five items of "Up next" come from here; beyond those, roughly in
-priority order, with the large or unrequested items last.
+The items of "Up next" come from here; beyond those, roughly in priority
+order, with the large or unrequested items last.
 
 - **Batch**: site mirroring (the rest is [[milestone-12-batch-downloads]])
 - **Checksum lists**: import a `SHA256SUMS` file, verify many downloads at
@@ -115,10 +116,10 @@ priority order, with the large or unrequested items last.
 - **GUI desktop integration (cut from M5)**: a free-space readout in the
   status bar (needs a `free_space(dir)` command), native OS notifications
   (Tauri notification plugin), tray icon, start with the system.
-- **GUI polish (post-M2)**: density variants (compact/full), alternate layouts/
-  themes beyond the shipped slick light+dark, richer per-download detail views,
-  drag-and-drop / clipboard-URL add. M2 ships one clean slick design; these are
-  deliberately deferred.
+- **GUI polish (post-M2)**: alternate layouts/themes beyond the shipped slick
+  light+dark, and richer per-download detail views. Density variants and
+  drag-and-drop / pasted-URL add have shipped; the rest is deliberately
+  deferred.
 - **Per-app VPN routing** (optional): route only rdm's traffic through a VPN
   without changing the whole machine. (1) Done: SOCKS5/HTTP proxy support
   (`--proxy` and the GUI's Proxy setting), since many VPN services expose a
@@ -128,8 +129,9 @@ priority order, with the large or unrequested items last.
   Windows needs more work. Out of scope: an embedded VPN client, which is
   security-sensitive, needs credentials and duplicates the VPN app's own
   split tunnelling.
-- **Scheduling & automation**: start/stop at a time, bandwidth schedules,
-  post-download actions (run command, shut down, auto-organize by type)
+- **Show the queue order** (GUI): make a queued download's place in the
+  queue visible at a glance (for example a position number or a quiet
+  ordinal), designed with the Refactoring UI principles.
 - **Persistence at scale**: migrate the download-list + history store from JSON
   v1 (chosen at M2) to SQLite (`sqlx`/`rusqlite`) once query/filter/search or
   large histories justify it — likely alongside M4's queue work. JSON v1 sits
@@ -176,37 +178,39 @@ ramping follow-ups shipped in M10; ramp window tuning was dropped (below). These
 
 ### From batch downloads, in priority order
 
-1. **Windows e2e failure** (#162): `missing.e2e.ts` "Find file lists
-   candidates when the file is in several folders" fails with "click
-   intercepted" on Windows, on main too. Linux CI doesn't show it.
-2. **Add to existing batch**: typing the name of a batch that already
+1. **Add to existing batch**: typing the name of a batch that already
    exists offers to add the new links to it and its folder. Today the add
    makes a second batch with the folder `name (1)`.
-3. **Already-downloaded detection**: flag a link that looks already
+2. **Already-downloaded detection**: flag a link that looks already
    downloaded, and give the CLI a no-redownload option that prints the
    existing file's location, with strict (size and checksum) and loose
    (name and size) matching. It also fixes a rerun of `rdm -i` downloading
    finished files again as `name (1)`. Larger than the rest.
-4. **Error banner inset**: a failed row's banner lines up with the file
+3. **Error banner inset**: a failed row's banner lines up with the file
    name, as it always has. Revisit if it still looks off, across every
    view.
-5. **Batch name length**: capped at 64 characters; a one-line change if it
+4. **Batch name length**: capped at 64 characters; a one-line change if it
    should be shorter.
 
 ### From scheduling, in priority order
 
-1. **Typed scope entry**: `tag:`, `batch:` and `host:` tokens in one box,
-   with suggestions as you type. It sits over the scope rows in the
-   schedule form, shows what it understood and never saves by itself.
-2. **Sidebar growth**: the Folders and Tags lists can grow without limit;
+The typed scope box, the history of what schedules, tags and actions did,
+`--at` exiting 130 on Ctrl-C, isolated screenshot specs, waiting for downloads
+to finish before sleeping, and finish rows as chips have all shipped. What is
+left:
+
+1. **Sidebar growth**: the Folders and Tags lists can grow without limit;
    options are collapsible sections that remember their state, a Show more
    cap, or a scroll area per section.
+2. **Dark-mode blue buttons**: an app-wide rework of the blue call-to-action
+   buttons in dark mode, not a one-view fix.
+3. **Log tab Copy and Save as icons**: make the Log tab's Copy and Save
+   buttons icon buttons.
+4. **Dark-mode select popup**: confirm the native select popup (the Schedules
+   form's dropdowns) is dark in dark mode.
 
 ## Candidate crates
 
 `reqwest` (HTTP), `tokio` (async), `futures` (concurrency), `clap` (CLI),
 `indicatif` (CLI progress), `serde` (config/state), `sqlx`/`rusqlite`
 (persistence), `sha2` (checksums). GUI: Tauri (chosen at M2).
-- **Show the queue order** (GUI): make a queued download's place in the
-  queue visible at a glance (for example a position number or a quiet
-  ordinal), designed with the Refactoring UI principles.
