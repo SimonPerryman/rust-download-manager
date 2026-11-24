@@ -19,6 +19,7 @@ command-line tool and a desktop app.
 - **Scheduling (GUI):** a nightly queue window, a speed schedule, a start time, and a command or shutdown when everything is done; `--at` and `--on-finish` in the CLI. [Details](docs/gui.md#schedules)
 - **Archive and tags (GUI):** archive finished downloads and filter by tag.
 - **Missing files (GUI):** finished downloads whose file moved are flagged, and rdm can find them again.
+- **Already downloaded:** the Add dialog flags links whose file is already in the folder; `--skip-existing` skips them in the CLI.
 - **Verified:** optional SHA-256 checksum checked before the file is saved.
 - **Scriptable (CLI):** `--json` streams one JSON event per line, for scripts and agents.
 - **Proxies:** the system proxy by default, or your own HTTP or SOCKS5 proxy.

@@ -19,6 +19,19 @@ describe("open and reveal", () => {
   });
 });
 
+describe("existing file commands", () => {
+  beforeEach(() => invoke.mockReset().mockResolvedValue(null));
+
+  it("send the link and folder, never a path", async () => {
+    await api.checkExisting("http://h/a.bin", "/dl");
+    await api.revealExisting("http://h/a.bin", null);
+    expect(invoke.mock.calls).toEqual([
+      ["check_existing", { url: "http://h/a.bin", dir: "/dl" }],
+      ["reveal_existing", { url: "http://h/a.bin", dir: null }],
+    ]);
+  });
+});
+
 describe("downloadLog", () => {
   beforeEach(() => invoke.mockReset().mockResolvedValue([]));
 

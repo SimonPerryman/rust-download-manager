@@ -305,7 +305,7 @@ size. It uses the same name and size check as Find file.
 ## Already-downloaded files
 
 The engine can tell whether the file a link would be saved as is already on
-disk (`rdm --skip-existing` uses it). It never scans folders: it asks the
+disk (`rdm --skip-existing` and the GUI's Add dialog use it). It never scans folders: it asks the
 server for the file's size and name (a `HEAD`, or a one-byte range request
 when that is refused), then looks at one path, the file's name in the
 destination folder, or the `-o` path.

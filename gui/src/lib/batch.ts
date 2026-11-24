@@ -31,6 +31,10 @@ export type LinkEntry = {
   count: number;
   /** "listed": already in the download list, or "archived": only in the archive (both still added). */
   dup: Known | null;
+  /** Its file is already in the destination folder (the engine's name and size match). */
+  onDisk: boolean;
+  /** Whether an Add includes it: a link already on disk starts un-ticked until re-ticked. */
+  ticked: boolean;
 };
 
 /** Where a URL already is: in the working list, or only in the archive. */
@@ -91,6 +95,8 @@ export function refusalMessage(e: Extract<BatchEntry, { kind: "refused" }>): str
 function linkEntry(
   l: ParsedList["links"][number],
   existing: ReadonlyMap<string, Known>,
+  onDisk: ReadonlySet<string>,
+  reticked: ReadonlySet<string>,
 ): LinkEntry {
   let name = l.url;
   let host = "";
@@ -101,18 +107,35 @@ function linkEntry(
   } catch {
     // The engine vetted the link; if the webview can't read it, show it whole.
   }
-  return { kind: "link", url: l.url, name, host, count: l.count, dup: existing.get(l.url) ?? null };
+  const flagged = onDisk.has(l.url);
+  return {
+    kind: "link",
+    url: l.url,
+    name,
+    host,
+    count: l.count,
+    dup: existing.get(l.url) ?? null,
+    onDisk: flagged,
+    ticked: !flagged || reticked.has(l.url),
+  };
 }
 
 /**
  * The preview's entries from the engine's reading: links in list order with a
  * range's links gathered into one row, then skipped lines and refused ranges.
+ * `onDisk` holds the links whose file the engine found in the destination;
+ * those are un-ticked unless in `reticked` (the user chose Download anyway).
  */
-export function entriesFrom(list: ParsedList, existing: ReadonlyMap<string, Known>): BatchEntry[] {
+export function entriesFrom(
+  list: ParsedList,
+  existing: ReadonlyMap<string, Known>,
+  onDisk: ReadonlySet<string> = new Set(),
+  reticked: ReadonlySet<string> = new Set(),
+): BatchEntry[] {
   const out: BatchEntry[] = [];
   const rows = new Map<number, Extract<BatchEntry, { kind: "pattern" }>>();
   for (const l of list.links) {
-    const link = linkEntry(l, existing);
+    const link = linkEntry(l, existing, onDisk, reticked);
     if (l.pattern == null) {
       out.push(link);
       continue;
@@ -140,13 +163,15 @@ export function entriesFrom(list: ParsedList, existing: ReadonlyMap<string, Know
 }
 
 /** Every link of the preview, a range's included, in list order. */
-function allLinks(entries: readonly BatchEntry[]): LinkEntry[] {
+export function allLinks(entries: readonly BatchEntry[]): LinkEntry[] {
   return entries.flatMap((e) => (e.kind === "link" ? [e] : e.kind === "pattern" ? e.links : []));
 }
 
-/** The links an Add would start, in list order (each once, however often it was listed). */
+/** The links an Add would start, in list order (each once, however often it was listed); un-ticked ones are left out. */
 export function linksToAdd(entries: readonly BatchEntry[]): string[] {
-  return allLinks(entries).map((l) => l.url);
+  return allLinks(entries)
+    .filter((l) => l.ticked)
+    .map((l) => l.url);
 }
 
 /** How a batch add went: how many went in, and the links that didn't with their errors. */
@@ -188,7 +213,7 @@ export function previewSummary(entries: readonly BatchEntry[]): {
   found: string;
   skipped: { label: string; reasons: string[] } | null;
 } {
-  const n = linksToAdd(entries).length;
+  const n = allLinks(entries).length;
   const bad = entries.filter((e) => e.kind === "bad").length;
   const repeats = allLinks(entries).reduce((sum, l) => sum + l.count - 1, 0);
   const found = `${n} link${n === 1 ? "" : "s"} found`;

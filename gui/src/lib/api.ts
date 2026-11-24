@@ -179,6 +179,15 @@ export const retryFailed = () => invoke<void>("retry_failed");
 
 /** The engine's reading of pasted text: its links (with repeat counts) and skipped lines. Rejects a list over the cap. */
 export const previewList = (text: string) => invoke<ParsedList>("preview_list", { text });
+/**
+ * The path of the file `url` would be saved as in `dir` when it is already
+ * there (the engine's loose name and size match), else null. Probes the server.
+ */
+export const checkExisting = (url: string, dir: string | null) =>
+  invoke<string | null>("check_existing", { url, dir });
+/** Show that existing file in its folder. By link: the backend matches again, so the webview can't name a path. */
+export const revealExisting = (url: string, dir: string | null) =>
+  invoke<void>("reveal_existing", { url, dir });
 export const defaultDownloadDir = () => invoke<string>("default_download_dir");
 export const pickFolder = () => invoke<string | null>("pick_folder");
 /** Open a completed download's file. By id: the backend resolves the path, so the webview can't name one. */
