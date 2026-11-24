@@ -61,6 +61,8 @@ describe("archive and tags", () => {
       true,
       "2M",
     );
+    await api.findBatch("Course files");
+    await api.addToBatch(7, ["http://x/a"], "500K", ["iso"]);
     await api.retryBatch(7);
     await api.revealBatch(7);
     expect(invoke.mock.calls).toEqual([
@@ -93,6 +95,11 @@ describe("archive and tags", () => {
           batchLimit: "2M",
           startAt: null,
         },
+      ],
+      ["find_batch", { label: "Course files" }],
+      [
+        "add_to_batch",
+        { batch: 7, urls: ["http://x/a"], limit: "500K", tags: ["iso"], startAt: null },
       ],
       ["retry_batch", { batch: 7 }],
       ["reveal_batch", { batch: 7 }],

@@ -153,6 +153,11 @@ network shares) leaves the file unmarked, and the download still succeeds.
   download's file, makes it `<name> (1)`, and files that clash inside it
   become `name (1).ext`. Retry failed for a batch restarts only that batch's
   failed downloads. Without a name the links are plain downloads.
+  `find_batch` looks a typed name up (trimmed, ignoring case, among batches
+  with files still in the list; the oldest wins on a tie) and `add_to_batch`
+  adds links to that batch: same id and name, in the batch's folder, sharing
+  its limiter. Declining the offer is a plain `add_batch`, which still makes
+  `<name> (1)`. The CLI doesn't use either: its batch isn't a named group.
 - **Speed limits:** `--limit-rate` on the CLI; in the GUI, a global limit and
   an optional per-download limit, both changeable while a download runs. A
   download's limit is shared across all of its connections.

@@ -164,6 +164,14 @@ struct BatchAdded {
     failed: Vec<FailedLink>,
 }
 
+/// A batch a typed name matches, for the Add dialog's offer.
+#[derive(serde::Serialize)]
+struct BatchMatch {
+    id: u64,
+    label: String,
+    files: usize,
+}
+
 #[derive(serde::Serialize)]
 struct FailedLink {
     url: String,
@@ -209,7 +217,45 @@ fn add_batch(
         .manager
         .add_batch(urls, dir, spec, options)
         .map_err(|e| e.to_string())?;
-    Ok(BatchAdded {
+    Ok(batch_added(added))
+}
+
+/// The batch named `label` that a new add could join, if one exists.
+#[tauri::command]
+fn find_batch(state: State<'_, AppState>, label: String) -> Option<BatchMatch> {
+    state.manager.find_batch(&label).map(|m| BatchMatch {
+        id: m.id,
+        label: m.label,
+        files: m.files,
+    })
+}
+
+/// Add several links to the existing batch `batch` (its name, folder and
+/// shared cap). `limit` and `tags` apply to each link.
+#[tauri::command]
+fn add_to_batch(
+    state: State<'_, AppState>,
+    batch: u64,
+    urls: Vec<String>,
+    limit: Option<String>,
+    tags: Option<Vec<String>>,
+    start_at: Option<String>,
+) -> Result<BatchAdded, String> {
+    let options = AddOptions {
+        limit: parse_limit(limit)?,
+        tags: tags.unwrap_or_default(),
+        start_at: parse_start_at(&state, start_at)?,
+        ..AddOptions::default()
+    };
+    let added = state
+        .manager
+        .add_to_batch(batch, urls, options)
+        .map_err(|e| e.to_string())?;
+    Ok(batch_added(added))
+}
+
+fn batch_added(added: rdm::BatchAdded) -> BatchAdded {
+    BatchAdded {
         batch: added.batch,
         added: added.added.len(),
         failed: added
@@ -220,7 +266,7 @@ fn add_batch(
                 error: e.to_string(),
             })
             .collect(),
-    })
+    }
 }
 
 /// Retry the failed downloads of one batch (Retry failed on its group row).
@@ -1317,6 +1363,8 @@ pub fn run() {
             list,
             add_download,
             add_batch,
+            find_batch,
+            add_to_batch,
             retry_batch,
             reveal_batch,
             get_settings,

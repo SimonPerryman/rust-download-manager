@@ -53,7 +53,7 @@ use crate::engine::schedule::{Clock, LocalDateTime, Schedule, StartAt};
 use crate::engine::store::{ChecksumState, DownloadRecord, Settings, Status, Store};
 use crate::engine::tally::Tally;
 use crate::engine::{Checksum, Control, RateLimiter, Segment};
-pub use batches::{BatchAdded, BatchSpec, MAX_BATCH_LABEL_LEN};
+pub use batches::{BatchAdded, BatchMatch, BatchSpec, MAX_BATCH_LABEL_LEN};
 use files::{has_partial, remove_partial};
 pub use find::{FindEvent, FindResult, FoundFile, MatchReason};
 pub use missing::{FolderMatch, FolderRelink, MissingChange, SameFolderOffer};

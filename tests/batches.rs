@@ -348,3 +348,80 @@ async fn retry_batch_touches_only_that_batch() {
     assert_eq!(mgr.retry_batch(9999), 0, "no such batch");
     server.gate().release_all();
 }
+
+/// A typed name finds the batch (trimmed, any case); `add_to_batch` puts new
+/// links in it and its folder, with the same id, name and cap, and a restarted
+/// manager keeps them together. Without using it, the usual `name (1)` folder
+/// still happens.
+#[tokio::test]
+async fn adding_to_an_existing_batch_joins_it_and_its_folder() {
+    const RATE: u64 = 4 * 1024 * 1024;
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    let mgr = manager_in(dir.path());
+    assert!(mgr.find_batch("Course").is_none());
+
+    let first = mgr
+        .add_batch(
+            urls(&server, &["/any/a.bin", "/any/b.bin"]),
+            dir.path(),
+            Some(BatchSpec {
+                label: "Course".into(),
+                folder: true,
+                limit: Some(RATE),
+            }),
+            AddOptions::default(),
+        )
+        .unwrap();
+    let found = mgr.find_batch("  course ").unwrap();
+    assert_eq!(
+        (found.id, found.label.as_str(), found.files),
+        (first.batch.unwrap(), "Course", 2)
+    );
+    assert!(mgr.find_batch("Other").is_none() && mgr.find_batch("  ").is_none());
+
+    let more = mgr
+        .add_to_batch(
+            found.id,
+            urls(&server, &["/any/c.bin"]),
+            AddOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        (more.batch, more.folder.as_deref()),
+        (first.batch, first.folder.as_deref())
+    );
+    let all: Vec<u64> = [first.added.clone(), more.added.clone()].concat();
+    finished(&mgr, &all).await;
+    for &id in &all {
+        let s = snap(&mgr, id);
+        assert_eq!(
+            (s.batch, s.batch_label.as_deref()),
+            (first.batch, Some("Course"))
+        );
+        assert_eq!(s.final_path.unwrap().parent(), first.folder.as_deref());
+    }
+    assert_eq!(mgr.find_batch("Course").unwrap().files, 3);
+    assert_eq!(mgr.batch_limit(found.id), Some(RATE));
+
+    // Declining: a plain add_batch still makes the second batch and folder.
+    let second = mgr
+        .add_batch(
+            urls(&server, &["/any/d.bin", "/any/e.bin"]),
+            dir.path(),
+            named("Course", true),
+            AddOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(second.folder, Some(dir.path().join("Course (1)")));
+    assert_ne!(second.batch, first.batch);
+
+    assert!(mgr
+        .add_to_batch(9999, urls(&server, &["/any/f.bin"]), AddOptions::default())
+        .is_err());
+
+    mgr.shutdown();
+    let again = manager_in(dir.path());
+    assert_eq!(again.find_batch("course").unwrap().id, first.batch.unwrap());
+    assert_eq!(again.find_batch("course").unwrap().files, 3);
+}

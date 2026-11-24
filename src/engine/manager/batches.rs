@@ -51,7 +51,89 @@ pub struct BatchAdded {
     pub failed: Vec<(String, Error)>,
 }
 
+/// An existing batch that a typed name matches, for offering to add to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BatchMatch {
+    /// The batch's id.
+    pub id: u64,
+    /// The batch's name as it was first given.
+    pub label: String,
+    /// How many working (not archived) files it has.
+    pub files: usize,
+}
+
 impl Manager {
+    /// The batch named `label` (trimmed, ignoring case) among those with working
+    /// files, if any. A frontend offers [`Manager::add_to_batch`] on a match
+    /// instead of making a second batch.
+    pub fn find_batch(&self, label: &str) -> Option<BatchMatch> {
+        let want = label.trim().to_lowercase();
+        if want.is_empty() {
+            return None;
+        }
+        let st = lock(&self.inner.state);
+        // Two batches can share a name (made before this offer existed): the
+        // older one wins.
+        let mut files: std::collections::BTreeMap<u64, (String, usize)> = Default::default();
+        for e in st.entries.values().filter(|e| !e.record.archived) {
+            let (Some(id), Some(name)) = (e.record.batch, e.record.batch_label.as_deref()) else {
+                continue;
+            };
+            if name.trim().to_lowercase() == want {
+                files.entry(id).or_insert_with(|| (name.to_string(), 0)).1 += 1;
+            }
+        }
+        let (id, (label, files)) = files.into_iter().next()?;
+        Some(BatchMatch { id, label, files })
+    }
+
+    /// Add `urls` in order to the existing batch `batch`: same name, same
+    /// folder (see [`Manager::batch_folder`]) and shared speed cap. `options`
+    /// applies to each link (`out` is ignored). Fails for an unknown batch.
+    pub fn add_to_batch(
+        &self,
+        batch: u64,
+        urls: Vec<String>,
+        mut options: AddOptions,
+    ) -> Result<BatchAdded> {
+        options.tags = tags::merged(&[], &tags::normalize(&options.tags)?)?;
+        options.out = None;
+        let unknown = || Error::InvalidRequest("that batch no longer exists".into());
+        let dir = self.batch_folder(batch).ok_or_else(unknown)?;
+        let mut out = BatchAdded {
+            batch: Some(batch),
+            folder: Some(dir.clone()),
+            ..BatchAdded::default()
+        };
+        let st = &mut *lock(&self.inner.state);
+        let (label, limiter) = st
+            .entries
+            .values()
+            .filter(|e| e.record.batch == Some(batch))
+            .find_map(|e| Some((e.record.batch_label.clone()?, e.batch_limiter.clone())))
+            .ok_or_else(unknown)?;
+        let group = st.new_group();
+        let mut probes = Vec::new();
+        for url in urls {
+            let tag = BatchTag {
+                id: batch,
+                label: &label,
+                limiter: limiter.clone(),
+            };
+            let (id, probe_url) =
+                self.push_entry(st, url, dir.clone(), options.clone(), Some(tag), group);
+            out.added.push(id);
+            probes.push((id, probe_url));
+        }
+        self.inner.schedule(st);
+        self.inner.persist(st);
+        self.inner.publish(st);
+        for (id, url) in probes {
+            self.inner.spawn_probe(id, url, st.settings.proxy.clone());
+        }
+        Ok(out)
+    }
+
     /// Add `urls` in order, as one batch when there are two or more and `spec`
     /// names it, else as ordinary downloads in `dir`. `options` applies to each
     /// link (`out` is ignored: a batch names its own files).

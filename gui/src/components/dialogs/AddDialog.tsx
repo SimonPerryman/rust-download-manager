@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../lib/api";
-import { batchNameFromStem, folderTickLabel, MAX_BATCH_NAME } from "../../lib/batches";
+import {
+  batchNameFromStem,
+  folderTickLabel,
+  joinTickLabel,
+  MAX_BATCH_NAME,
+} from "../../lib/batches";
 import {
   addLabel,
   addLinks,
@@ -16,7 +21,7 @@ import { NO_LIMIT, composeRate, exceeds, type RateDraft } from "../../lib/rate";
 import { normalizeTime, timeLabel } from "../../lib/clock";
 import { startFromText, startsLabel } from "../../lib/startAt";
 import { parseTags, tagsError } from "../../lib/tags";
-import type { ParsedList } from "../../lib/types";
+import type { BatchMatch, ParsedList } from "../../lib/types";
 import { ChevronDown } from "../icons/ChevronDown";
 import { Folder } from "../icons/Folder";
 import { RateInput } from "../RateInput";
@@ -46,6 +51,9 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
   const [tagsText, setTagsText] = useState("");
   const [batchName, setBatchName] = useState("");
   const [makeFolder, setMakeFolder] = useState(true);
+  // The existing batch the typed name matches, and whether to add to it (the offer).
+  const [match, setMatch] = useState<BatchMatch | null>(null);
+  const [joinMatch, setJoinMatch] = useState(true);
   // Once the name has been typed or cleared by hand, a pattern stops filling it in.
   const nameTouched = useRef(false);
   const [limit, setLimit] = useState<RateDraft>(NO_LIMIT);
@@ -75,6 +83,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     setTagsText("");
     setBatchName("");
     setMakeFolder(true);
+    setJoinMatch(true);
     nameTouched.current = false;
     setLimit(NO_LIMIT);
     setBatchLimit(NO_LIMIT);
@@ -152,6 +161,23 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
   // A batch needs two or more links and a name; the name is what makes it one.
   const named = !single && batchName.trim() !== "";
 
+  // The engine says whether the name is taken; a slower answer for an older name is dropped.
+  useEffect(() => {
+    if (!open || !named) {
+      setMatch(null);
+      return;
+    }
+    let current = true;
+    api
+      .findBatch(batchName)
+      .then((m) => current && setMatch(m))
+      .catch(() => current && setMatch(null));
+    return () => {
+      current = false;
+    };
+  }, [open, named, batchName]);
+  const joining = named && match != null && joinMatch;
+
   if (!open) return null;
 
   const browse = async () => {
@@ -182,7 +208,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
       fail(rate.error);
       return;
     }
-    const batchRate = named ? composeRate(batchLimit) : rate;
+    const batchRate = named && !joining ? composeRate(batchLimit) : rate;
     if (!batchRate.ok) {
       fail(batchRate.error);
       return;
@@ -203,20 +229,30 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     const dir = dest.trim() || null;
     let outcome: AddOutcome;
     try {
-      outcome = single
-        ? await addLinks(links, (url) =>
-            api.addDownload(url, dir, checksum.trim() || null, rate.rate || null, tags, startAt),
-          )
-        : await api.addBatch(
-            links,
-            dir,
-            rate.rate || null,
-            tags,
-            named ? batchName.trim() : null,
-            named && makeFolder,
-            (named && batchRate.rate) || null,
-            startAt,
-          );
+      outcome =
+        joining && match
+          ? await api.addToBatch(match.id, links, rate.rate || null, tags, startAt)
+          : single
+            ? await addLinks(links, (url) =>
+                api.addDownload(
+                  url,
+                  dir,
+                  checksum.trim() || null,
+                  rate.rate || null,
+                  tags,
+                  startAt,
+                ),
+              )
+            : await api.addBatch(
+                links,
+                dir,
+                rate.rate || null,
+                tags,
+                named ? batchName.trim() : null,
+                named && makeFolder,
+                (named && batchRate.rate) || null,
+                startAt,
+              );
     } catch (e) {
       setBusy(false);
       fail(String(e));
@@ -332,7 +368,20 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
               <p className="text-xs text-g400">rdm remembers the last folder you used.</p>
             </Field>
 
-            {named && (
+            {named && match && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  data-testid="batch-join"
+                  checked={joinMatch}
+                  onChange={(e) => setJoinMatch(e.target.checked)}
+                  className="size-4 accent-(--btn)"
+                />
+                <span className="min-w-0 break-words">{joinTickLabel(match)}</span>
+              </label>
+            )}
+
+            {named && !joining && (
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -437,7 +486,7 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
                   )}
                 </Field>
 
-                {named && (
+                {named && !joining && (
                   <Field label="Speed limit for the batch">
                     <RateInput
                       label="Speed limit for the batch"

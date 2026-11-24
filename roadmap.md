@@ -172,18 +172,15 @@ ramping follow-ups shipped in M10; ramp window tuning was dropped (below). These
 
 ### From batch downloads, in priority order
 
-1. **Add to existing batch**: typing the name of a batch that already
-   exists offers to add the new links to it and its folder. Today the add
-   makes a second batch with the folder `name (1)`.
-2. **Already-downloaded detection**: flag a link that looks already
+1. **Already-downloaded detection**: flag a link that looks already
    downloaded, and give the CLI a no-redownload option that prints the
    existing file's location, with strict (size and checksum) and loose
    (name and size) matching. It also fixes a rerun of `rdm -i` downloading
    finished files again as `name (1)`. Larger than the rest.
-3. **Error banner inset**: a failed row's banner lines up with the file
+2. **Error banner inset**: a failed row's banner lines up with the file
    name, as it always has. Revisit if it still looks off, across every
    view.
-4. **Batch name length**: capped at 64 characters; a one-line change if it
+3. **Batch name length**: capped at 64 characters; a one-line change if it
    should be shorter.
 
 ### From scheduling, in priority order
