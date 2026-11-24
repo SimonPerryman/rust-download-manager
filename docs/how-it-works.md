@@ -15,6 +15,7 @@ share it, so everything here applies to both.
 - [Scheduling and automation](#scheduling-and-automation)
 - [Proxies](#proxies)
 - [Missing and moved files](#missing-and-moved-files)
+- [Already-downloaded files](#already-downloaded-files)
 - [Engine and frontends](#engine-and-frontends)
 - [When something goes wrong](#when-something-goes-wrong)
 
@@ -300,6 +301,23 @@ log, with the folders searched and the outcome.
 
 **Locate…** lets you pick any file by hand, but refuses one of a different
 size. It uses the same name and size check as Find file.
+
+## Already-downloaded files
+
+The engine can tell whether the file a link would be saved as is already on
+disk (`rdm --skip-existing` uses it). It never scans folders: it asks the
+server for the file's size and name (a `HEAD`, or a one-byte range request
+when that is refused), then looks at one path, the file's name in the
+destination folder, or the `-o` path.
+
+- **Loose** (the default): the file exists, has the server's name and is the
+  size the server reports. A server that doesn't say its size never matches.
+- **Strict**: loose, plus the file's SHA-256 equals a known digest: the
+  `--checksum` one, or the digest recorded for the same download in the list.
+  Only that one file is hashed. With no digest to compare, the result is a
+  loose match and says so; a digest that differs is not a match.
+
+A match means nothing is downloaded and the existing file is left untouched.
 
 ## Engine and frontends
 

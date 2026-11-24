@@ -224,6 +224,47 @@ async fn json_batch_has_events_per_link_skips_and_a_summary_last() {
 }
 
 #[tokio::test]
+async fn json_skipped_event_for_an_already_downloaded_file() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.bin"), common::payload()).unwrap();
+    std::fs::write(
+        dir.path().join("urls.txt"),
+        format!(
+            "{}\n{}\n",
+            server.url("/probe/any/a.bin"),
+            server.url("/probe/any/b.bin")
+        ),
+    )
+    .unwrap();
+
+    let (status, stdout, _) = run(
+        dir.path(),
+        &["--json", "--skip-existing", "-i", "urls.txt"],
+        &[],
+    )
+    .await;
+
+    assert_eq!(status.code(), Some(0), "{stdout}");
+    let ev = events(&stdout);
+    let skipped = of(&ev, "skipped");
+    assert_eq!(skipped.len(), 1, "{stdout}");
+    assert_eq!(skipped[0]["reason"], "already_downloaded");
+    assert_eq!(skipped[0]["match"], "loose");
+    assert!(skipped[0]["url"]
+        .as_str()
+        .unwrap()
+        .ends_with("/probe/any/a.bin"));
+    assert!(skipped[0]["path"].as_str().unwrap().ends_with("a.bin"));
+    assert_eq!(of(&ev, "done").len(), 1);
+    let summary = ev.last().unwrap();
+    assert_eq!(summary["event"], "summary");
+    assert_eq!(summary["already_downloaded"], 1);
+    assert_eq!(summary["skipped"], 0);
+    assert!(!stdout.contains("Already downloaded"));
+}
+
+#[tokio::test]
 async fn quiet_prints_nothing_on_success_and_json_quiet_drops_progress() {
     let server = common::spawn_with(slow_server()).await;
     let dir = tempfile::tempdir().unwrap();

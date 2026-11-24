@@ -126,6 +126,8 @@
 //!   `GET` serves [`payload`].
 //! - `/probe/no-size` — `HEAD` and the range request answer 200 with no
 //!   length; a plain `GET` serves [`payload`].
+//! - `/probe/any/{*name}` — `HEAD` answers the [`payload`]'s size and no
+//!   filename (the URL names it); a plain `GET` serves [`payload`].
 //! - `/probe/gated`   — `HEAD` holds, counted in [`TestServer::probe_in_flight`],
 //!   until released through [`TestServer::probe_gate`], then answers
 //!   [`PROBE_SIZE`] and [`PROBE_NAME`]; a plain `GET` serves [`payload`].
@@ -998,6 +1000,13 @@ async fn probe_named_head(State(state): State<Arc<AppState>>) -> Response {
     probe_head_response(PROBE_SIZE, Some(&disposition))
 }
 
+/// `HEAD` for `/probe/any/{*name}`: the payload's size and no
+/// `Content-Disposition`, so the name is the URL's.
+async fn probe_any_head(State(state): State<Arc<AppState>>) -> Response {
+    state.probe_heads.fetch_add(1, Ordering::SeqCst);
+    probe_head_response(payload().len() as u64, None)
+}
+
 async fn probe_no_size_head(State(state): State<Arc<AppState>>) -> Response {
     state.probe_heads.fetch_add(1, Ordering::SeqCst);
     Response::builder()
@@ -1862,6 +1871,7 @@ async fn serve_state(listener: TcpListener, state: Arc<AppState>) {
         .route("/hang", get(hang_handler))
         .route("/probe/named", head(probe_named_head).get(file_handler))
         .route("/probe/gated", head(probe_gated_head).get(file_handler))
+        .route("/probe/any/{*name}", head(probe_any_head).get(file_handler))
         .route(
             "/probe/no-head",
             head(probe_head_refused).get(probe_get_of("no-head")),

@@ -16,6 +16,7 @@ rdm [OPTIONS] -i <FILE>
 | `-i, --input-file <file>` | Download every link in this file, or on standard input with `-i -`. See [Many links at once](#many-links-at-once). |
 | `-j, --jobs <n>` | How many links of a batch download at once, 1-32 (default 3). |
 | `-o, --output <path>` | Output file path (one link only). Defaults to a name derived from the URL or headers, saved in the current directory. |
+| `--skip-existing[=loose\|strict]` | Don't download a link whose file is already in the folder (same name and size; `strict` also checks the SHA-256). Prints `Already downloaded: <path>`, exits `0`. Needs `=` to take a value. |
 | `--checksum <algo:hex>` | (One link only.) Verify the finished file against a checksum, e.g. `sha256:…`. |
 | `-c, --connections <n>` | Max parallel connections, 1–16 (default 4; `-c 1` for a single connection). Starts on one and adds more, up to `n`, while measured speed keeps rising. Used only for files of 2 MiB or more on servers that support range requests. |
 | `--limit-rate <rate>` | Cap the download speed in bytes/s, with an optional `K`/`M`/`G` suffix (×1024), e.g. `500K` or `2M`. Shared across all of the download's connections; in a batch it applies to each file. |
@@ -81,8 +82,30 @@ batch-wide speed limit are [GUI features](gui.md#batches); the CLI applies
 
 `-o` and `--checksum` name one file, so using them with `-i` or several
 links is a usage error. Ctrl-C pauses every running file; run the same
-command again to resume each from where it stopped (files that had already
-finished are downloaded again, under a new name).
+command again to resume each from where it stopped.
+
+### Rerunning a list
+
+Run a list again and every file that had already finished is downloaded
+again, under a new name (`name (1).ext`). Add `--skip-existing` to skip them:
+
+```sh
+rdm --skip-existing -i urls.txt
+```
+
+A link whose file is already in the folder is not downloaded: rdm prints
+`Already downloaded: <path>`, counts it as skipped in the summary
+(`3 done, 0 failed, 5 skipped (already downloaded)`) and still exits `0`, so a
+rerun is safe to repeat. Whatever is missing downloads as usual, so rerunning
+a list after Ctrl-C or a failure finishes it. It works for a single link too.
+
+`--skip-existing` (the same as `--skip-existing=loose`) asks the server for the
+file's size and name, then checks the one path the file would be saved to: a
+match is the same name and the same size. `--skip-existing=strict` also
+compares the file's SHA-256 against `--checksum`; with nothing to compare (a
+list has no `--checksum`) it is a loose match and says so. It never searches
+other folders. How a match is decided is in
+[How it works](how-it-works.md#already-downloaded-files).
 
 ## Scheduling
 
@@ -196,8 +219,14 @@ are bytes, speeds bytes per second, times seconds; a value that isn't known
 | `error` | The download failed. | `url`, `message` |
 | `paused` | Ctrl-C paused it; run the same command to resume. | `url` |
 | `skipped` | (Batch.) A list line that was refused, such as a bad `[a-b]` range. | `line`, `reason` |
+| `skipped` | (`--skip-existing`.) A link not downloaded because its file is already there. | `url`, `reason` (`"already_downloaded"`), `path`, `match` (`"loose"` or `"strict"`) |
 | `cancelled` | Ctrl-C ended the wait for `--at`; nothing started. | none |
-| `summary` | (Batch.) Everything is over. | `done`, `failed`, `not_finished`, `skipped` |
+| `summary` | (Batch.) Everything is over. | `done`, `failed`, `not_finished`, `skipped`, `already_downloaded` |
+
+A `skipped` event has either `line` and `reason` (a refused list line) or `url`,
+`reason`, `path` and `match` (an existing file); tell them apart by `reason`.
+`summary.skipped` counts refused lines only; `already_downloaded` counts the
+links not downloaded because their file was there.
 
 `downloaded` counts bytes on disk, so a resumed download's first `progress`
 starts from what was kept. It never goes down within a download.
