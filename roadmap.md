@@ -40,6 +40,7 @@ own ticket in `milestones/` with tasks and runnable acceptance criteria.
 | M11 | Missing and moved files | done | [[milestone-11-missing-and-moved-files]] |
 | M12 | Batch downloads | done | [[milestone-12-batch-downloads]] |
 | M13 | Scheduling & automation | done | [[milestone-13-scheduling]] |
+| M14 | Already-downloaded detection | todo | [[milestone-14-already-downloaded]] |
 
 **MVP = M0 + M1** — lean, single-connection, CLI-only. Kill-and-resume works.
 
@@ -172,15 +173,10 @@ ramping follow-ups shipped in M10; ramp window tuning was dropped (below). These
 
 ### From batch downloads, in priority order
 
-1. **Already-downloaded detection**: flag a link that looks already
-   downloaded, and give the CLI a no-redownload option that prints the
-   existing file's location, with strict (size and checksum) and loose
-   (name and size) matching. It also fixes a rerun of `rdm -i` downloading
-   finished files again as `name (1)`. Larger than the rest.
-2. **Error banner inset**: a failed row's banner lines up with the file
+1. **Error banner inset**: a failed row's banner lines up with the file
    name, as it always has. Revisit if it still looks off, across every
    view.
-3. **Batch name length**: capped at 64 characters; a one-line change if it
+2. **Batch name length**: capped at 64 characters; a one-line change if it
    should be shorter.
 
 ### From scheduling, in priority order
