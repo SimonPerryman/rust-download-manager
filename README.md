@@ -20,6 +20,7 @@ command-line tool and a desktop app.
 - **Archive and tags (GUI):** archive finished downloads and filter by tag.
 - **Missing files (GUI):** finished downloads whose file moved are flagged, and rdm can find them again.
 - **Verified:** optional SHA-256 checksum checked before the file is saved.
+- **Scriptable (CLI):** `--json` streams one JSON event per line, for scripts and agents.
 - **Proxies:** the system proxy by default, or your own HTTP or SOCKS5 proxy.
 - **Safe names:** files stay in your folder and never overwrite another.
 - **See it work (GUI):** live connection lanes, a speed graph and a per-download log.

@@ -85,12 +85,6 @@ priority order, with the large or unrequested items last.
 - **Batch**: site mirroring (the rest is [[milestone-12-batch-downloads]])
 - **Checksum lists**: import a `SHA256SUMS` file, verify many downloads at
   once, export sums for finished files.
-- **CLI machine-readable output (`--json`)**: emit JSONL events (one JSON
-  object per line: `progress`, `done`, `error`, with the final result as the
-  last line) so scripts and agents can follow a download as it streams
-  instead of parsing the progress bar. JSONL rather than one JSON document,
-  since a document isn't valid until the closing brace. Candidates: a `--quiet`
-  to match, and a stable event schema documented in `docs/cli.md`.
 - **Post-download safety checks, beyond Mark-of-the-Web** (optional): a
   checksum only proves we got the bytes the server sent, not that they're
   safe or what they claim to be. Candidates: attach through
