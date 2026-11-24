@@ -10,6 +10,7 @@ import type {
   FindEvent,
   FindResult,
   BatchAdded,
+  BatchMatch,
   FolderOutcome,
   FoundChoice,
   InstallWhen,
@@ -69,6 +70,21 @@ export const addBatch = (
   startAt: string | null = null,
 ) =>
   invoke<BatchAdded>("add_batch", { urls, dir, limit, tags, label, folder, batchLimit, startAt });
+
+/** The existing batch a typed name matches (trimmed, any case), or null. */
+export const findBatch = (label: string) => invoke<BatchMatch | null>("find_batch", { label });
+
+/**
+ * Add links to an existing batch: its name, folder and shared cap. `limit` and `tags` apply to
+ * each link. Rejects when the batch is gone or on a bad tag or rate.
+ */
+export const addToBatch = (
+  batch: number,
+  urls: readonly string[],
+  limit: string | null,
+  tags: string[],
+  startAt: string | null = null,
+) => invoke<BatchAdded>("add_to_batch", { batch, urls, limit, tags, startAt });
 
 /**
  * Hold downloads out of the queue until a local time ("YYYY-MM-DDTHH:MM", or `HH:MM` for the

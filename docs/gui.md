@@ -55,9 +55,13 @@ range fills the name in from the text before it (`lesson[01-12].mp4` gives
 "lesson"); clearing it makes them ordinary downloads again (the name is
 limited to 64 characters). With a name, a ticked **Create folder** box puts
 the files in a folder of that name inside the destination; unticked, they go
-straight into it. A folder name that is taken gets `(1)` after it, so a second
-"Course files" goes in `Course files (1)`, and files that clash inside a
-folder become `name (1).ext`.
+straight into it. A folder name that is taken gets `(1)` after it, and files
+that clash inside a folder become `name (1).ext`.
+
+When the name matches a batch already in the list (ignoring case), an
+**Add to "Course files" (4 files)** box appears, ticked. Add then puts the
+new links in that batch and its folder, under its speed limit, instead of
+making a second batch. Untick it to make a separate batch as above.
 
 ![The Add dialog for a batch: 16 links found with a range row, the Batch name, the Create folder tick, and under More options the speed limit per file and for the batch](screenshots/batch-add-limits.png)
 

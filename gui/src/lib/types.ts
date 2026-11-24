@@ -277,6 +277,13 @@ export interface BatchAdded {
   failed: { url: string; error: string }[];
 }
 
+/** A batch a typed name matches (`find_batch`): its id, name as first given, and working files. */
+export interface BatchMatch {
+  id: number;
+  label: string;
+  files: number;
+}
+
 /** The engine's reading of a pasted list (`preview_list`). */
 export interface ParsedList {
   links: ListLink[];

@@ -5,6 +5,7 @@ import {
   failedText,
   folderName,
   folderTickLabel,
+  joinTickLabel,
   layoutRows,
   UNGROUPED,
   ungroupedText,
@@ -141,6 +142,11 @@ describe("the Add dialog's batch name and folder", () => {
       "Create folder “Course files” in Downloads",
     );
     expect(folderTickLabel("A", "")).toBe("Create folder “A” in Downloads");
+  });
+
+  it("offers to add to an existing batch", () => {
+    expect(joinTickLabel({ id: 1, label: "Course", files: 4 })).toBe("Add to “Course” (4 files)");
+    expect(joinTickLabel({ id: 1, label: "Course", files: 1 })).toBe("Add to “Course” (1 file)");
   });
 
   it("says how many failed files Retry failed started", () => {

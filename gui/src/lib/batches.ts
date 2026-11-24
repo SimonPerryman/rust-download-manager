@@ -2,7 +2,7 @@
 // row and the sidebar, and the table's row layout with those rows gathered
 // under it. Pure presentation over snapshots; the engine owns what a batch is.
 
-import type { DownloadSnapshot } from "./types";
+import type { BatchMatch, DownloadSnapshot } from "./types";
 
 /** One batch's working (not archived) files and how they are doing. */
 export interface BatchGroup {
@@ -138,6 +138,11 @@ export function folderName(path: string): string {
 /** The folder tick's label. */
 export function folderTickLabel(name: string, dest: string): string {
   return `Create folder “${name.trim()}” in ${folderName(dest) || "Downloads"}`;
+}
+
+/** The offer to join an existing batch instead of making a second one. */
+export function joinTickLabel(m: BatchMatch): string {
+  return `Add to “${m.label}” (${m.files === 1 ? "1 file" : `${m.files} files`})`;
 }
 
 /** The toast after Retry failed on a group row. */
