@@ -1103,6 +1103,113 @@ async fn batch_from_file_reports_each_item_and_fails_on_a_404() {
     );
 }
 
+/// Rerunning a list after a full run: with `--skip-existing` nothing downloads
+/// again, each file is named once and the exit code is 0; without it every
+/// file comes again under a new name.
+#[tokio::test]
+async fn skip_existing_makes_a_rerun_download_nothing() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("urls.txt"),
+        format!(
+            "{}\n{}\n",
+            server.url("/probe/any/a.bin"),
+            server.url("/probe/any/b.bin")
+        ),
+    )
+    .unwrap();
+    let (status, stdout, _) = run_rdm(dir.path(), &["-i", "urls.txt"], None).await;
+    assert!(status.success(), "{stdout}");
+
+    let (status, stdout, stderr) =
+        run_rdm(dir.path(), &["--skip-existing", "-i", "urls.txt"], None).await;
+
+    assert_eq!(status.code(), Some(0), "stdout: {stdout}\nstderr: {stderr}");
+    assert_eq!(
+        stdout.matches("Already downloaded: ").count(),
+        2,
+        "{stdout}"
+    );
+    assert!(stdout.contains("a.bin"), "{stdout}");
+    assert!(!stdout.contains("Downloaded "), "{stdout}");
+    assert!(
+        stdout.contains("0 done, 0 failed, 2 skipped (already downloaded)"),
+        "{stdout}"
+    );
+    assert_eq!(files_in(dir.path()), ["a.bin", "b.bin", "urls.txt"]);
+
+    // Without the flag nothing changes: the files come again, renamed.
+    let (status, _, _) = run_rdm(dir.path(), &["-i", "urls.txt"], None).await;
+    assert!(status.success());
+    assert_eq!(
+        files_in(dir.path()),
+        ["a (1).bin", "a.bin", "b (1).bin", "b.bin", "urls.txt"]
+    );
+}
+
+/// A rerun downloads what is missing and skips what is there.
+#[tokio::test]
+async fn skip_existing_downloads_only_the_missing_files() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.bin"), common::payload()).unwrap();
+    // Same name, wrong size: a different file, so it downloads.
+    std::fs::write(dir.path().join("b.bin"), b"short").unwrap();
+    let text = format!(
+        "{}\n{}\n{}\n",
+        server.url("/probe/any/a.bin"),
+        server.url("/probe/any/b.bin"),
+        server.url("/probe/any/c.bin")
+    );
+
+    let (status, stdout, stderr) =
+        run_rdm(dir.path(), &["--skip-existing", "-i", "-"], Some(&text)).await;
+
+    assert_eq!(status.code(), Some(0), "stdout: {stdout}\nstderr: {stderr}");
+    assert_eq!(
+        stdout.matches("Already downloaded: ").count(),
+        1,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("2 done, 0 failed, 1 skipped (already downloaded)"),
+        "{stdout}"
+    );
+    assert_eq!(
+        files_in(dir.path()),
+        ["a.bin", "b (1).bin", "b.bin", "c.bin"]
+    );
+}
+
+/// A single link, with `--skip-existing` (loose by default) or `=strict`.
+#[tokio::test]
+async fn skip_existing_on_a_single_link() {
+    let server = common::spawn().await;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.bin"), common::payload()).unwrap();
+    let url = server.url("/probe/any/a.bin");
+
+    let (status, stdout, _) = run_rdm(dir.path(), &["--skip-existing", &url], None).await;
+    assert_eq!(status.code(), Some(0), "{stdout}");
+    assert!(stdout.starts_with("Already downloaded: "), "{stdout}");
+    assert_eq!(files_in(dir.path()), ["a.bin"]);
+
+    // Strict with nothing to compare says it fell back to a loose match.
+    let (status, stdout, _) = run_rdm(dir.path(), &["--skip-existing=strict", &url], None).await;
+    assert_eq!(status.code(), Some(0), "{stdout}");
+    assert!(stdout.contains("loose match"), "{stdout}");
+
+    // Strict with a digest the file doesn't have downloads it again.
+    let (status, _, _) = run_rdm(
+        dir.path(),
+        &["--skip-existing=strict", "--checksum", "sha256:ab", &url],
+        None,
+    )
+    .await;
+    assert_eq!(status.code(), Some(1), "wrong digest fails the download");
+}
+
 /// A `[a-b]` range in a list expands to one download per value; a value the
 /// server doesn't have fails alone.
 #[tokio::test]

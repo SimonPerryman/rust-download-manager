@@ -5,7 +5,7 @@
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
-use rdm::{Progress, Summary};
+use rdm::{Existing, Progress, Summary};
 use serde::Serialize;
 
 /// The event schema's version, in every line's `schema` field. It changes
@@ -43,6 +43,18 @@ pub enum Event<'a> {
     Paused { url: &'a str },
     /// A line of a batch list that was refused.
     Skipped { line: &'a str, reason: &'a str },
+    /// A link was not downloaded because its file is already on disk
+    /// (`--skip-existing`). Same event name as a refused line, told apart by
+    /// its `reason`.
+    #[serde(rename = "skipped")]
+    AlreadyDownloaded {
+        url: &'a str,
+        reason: &'static str,
+        path: String,
+        /// `loose` or `strict`.
+        #[serde(rename = "match")]
+        kind: &'static str,
+    },
     /// Ctrl-C ended the wait for `--at` before anything started.
     Cancelled,
     /// A batch is over; always the last line of one.
@@ -51,6 +63,8 @@ pub enum Event<'a> {
         failed: usize,
         not_finished: usize,
         skipped: usize,
+        /// Links not downloaded because their file was already there.
+        already_downloaded: usize,
     },
 }
 
@@ -82,6 +96,16 @@ impl<'a> Event<'a> {
             bytes: s.bytes,
             status: s.status,
             checksum_verified,
+        }
+    }
+
+    /// A `skipped` event for a link whose file is already on disk.
+    pub fn already_downloaded(url: &'a str, found: &Existing) -> Self {
+        Event::AlreadyDownloaded {
+            url,
+            reason: "already_downloaded",
+            path: found.path.display().to_string(),
+            kind: found.kind.name(),
         }
     }
 

@@ -23,9 +23,9 @@ use json_events::{emit, Event, ProgressThrottle};
 use rdm::engine::actions::{backend_from_env, PowerAction, POWER_COUNTDOWN_SECS};
 use rdm::engine::schedule::{Clock, FakeClock, LocalDateTime, StartAt, SystemClock};
 use rdm::{
-    download, engine::state, parse_list, parse_rate, redact_url, redact_urls_in, run_limited,
-    Checksum, Control, DownloadRequest, Error, Proxy, ProxyMode, RateLimiter, Summary,
-    TargetClaims,
+    download, engine::state, find_existing, parse_list, parse_rate, redact_url, redact_urls_in,
+    run_limited, Checksum, Control, DownloadRequest, Error, Existing, MatchMode, Proxy, ProxyMode,
+    RateLimiter, Summary, TargetClaims,
 };
 
 /// Printed when Ctrl-C paused the download.
@@ -81,6 +81,9 @@ Examples:
 
   # put the machine to sleep a minute after everything has downloaded
   rdm --on-finish sleep -i urls.txt
+
+  # rerun a list: files already downloaded are skipped, the rest download
+  rdm --skip-existing -i urls.txt
 
   # follow a download from a script: one JSON event per line on stdout
   rdm --json https://example.com/a.zip | jq -c 'select(.event == \"done\")'"
@@ -166,6 +169,22 @@ struct Cli {
     )]
     on_finish: Option<PowerAction>,
 
+    /// Don't download a link whose file is already in the destination
+    /// folder: print `Already downloaded: <path>` and count it as skipped
+    /// (exit 0), so rerunning a list resumes it. `loose` (the default) needs
+    /// the same name and size; `strict` also compares the SHA-256 (with
+    /// `--checksum`; without one it falls back to loose and says so). Only
+    /// the target path is checked.
+    #[arg(
+        long = "skip-existing",
+        value_name = "MATCH",
+        require_equals = true,
+        num_args = 0..=1,
+        default_missing_value = "loose",
+        value_parser = parse_match_mode
+    )]
+    skip_existing: Option<MatchMode>,
+
     /// Print one JSON object per line on stdout instead of the progress bar
     /// and messages: `progress`, `done`, `error`, `paused` events (and for a
     /// batch `skipped` and a final `summary`), each with a `schema` number and
@@ -239,6 +258,26 @@ impl Out {
 /// clap value parser: `sha256:<hex>` → [`Checksum`].
 fn parse_checksum(s: &str) -> Result<Checksum, String> {
     s.parse()
+}
+
+/// clap value parser for `--skip-existing`: `loose` or `strict`.
+fn parse_match_mode(s: &str) -> Result<MatchMode, String> {
+    match s {
+        "loose" => Ok(MatchMode::Loose),
+        "strict" => Ok(MatchMode::Strict),
+        other => Err(format!("expected 'loose' or 'strict', got {other:?}")),
+    }
+}
+
+/// The notice and event for a link that is already on disk.
+fn report_existing(out: Out, shown_url: &str, found: &Existing) {
+    out.result(format!("Already downloaded: {}", found.path.display()));
+    if found.unverified {
+        out.notice("(loose match: strict had no checksum to compare; pass --checksum)");
+    }
+    if out.json {
+        emit(&Event::already_downloaded(shown_url, found));
+    }
 }
 
 /// clap value parser for `--at`: the text if it reads as a start time. It is
@@ -392,6 +431,13 @@ async fn main() -> anyhow::Result<ExitCode> {
         }
     }
 
+    if let Some(mode) = cli.skip_existing {
+        if let Some(found) = find_existing(&req, mode, None).await {
+            report_existing(out, &redact_url(&req.url), &found);
+            return Ok(power_after(on_finish, out).await);
+        }
+    }
+
     let bar = out.bar();
     bar.set_style(
         ProgressStyle::with_template(
@@ -534,6 +580,8 @@ impl BatchStop {
 /// How one link of a batch ended.
 enum Item {
     Done,
+    /// Not downloaded: its file is already on disk (`--skip-existing`).
+    AlreadyThere,
     Failed,
     /// Paused by Ctrl-C, or never started because of it.
     Stopped,
@@ -580,6 +628,7 @@ async fn run_batch(cli: Cli, out: Out) -> anyhow::Result<ExitCode> {
         let (dir, stop, claims) = (dir.clone(), stop.clone(), claims.clone());
         let (connections, proxy, no_proxy) = (cli.connections, proxy.clone(), cli.no_proxy);
         let limit = cli.limit_rate;
+        let skip_existing = cli.skip_existing;
         async move {
             let Some(control) = stop.start_item(limit) else {
                 return Item::Stopped;
@@ -593,6 +642,12 @@ async fn run_batch(cli: Cli, out: Out) -> anyhow::Result<ExitCode> {
                 req = req.with_proxy(ProxyMode::None);
             }
             let shown = redact_url(&url);
+            if let Some(mode) = skip_existing {
+                if let Some(found) = find_existing(&req, mode, None).await {
+                    report_existing(out, &shown, &found);
+                    return Item::AlreadyThere;
+                }
+            }
             let mut throttle = ProgressThrottle::new();
             let result = download(&req, &control, |p| {
                 if out.progress_events() && throttle.allow(std::time::Instant::now()) {
@@ -621,9 +676,13 @@ async fn run_batch(cli: Cli, out: Out) -> anyhow::Result<ExitCode> {
 
     let count = |wanted: fn(&Item) -> bool| results.iter().filter(|r| wanted(r)).count();
     let done = count(|r| matches!(r, Item::Done));
+    let there = count(|r| matches!(r, Item::AlreadyThere));
     let failed = count(|r| matches!(r, Item::Failed));
     let stopped = count(|r| matches!(r, Item::Stopped));
     let mut summary = format!("{done} done, {failed} failed");
+    if there > 0 {
+        summary.push_str(&format!(", {there} skipped (already downloaded)"));
+    }
     if stopped > 0 {
         summary.push_str(&format!(", {stopped} not finished"));
     }
@@ -637,6 +696,7 @@ async fn run_batch(cli: Cli, out: Out) -> anyhow::Result<ExitCode> {
             failed,
             not_finished: stopped,
             skipped: list.skipped.len(),
+            already_downloaded: there,
         });
     }
 

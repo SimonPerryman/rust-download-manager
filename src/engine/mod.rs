@@ -19,6 +19,7 @@ mod attempt;
 pub mod batch;
 pub mod control;
 mod download_log;
+pub mod existing;
 #[cfg(feature = "fault-injection")]
 mod fault;
 pub mod filename;
@@ -52,6 +53,7 @@ pub use batch::{
 };
 pub use control::{Control, Flow};
 pub use download_log::{LogLevel, LogLine, LOG_LINES};
+pub use existing::{check_file, find_existing, Existing, MatchKind, MatchMode};
 pub use history::{HistoryEvent, HistoryKind};
 pub(crate) use http::{status_error, throttle_wait};
 pub use integrity::{Algo, Checksum};
