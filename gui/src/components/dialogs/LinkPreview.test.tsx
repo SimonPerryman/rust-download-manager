@@ -50,6 +50,46 @@ describe("LinkPreview", () => {
     expect(notes.textContent).toContain("Already in your list");
   });
 
+  it("flags a link on disk with a chip, un-ticked, and offers Download anyway and Show in folder", () => {
+    const calls: string[] = [];
+    const actions = {
+      onToggle: (u: string) => calls.push(`toggle ${u}`),
+      onReveal: (u: string) => calls.push(`reveal ${u}`),
+    };
+    const notes = "https://a.example/notes.txt";
+    act(() =>
+      root.render(
+        <LinkPreview entries={entriesFrom(list, new Map(), new Set([notes]))} actions={actions} />,
+      ),
+    );
+    const [slides, row] = rows("link");
+    expect(slides.querySelector('[data-testid="on-disk-chip"]')).toBeNull();
+    expect(row.getAttribute("data-ticked")).toBe("false");
+    expect(row.querySelector("svg.text-success")).toBeNull();
+    expect(row.querySelector('[data-testid="on-disk-chip"]')!.textContent).toBe(
+      "Already downloaded",
+    );
+    const [anyway, show] = [...row.querySelectorAll("button")];
+    expect(anyway.textContent).toBe("Download anyway");
+    expect(show.textContent).toBe("Show in folder");
+    click(anyway);
+    click(show);
+    expect(calls).toEqual([`toggle ${notes}`, `reveal ${notes}`]);
+  });
+
+  it("reads Skip on a flagged link that was re-ticked", () => {
+    const notes = "https://a.example/notes.txt";
+    const entries = entriesFrom(list, new Map(), new Set([notes]), new Set([notes]));
+    act(() =>
+      root.render(
+        <LinkPreview entries={entries} actions={{ onToggle: () => {}, onReveal: () => {} }} />,
+      ),
+    );
+    const row = rows("link")[1];
+    expect(row.getAttribute("data-ticked")).toBe("true");
+    expect(row.querySelector('[data-testid="on-disk-toggle"]')!.textContent).toBe("Skip");
+  });
+
   it("opens a range to its first links, and a click on N more lists the rest", () => {
     render();
     expect(rows("pattern-link")).toHaveLength(0);

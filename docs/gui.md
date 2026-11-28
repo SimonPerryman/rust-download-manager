@@ -45,6 +45,14 @@ and becomes **Show less**; the range's chevron closes it too. The
 [CLI](cli.md#many-links-at-once) takes the same ranges and `-i` list files. A link already in your list shows an info
 mark instead of a tick; it is still added.
 
+A link whose file is already in the folder gets an **Already downloaded**
+chip and is left unticked, so Add skips it (and it isn't added to a batch).
+**Download anyway** ticks it again (the button then reads **Skip**), and
+**Show in folder** opens the file. rdm decides this by asking the server for
+the file's name and size, a moment after you stop typing, and comparing with
+the file in the folder shown; it never searches other folders. See
+[how a match is decided](how-it-works.md#already-downloaded-files).
+
 Beside "N links found", a quiet **N skipped** counts lines that aren't links
 and repeats; click it for the reasons. The lines themselves aren't listed.
 

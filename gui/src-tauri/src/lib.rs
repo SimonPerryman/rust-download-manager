@@ -598,6 +598,63 @@ fn preview_list(text: String) -> Result<rdm::ParsedList, String> {
     rdm::parse_list(&text).map_err(|e| e.to_string())
 }
 
+/// Probe `url` and look for the file it would be saved as in `dir` (blank is
+/// the default folder): the engine's loose already-downloaded match.
+async fn existing_in(
+    app: &tauri::AppHandle,
+    state: &State<'_, AppState>,
+    url: String,
+    dir: Option<String>,
+) -> Result<Option<rdm::Existing>, String> {
+    let dir = match dir {
+        Some(d) if !d.trim().is_empty() => download_dir(&d)?,
+        _ => default_dir(app)?,
+    };
+    let req = rdm::DownloadRequest::new(&url, dir).with_proxy(state.manager.settings().proxy);
+    Ok(rdm::find_existing(&req, rdm::MatchMode::Loose, None).await)
+}
+
+/// Where the file `url` would be saved as in `dir` is already on disk (same
+/// name and size as the server reports), else `None`. The Add dialog's
+/// "Already downloaded" check; the matching lives in the engine.
+#[tauri::command]
+async fn check_existing(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    url: String,
+    dir: Option<String>,
+) -> Result<Option<String>, String> {
+    commands_guard::contained("check_existing", async move {
+        let found = existing_in(&app, &state, url, dir).await?;
+        Ok(found.map(|e| e.path.to_string_lossy().into_owned()))
+    })
+    .await
+}
+
+/// Show the file [`check_existing`] matched in its folder in the OS file
+/// manager. Matches again rather than trusting a path from the webview.
+#[tauri::command]
+async fn reveal_existing(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    url: String,
+    dir: Option<String>,
+) -> Result<(), String> {
+    commands_guard::contained("reveal_existing", async move {
+        let path = existing_in(&app, &state, url, dir)
+            .await?
+            .ok_or_else(|| "that file is no longer there".to_string())?
+            .path;
+        if let Some(log) = test_seam(OPEN_LOG_ENV) {
+            return append_open_log(&log, "reveal", &path).map_err(|e| e.to_string());
+        }
+        app.opener()
+            .reveal_item_in_dir(path)
+            .map_err(|e| e.to_string())
+    })
+    .await
+}
+
 /// The default download directory, as a string (for the Add dialog's default).
 #[tauri::command]
 fn default_download_dir(app: tauri::AppHandle) -> Result<String, String> {
@@ -1401,6 +1458,8 @@ pub fn run() {
             forget_paused_for_update,
             retry_failed,
             preview_list,
+            check_existing,
+            reveal_existing,
             default_download_dir,
             pick_folder,
             open_download,

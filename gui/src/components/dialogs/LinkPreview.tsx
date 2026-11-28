@@ -12,6 +12,46 @@ const DUP_NOTE = {
 /** How many of a range's links show before "N more". */
 const PEEK = 3;
 
+/** What a link already on disk can be asked: add it anyway (or take that back), or find its file. */
+export type ExistingActions = {
+  onToggle: (url: string) => void;
+  onReveal: (url: string) => void;
+};
+
+// The tail of a link already on disk: the chip, and the row's two actions. Such a link
+// starts un-ticked; Download anyway ticks it, Skip takes it back.
+function OnDisk({ link, actions }: { link: LinkEntry; actions?: ExistingActions }) {
+  return (
+    <>
+      <span
+        data-testid="on-disk-chip"
+        className="shrink-0 rounded-sm bg-hover px-1.5 py-0.5 text-xs font-medium text-g600"
+      >
+        Already downloaded
+      </span>
+      {actions && (
+        <>
+          <button
+            type="button"
+            data-testid="on-disk-toggle"
+            className="btn-link shrink-0 text-xs"
+            onClick={() => actions.onToggle(link.url)}
+          >
+            {link.ticked ? "Skip" : "Download anyway"}
+          </button>
+          <button
+            type="button"
+            className="btn-link shrink-0 text-xs"
+            onClick={() => actions.onReveal(link.url)}
+          >
+            Show in folder
+          </button>
+        </>
+      )}
+    </>
+  );
+}
+
 // The ranges the engine refused, under the links box (a refusal blocks nothing else).
 export function RangeErrors({ entries }: { entries: BatchEntry[] }) {
   const refused = entries.filter(
@@ -39,6 +79,7 @@ function PatternRow({
   all,
   onToggle,
   onShowAll,
+  actions,
 }: {
   label: string;
   links: LinkEntry[];
@@ -46,6 +87,7 @@ function PatternRow({
   all: boolean;
   onToggle: () => void;
   onShowAll: () => void;
+  actions?: ExistingActions;
 }) {
   const shown = open ? (all ? links : links.slice(0, PEEK)) : [];
   return (
@@ -87,7 +129,11 @@ function PatternRow({
               ×{l.count}
             </span>
           )}
-          {l.dup && <span className="shrink-0 text-xs text-g400">{DUP_NOTE[l.dup]}</span>}
+          {l.onDisk ? (
+            <OnDisk link={l} actions={actions} />
+          ) : (
+            l.dup && <span className="shrink-0 text-xs text-g400">{DUP_NOTE[l.dup]}</span>
+          )}
         </li>
       ))}
       {open && links.length > PEEK && (
@@ -104,7 +150,14 @@ function PatternRow({
 // What the pasted text holds, before anything starts: each link's filename
 // and site, with a repeat shown once (×2) and lines that aren't links skipped.
 // A link already in the list or archive gets a neutral info mark, not a tick; it is still added.
-export function LinkPreview({ entries }: { entries: BatchEntry[] }) {
+// A link whose file is already in the folder gets a chip and starts un-ticked (see OnDisk).
+export function LinkPreview({
+  entries,
+  actions,
+}: {
+  entries: BatchEntry[];
+  actions?: ExistingActions;
+}) {
   // Which ranges are open, and which of those list every link; keyed by the range's place.
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
   const [all, setAll] = useState<ReadonlySet<number>>(new Set());
@@ -168,6 +221,7 @@ export function LinkPreview({ entries }: { entries: BatchEntry[] }) {
                   });
                 }}
                 onShowAll={() => setAll((a) => flip(a, i))}
+                actions={actions}
               />
             );
           }
@@ -176,9 +230,10 @@ export function LinkPreview({ entries }: { entries: BatchEntry[] }) {
               key={i}
               data-kind={e.kind}
               data-dup={e.dup ?? undefined}
+              data-ticked={e.ticked}
               className="flex h-8 items-center gap-2 px-3 text-sm"
             >
-              {e.dup ? (
+              {e.dup || !e.ticked ? (
                 <Info size={14} className="shrink-0 text-g400" />
               ) : (
                 <Check size={14} className="shrink-0 text-success" />
@@ -194,7 +249,13 @@ export function LinkPreview({ entries }: { entries: BatchEntry[] }) {
                   ×{e.count}
                 </span>
               )}
-              <span className="shrink-0 text-xs text-g400">{e.dup ? DUP_NOTE[e.dup] : e.host}</span>
+              {e.onDisk ? (
+                <OnDisk link={e} actions={actions} />
+              ) : (
+                <span className="shrink-0 text-xs text-g400">
+                  {e.dup ? DUP_NOTE[e.dup] : e.host}
+                </span>
+              )}
             </li>
           );
         })}

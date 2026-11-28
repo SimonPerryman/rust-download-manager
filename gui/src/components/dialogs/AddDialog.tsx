@@ -28,6 +28,11 @@ import { RateInput } from "../RateInput";
 import { LinkPreview, RangeErrors } from "./LinkPreview";
 import { trapTab } from "./trapTab";
 
+/** How many links are checked against the destination at once (each probes the server). */
+const CHECK_CONCURRENCY = 4;
+/** Typing a folder or pasting settles this long before any link is checked. */
+const CHECK_DELAY_MS = 400;
+
 type Props = {
   open: boolean;
   /** Text to start with (a pasted list or a dropped link). */
@@ -151,9 +156,58 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
     setBatchName(batchNameFromStem(stem));
   }, [stem]);
 
+  // Which links already have their file in the destination, asked of the engine a few at a
+  // time once typing settles. Answers are kept per folder and link, so a new line or a
+  // returning to a folder doesn't probe again; a link that can't be checked just isn't flagged.
+  // Keys ("folder\nlink") of the links found on disk; `onDisk` is the current folder's share.
+  const [foundKeys, setFoundKeys] = useState<ReadonlySet<string>>(new Set());
+  const [reticked, setReticked] = useState<ReadonlySet<string>>(new Set());
+  const asked = useRef(new Set<string>());
+  const urls = useMemo(() => list?.links.map((l) => l.url) ?? [], [list]);
+  const onDisk = useMemo(
+    () => new Set(urls.filter((u) => foundKeys.has(`${dest}\n${u}`))),
+    [urls, dest, foundKeys],
+  );
+  useEffect(() => {
+    if (!open || dest === "") return;
+    let current = true;
+    const todo = urls.filter((u) => !asked.current.has(`${dest}\n${u}`));
+    const timer = setTimeout(() => {
+      let next = 0;
+      const worker = async () => {
+        while (current && next < todo.length) {
+          const url = todo[next++];
+          const key = `${dest}\n${url}`;
+          asked.current.add(key);
+          const found = await api.checkExisting(url, dest).catch(() => null);
+          if (found != null) setFoundKeys((keys) => new Set(keys).add(key));
+        }
+      };
+      for (let i = 0; i < CHECK_CONCURRENCY; i++) void worker();
+    }, CHECK_DELAY_MS);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [open, dest, urls]);
+  useEffect(() => {
+    if (!open) return;
+    setReticked(new Set());
+    setFoundKeys(new Set());
+    asked.current.clear();
+  }, [open, initialText]);
+  const revealExisting = (url: string) =>
+    api.revealExisting(url, dest.trim() || null).catch((e) => setError(String(e)));
+  const toggleTick = (url: string) =>
+    setReticked((r) => {
+      const next = new Set(r);
+      if (!next.delete(url)) next.add(url);
+      return next;
+    });
+
   const entries = useMemo(
-    () => (list ? entriesFrom(list, existingUrls) : []),
-    [list, existingUrls],
+    () => (list ? entriesFrom(list, existingUrls, onDisk, reticked) : []),
+    [list, existingUrls, onDisk, reticked],
   );
   const links = linksToAdd(entries);
   // A checksum names one file, so it only applies to a single link.
@@ -188,7 +242,10 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
   const submit = async () => {
     if (busy) return;
     if (links.length === 0) {
-      setError(listError ?? "Paste a link to add.");
+      setError(
+        listError ??
+          (entries.length > 0 && urls.length > 0 ? "Tick a link to add." : "Paste a link to add."),
+      );
       return;
     }
     // An error about a field under "More options" must not be hidden there.
@@ -323,7 +380,10 @@ export function AddDialog({ open, initialText = "", existingUrls, onClose, onAdd
                 {listError}
               </p>
             ) : (
-              <LinkPreview entries={entries} />
+              <LinkPreview
+                entries={entries}
+                actions={{ onToggle: toggleTick, onReveal: (u) => void revealExisting(u) }}
+              />
             )}
 
             {!single && (

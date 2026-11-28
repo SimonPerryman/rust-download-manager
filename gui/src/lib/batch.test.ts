@@ -51,6 +51,8 @@ describe("entriesFrom", () => {
         host: "a.example",
         count: 1,
         dup: null,
+        onDisk: false,
+        ticked: true,
       },
       { kind: "bad", line: "nope", reason: "not_a_link" },
     ]);
@@ -102,6 +104,42 @@ describe("knownUrls", () => {
     const entries = entriesFrom(list([["https://a.example/y"]]), known);
     expect(entries).toMatchObject([{ kind: "link", dup: "archived" }]);
     expect(linksToAdd(entries)).toEqual(["https://a.example/y"]);
+  });
+});
+
+describe("links already on disk", () => {
+  const a = "https://a.example/x";
+  const b = "https://a.example/y";
+  const two = () => list([[a], [b]]);
+
+  it("start un-ticked and are left out of an Add", () => {
+    const entries = entriesFrom(two(), none, new Set([a]));
+    expect(entries).toMatchObject([
+      { url: a, onDisk: true, ticked: false },
+      { url: b, onDisk: false, ticked: true },
+    ]);
+    expect(linksToAdd(entries)).toEqual([b]);
+  });
+
+  it("are added once re-ticked", () => {
+    const entries = entriesFrom(two(), none, new Set([a]), new Set([a]));
+    expect(entries[0]).toMatchObject({ onDisk: true, ticked: true });
+    expect(linksToAdd(entries)).toEqual([a, b]);
+  });
+
+  it("still count as found links", () => {
+    const entries = entriesFrom(two(), none, new Set([a, b]));
+    expect(linksToAdd(entries)).toEqual([]);
+    expect(previewSummary(entries).found).toBe("2 links found");
+  });
+
+  it("are un-ticked inside a range too", () => {
+    const l = range(3);
+    const entries = entriesFrom(l, none, new Set([l.links[1].url]));
+    const [row] = entries;
+    if (row.kind !== "pattern") throw new Error("expected a range");
+    expect(row.links.map((x) => x.ticked)).toEqual([true, false, true]);
+    expect(linksToAdd(entries)).toHaveLength(2);
   });
 });
 
